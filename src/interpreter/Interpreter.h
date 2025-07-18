@@ -21,6 +21,8 @@ public:
     void visit(const IfStmt& stmt) override;
     void visit(const WhileStmt& stmt) override;
     void visit(const ForStmt& stmt) override;
+    void visit(const FunctionStmt& stmt) override;
+    void visit(const ReturnStmt& stmt) override;
 
     void visit(const Binary& expr) override;
     void visit(const Grouping& expr) override;
@@ -31,6 +33,7 @@ public:
     void visit(const ArrayLiteral& expr) override;
     void visit(const DictionaryLiteral& expr) override;
     void visit(const IndexAccess& expr) override;
+    void visit(const Call& expr) override;
 
 private:
     std::shared_ptr<Environment> environment;

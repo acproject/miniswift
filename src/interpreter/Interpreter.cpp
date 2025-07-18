@@ -2,6 +2,13 @@
 #include <stdexcept>
 #include <iostream>
 
+// Exception class for handling return statements
+class ReturnException : public std::runtime_error {
+public:
+    miniswift::Value value;
+    ReturnException(miniswift::Value val) : std::runtime_error("return"), value(val) {}
+};
+
 namespace miniswift {
 
 Interpreter::Interpreter() {
@@ -45,6 +52,9 @@ void Interpreter::visit(const PrintStmt& stmt) {
             break;
         case ValueType::Nil:
             std::cout << "nil" << std::endl;
+            break;
+        case ValueType::Function:
+            std::cout << "<function>" << std::endl;
             break;
     }
 }
@@ -343,6 +353,9 @@ void Interpreter::printValue(const Value& val) {
         case ValueType::Nil:
             std::cout << "nil";
             break;
+        case ValueType::Function:
+            std::cout << "<function>";
+            break;
     }
 }
 
@@ -419,6 +432,72 @@ void Interpreter::visit(const ForStmt& stmt) {
         // Restore previous environment even if exception occurs
         environment = previous;
         throw;
+    }
+    
+    // Restore previous environment
+    environment = previous;
+}
+
+// Execute function declaration: func name(parameters) -> ReturnType { body }
+void Interpreter::visit(const FunctionStmt& stmt) {
+    auto function = std::make_shared<Function>(&stmt, environment);
+    environment->define(stmt.name.lexeme, Value(function), false, "Function");
+}
+
+// Execute return statement: return expression?
+void Interpreter::visit(const ReturnStmt& stmt) {
+    Value value;
+    if (stmt.value) {
+        value = evaluate(*stmt.value);
+    }
+    throw ReturnException(value);
+}
+
+// Execute function call: callee(arguments)
+void Interpreter::visit(const Call& expr) {
+    Value callee = evaluate(*expr.callee);
+    
+    if (!callee.isFunction()) {
+        throw std::runtime_error("Can only call functions.");
+    }
+    
+    std::vector<Value> arguments;
+    for (const auto& argument : expr.arguments) {
+        arguments.push_back(evaluate(*argument));
+    }
+    
+    auto function = callee.asFunction();
+    
+    // Check arity
+    if (arguments.size() != function->declaration->parameters.size()) {
+        throw std::runtime_error("Expected " + 
+            std::to_string(function->declaration->parameters.size()) + 
+            " arguments but got " + std::to_string(arguments.size()) + ".");
+    }
+    
+    // Create new environment for function execution
+    auto previous = environment;
+    environment = std::make_shared<Environment>(function->closure);
+    
+    // Bind parameters
+    for (size_t i = 0; i < function->declaration->parameters.size(); ++i) {
+        environment->define(
+            function->declaration->parameters[i].name.lexeme,
+            arguments[i],
+            false, // parameters are not const
+            function->declaration->parameters[i].type.lexeme
+        );
+    }
+    
+    try {
+        // Execute function body
+        function->declaration->body->accept(*this);
+        
+        // If no return statement was executed, return nil
+        result = Value();
+    } catch (const ReturnException& returnValue) {
+        // Function returned a value
+        result = returnValue.value;
     }
     
     // Restore previous environment

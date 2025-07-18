@@ -31,6 +31,7 @@ static void initializeKeywords() {
   keywords["true"] = TokenType::True;
   keywords["false"] = TokenType::False;
   keywords["print"] = TokenType::Print;
+  keywords["return"] = TokenType::Return;
 }
 
 Lexer::Lexer(const std::string &source)
@@ -122,6 +123,8 @@ Token Lexer::scanToken() {
     }
     return {TokenType::Dot, ".", line};
   case '-':
+    if (match('>'))
+      return {TokenType::Arrow, "->", line};
     return {TokenType::Minus, "-", line};
   case '+':
     return {TokenType::Plus, "+", line};

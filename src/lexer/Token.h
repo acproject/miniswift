@@ -32,6 +32,7 @@ enum class TokenType {
   True,
   False,
   Print,
+  Return,
 
   // Operators
   Plus,
@@ -53,6 +54,7 @@ enum class TokenType {
   LessEllipsis,
   QuestionQuestion,
   QuestionDot,
+  Arrow, // ->
 
   // Punctuation
   LParen,

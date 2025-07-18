@@ -16,6 +16,11 @@ std::vector<std::unique_ptr<Stmt>> Parser::parse() {
 }
 
 std::vector<std::unique_ptr<Stmt>> Parser::declaration() {
+  if (match({TokenType::Func})) {
+    std::vector<std::unique_ptr<Stmt>> result;
+    result.push_back(functionDeclaration());
+    return result;
+  }
   if (match({TokenType::Var, TokenType::Let})) {
     bool isConst = previous().type == TokenType::Let;
     std::vector<Token> names;
@@ -67,6 +72,9 @@ std::unique_ptr<Stmt> Parser::statement() {
   }
   if (match({TokenType::For})) {
     return forStatement();
+  }
+  if (match({TokenType::Return})) {
+    return returnStatement();
   }
   return expressionStatement();
 }
@@ -152,7 +160,7 @@ std::unique_ptr<Expr> Parser::unary() {
     auto right = unary();
     return std::make_unique<Unary>(op, std::move(right));
   }
-  return primary();
+  return call();
 }
 
 std::unique_ptr<Expr> Parser::primary() {
@@ -439,6 +447,81 @@ std::unique_ptr<Stmt> Parser::forStatement() {
   
   return std::make_unique<ForStmt>(std::move(initializer), std::move(condition), 
                                    std::move(increment), std::move(body));
+}
+
+// Parse function declaration: func name(parameters) -> ReturnType { body }
+std::unique_ptr<Stmt> Parser::functionDeclaration() {
+  consume(TokenType::Identifier, "Expect function name.");
+  Token name = previous();
+  
+  consume(TokenType::LParen, "Expect '(' after function name.");
+  
+  std::vector<Parameter> parameters;
+  if (!check(TokenType::RParen)) {
+    do {
+      consume(TokenType::Identifier, "Expect parameter name.");
+      Token paramName = previous();
+      consume(TokenType::Colon, "Expect ':' after parameter name.");
+      Token paramType = parseType();
+      parameters.emplace_back(paramName, paramType);
+    } while (match({TokenType::Comma}));
+  }
+  
+  consume(TokenType::RParen, "Expect ')' after parameters.");
+  
+  Token returnType = Token(TokenType::Identifier, "Void", name.line);
+  if (match({TokenType::Arrow})) {
+    returnType = parseType();
+  }
+  
+  consume(TokenType::LBrace, "Expect '{' before function body.");
+  auto body = blockStatement();
+  
+  return std::make_unique<FunctionStmt>(name, std::move(parameters), returnType, std::move(body));
+}
+
+// Parse return statement: return expression?
+std::unique_ptr<Stmt> Parser::returnStatement() {
+  Token keyword = previous();
+  std::unique_ptr<Expr> value = nullptr;
+  
+  if (!check(TokenType::Semicolon) && !check(TokenType::RBrace)) {
+    value = expression();
+  }
+  
+  match({TokenType::Semicolon}); // Optional semicolon
+  return std::make_unique<ReturnStmt>(std::move(value));
+}
+
+// Parse function call: primary ( arguments )
+std::unique_ptr<Expr> Parser::call() {
+  auto expr = primary();
+  
+  while (true) {
+    if (match({TokenType::LParen})) {
+      expr = finishCall(std::move(expr));
+    } else if (match({TokenType::LSquare})) {
+      expr = indexAccess(std::move(expr));
+    } else {
+      break;
+    }
+  }
+  
+  return expr;
+}
+
+// Parse function call arguments
+std::unique_ptr<Expr> Parser::finishCall(std::unique_ptr<Expr> callee) {
+  std::vector<std::unique_ptr<Expr>> arguments;
+  
+  if (!check(TokenType::RParen)) {
+    do {
+      arguments.push_back(expression());
+    } while (match({TokenType::Comma}));
+  }
+  
+  consume(TokenType::RParen, "Expect ')' after arguments.");
+  return std::make_unique<Call>(std::move(callee), std::move(arguments));
 }
 
 } // namespace miniswift

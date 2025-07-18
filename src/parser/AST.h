@@ -17,6 +17,7 @@ struct Assign;
 struct ArrayLiteral;
 struct DictionaryLiteral;
 struct IndexAccess;
+struct Call;
 
 // Visitor interface for expressions
 class ExprVisitor {
@@ -31,6 +32,7 @@ public:
     virtual void visit(const ArrayLiteral& expr) = 0;
     virtual void visit(const DictionaryLiteral& expr) = 0;
     virtual void visit(const IndexAccess& expr) = 0;
+    virtual void visit(const Call& expr) = 0;
 };
 
 // Base class for all expression nodes
@@ -199,6 +201,27 @@ struct IndexAccess : Expr {
     const std::unique_ptr<Expr> index;
 };
 
+// Function call expression: functionName(arguments)
+struct Call : Expr {
+    Call(std::unique_ptr<Expr> callee, std::vector<std::unique_ptr<Expr>> arguments)
+        : callee(std::move(callee)), arguments(std::move(arguments)) {}
+
+    void accept(ExprVisitor& visitor) const override {
+        visitor.visit(*this);
+    }
+
+    std::unique_ptr<Expr> clone() const override {
+        std::vector<std::unique_ptr<Expr>> clonedArguments;
+        for (const auto& arg : arguments) {
+            clonedArguments.push_back(arg->clone());
+        }
+        return std::make_unique<Call>(callee->clone(), std::move(clonedArguments));
+    }
+
+    const std::unique_ptr<Expr> callee;
+    const std::vector<std::unique_ptr<Expr>> arguments;
+};
+
 // Forward declarations for Stmt
 struct ExprStmt;
 struct PrintStmt; // For testing
@@ -207,6 +230,8 @@ struct BlockStmt;
 struct IfStmt;
 struct WhileStmt;
 struct ForStmt;
+struct FunctionStmt;
+struct ReturnStmt;
 
 // Visitor for Stmt
 class StmtVisitor {
@@ -219,6 +244,8 @@ public:
     virtual void visit(const IfStmt& stmt) = 0;
     virtual void visit(const WhileStmt& stmt) = 0;
     virtual void visit(const ForStmt& stmt) = 0;
+    virtual void visit(const FunctionStmt& stmt) = 0;
+    virtual void visit(const ReturnStmt& stmt) = 0;
 };
 
 // Base class for Stmt
@@ -319,6 +346,41 @@ struct ForStmt : Stmt {
     const std::unique_ptr<Expr> condition;   // Can be null
     const std::unique_ptr<Expr> increment;   // Can be null
     const std::unique_ptr<Stmt> body;
+};
+
+// Function parameter
+struct Parameter {
+    Token name;
+    Token type; // Can be empty for type inference
+    
+    Parameter(Token n, Token t) : name(n), type(t) {}
+};
+
+// Function declaration: func name(parameters) -> returnType { body }
+struct FunctionStmt : Stmt {
+    FunctionStmt(Token name, std::vector<Parameter> parameters, Token returnType, std::unique_ptr<Stmt> body)
+        : name(name), parameters(std::move(parameters)), returnType(returnType), body(std::move(body)) {}
+
+    void accept(StmtVisitor& visitor) const override {
+        visitor.visit(*this);
+    }
+
+    const Token name;
+    const std::vector<Parameter> parameters;
+    const Token returnType; // Can be empty for Void
+    const std::unique_ptr<Stmt> body;
+};
+
+// Return statement: return expression
+struct ReturnStmt : Stmt {
+    explicit ReturnStmt(std::unique_ptr<Expr> value)
+        : value(std::move(value)) {}
+
+    void accept(StmtVisitor& visitor) const override {
+        visitor.visit(*this);
+    }
+
+    const std::unique_ptr<Expr> value; // Can be null for void return
 };
 
 } // namespace miniswift

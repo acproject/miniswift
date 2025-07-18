@@ -1,2 +1,5 @@
-var x: Int = 5;
-print(x);
+struct Person {
+    var name: String
+}
+let p = Person(name: "John")
+print(p.name)

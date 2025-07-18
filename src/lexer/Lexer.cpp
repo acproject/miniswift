@@ -1,5 +1,6 @@
 #include "Lexer.h"
 #include <unordered_map>
+#include <iostream>
 
 namespace miniswift {
 
@@ -347,8 +348,11 @@ Token Lexer::identifier() {
   }
 
   std::string text = source.substr(start, current - start);
+  std::cout << "Lexer found identifier: " << text << std::endl;
+  
   auto it = keywords.find(text);
   if (it != keywords.end()) {
+    std::cout << "Recognized as keyword: " << static_cast<int>(it->second) << std::endl;
     return {it->second, text, line};
   }
 

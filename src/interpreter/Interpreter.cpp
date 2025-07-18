@@ -13,10 +13,12 @@ public:
 namespace miniswift {
 
 Interpreter::Interpreter() {
-    environment = std::make_shared<Environment>();
+    globals = std::make_shared<Environment>();
+    environment = globals;
 }
 
 void Interpreter::interpret(const std::vector<std::unique_ptr<Stmt>>& statements) {
+    std::cout << "Starting interpretation with " << statements.size() << " statements" << std::endl;
     try {
         for (const auto& statement : statements) {
             statement->accept(*this);
@@ -738,7 +740,13 @@ void Interpreter::visit(const StructStmt& stmt) {
     // Register struct properties
     registerStructProperties(stmt.name.lexeme, stmt.members);
     
-    // Registered struct with property system
+    // Debug: Check if property manager was created
+    auto* propManager = getStructPropertyManager(stmt.name.lexeme);
+    if (propManager) {
+        std::cout << "Property manager created for struct: " << stmt.name.lexeme << std::endl;
+    } else {
+        std::cout << "Failed to create property manager for struct: " << stmt.name.lexeme << std::endl;
+    }
     
     // Store struct definition in environment for later use
     environment->define(stmt.name.lexeme, Value(), false, "Struct");
@@ -748,6 +756,8 @@ void Interpreter::visit(const StructStmt& stmt) {
 void Interpreter::visit(const ClassStmt& stmt) {
     // Register class properties
     registerClassProperties(stmt.name.lexeme, stmt.members);
+    
+
     
     // Store class definition in environment for later use
     environment->define(stmt.name.lexeme, Value(), false, "Class");
@@ -763,6 +773,14 @@ void Interpreter::visit(const MemberAccess& expr) {
 void Interpreter::visit(const StructInit& expr) {
     // Get property manager for this struct
     auto* propManager = getStructPropertyManager(expr.structName.lexeme);
+    
+    // Debug: Check property manager status
+    std::cout << "StructInit for: " << expr.structName.lexeme << std::endl;
+    if (propManager) {
+        std::cout << "Property manager found, properties count: " << propManager->getAllProperties().size() << std::endl;
+    } else {
+        std::cout << "No property manager found" << std::endl;
+    }
     
     // Create struct with property system if available
     
@@ -894,6 +912,8 @@ void Interpreter::registerClassProperties(const std::string& className, const st
     classPropertyManagers[className] = std::move(propManager);
 }
 
+
+
 Value Interpreter::getMemberValue(const Value& object, const std::string& memberName) {
     if (object.isStruct()) {
         const auto& structValue = object.asStruct();
@@ -902,6 +922,8 @@ Value Interpreter::getMemberValue(const Value& object, const std::string& member
         if (structValue.properties && structValue.properties->hasProperty(memberName)) {
             return structValue.properties->getProperty(*this, memberName);
         }
+        
+
         
         // Fallback to legacy member access
         auto it = structValue.members->find(memberName);
@@ -917,6 +939,8 @@ Value Interpreter::getMemberValue(const Value& object, const std::string& member
         if (classValue->properties && classValue->properties->hasProperty(memberName)) {
             return classValue->properties->getProperty(*this, memberName);
         }
+        
+
         
         // Fallback to legacy member access
         auto it = classValue->members->find(memberName);

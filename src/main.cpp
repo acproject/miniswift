@@ -3,9 +3,9 @@
 #include <sstream>
 #include "lexer/Lexer.h"
 #include "parser/Parser.h"
-#include "interpreter/Interpreter.h"
+#include "interpreter/OOP/MethodInterpreter.h"
 
-static miniswift::Interpreter interpreter;
+static miniswift::MethodInterpreter interpreter;
 bool hadError = false;
 
 void run(const std::string& source) {
@@ -42,7 +42,8 @@ void runFile(const std::string& path) {
     }
     std::stringstream buffer;
     buffer << file.rdbuf();
-    run(buffer.str());
+    std::string content = buffer.str();
+    run(content);
 }
 
 int main(int argc, char* argv[]) {

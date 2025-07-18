@@ -13,6 +13,7 @@ namespace miniswift {
 class Interpreter : public ExprVisitor, public StmtVisitor {
 public:
     Interpreter();
+    virtual ~Interpreter() = default;
 public:
     void interpret(const std::vector<std::unique_ptr<Stmt>>& statements);
 
@@ -49,12 +50,17 @@ public:
     Value evaluate(const Expr& expr);
     void executeWithEnvironment(const Stmt& stmt, std::shared_ptr<Environment> env);
     
-private:
+protected:
     std::shared_ptr<Environment> environment;
+    std::shared_ptr<Environment> globals;
+    
+private:
     
     // Property managers for types
     std::unordered_map<std::string, std::unique_ptr<PropertyManager>> structPropertyManagers;
     std::unordered_map<std::string, std::unique_ptr<PropertyManager>> classPropertyManagers;
+    
+
     
     bool isTruthy(const Value& value);
     void printArray(const Array& arr);
@@ -67,8 +73,10 @@ private:
     void registerStructProperties(const std::string& structName, const std::vector<StructMember>& members);
     void registerClassProperties(const std::string& className, const std::vector<StructMember>& members);
     
+
+    
     // Enhanced member access with property support
-    Value getMemberValue(const Value& object, const std::string& memberName);
+    virtual Value getMemberValue(const Value& object, const std::string& memberName);
     void setMemberValue(Value& object, const std::string& memberName, const Value& value);
 
     Value result;

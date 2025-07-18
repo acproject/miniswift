@@ -26,3 +26,5 @@ test_simple_interpolation
 test_string_edge_cases
 test_string_print
 miniswift
+.cache/
+.cache/**

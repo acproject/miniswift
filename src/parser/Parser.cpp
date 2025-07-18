@@ -670,6 +670,8 @@ std::unique_ptr<Stmt> Parser::structDeclaration() {
   consume(TokenType::Identifier, "Expect struct name.");
   Token name = previous();
   
+  std::cout << "Parsing struct: " << name.lexeme << std::endl;
+  
   consume(TokenType::LBrace, "Expect '{' after struct name.");
   
   std::vector<StructMember> members;

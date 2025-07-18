@@ -37,6 +37,7 @@ private:
     std::unique_ptr<Expr> arrayLiteral();
     std::unique_ptr<Expr> dictionaryLiteral();
     std::unique_ptr<Expr> indexAccess(std::unique_ptr<Expr> object);
+    std::unique_ptr<Expr> closure();
 
     bool match(const std::vector<TokenType>& types);
     bool check(TokenType type);

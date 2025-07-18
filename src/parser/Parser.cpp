@@ -1,5 +1,6 @@
 #include "Parser.h"
 #include <stdexcept>
+#include <iostream>
 
 namespace miniswift {
 
@@ -42,9 +43,16 @@ std::vector<std::unique_ptr<Stmt>> Parser::declaration() {
       initializer = expression();
     }
 
-    for (const auto &name : names) {
+    if (names.size() == 1) {
+      // For single variable declaration, use the original initializer
       statements.push_back(std::make_unique<VarStmt>(
-          name, initializer ? initializer->clone() : nullptr, isConst, type));
+          names[0], std::move(initializer), isConst, type));
+    } else {
+      // For multiple variable declarations, clone the initializer
+      for (const auto &name : names) {
+        statements.push_back(std::make_unique<VarStmt>(
+            name, initializer ? initializer->clone() : nullptr, isConst, type));
+      }
     }
 
     match({TokenType::Semicolon}); // Optional semicolon
@@ -189,6 +197,11 @@ std::unique_ptr<Expr> Parser::primary() {
   // Array or dictionary literal
   if (match({TokenType::LSquare})) {
     return arrayLiteral();
+  }
+
+  // Closure literal: { (parameters) -> ReturnType in body }
+  if (match({TokenType::LBrace})) {
+    return closure();
   }
 
   if (match({TokenType::Identifier})) {
@@ -522,6 +535,44 @@ std::unique_ptr<Expr> Parser::finishCall(std::unique_ptr<Expr> callee) {
   
   consume(TokenType::RParen, "Expect ')' after arguments.");
   return std::make_unique<Call>(std::move(callee), std::move(arguments));
+}
+
+// Parse closure: { (parameters) -> ReturnType in body }
+std::unique_ptr<Expr> Parser::closure() {
+  // We've already consumed the '{'
+  std::vector<Parameter> parameters;
+  Token returnType = Token(TokenType::Identifier, "Void", peek().line);
+  
+  // Check if this starts with parameters: (param1: Type, param2: Type)
+  if (match({TokenType::LParen})) {
+    if (!check(TokenType::RParen)) {
+      do {
+        consume(TokenType::Identifier, "Expect parameter name.");
+        Token paramName = previous();
+        consume(TokenType::Colon, "Expect ':' after parameter name.");
+        Token paramType = parseType();
+        parameters.emplace_back(paramName, paramType);
+      } while (match({TokenType::Comma}));
+    }
+    consume(TokenType::RParen, "Expect ')' after parameters.");
+    
+    // Optional return type: -> ReturnType
+    if (match({TokenType::Arrow})) {
+      returnType = parseType();
+    }
+    
+    // Expect 'in' keyword
+    consume(TokenType::In, "Expect 'in' after closure signature.");
+  }
+  
+  // Parse closure body (statements until '}')
+  std::vector<std::unique_ptr<Stmt>> body;
+  while (!check(TokenType::RBrace) && !isAtEnd()) {
+    body.push_back(statement());
+  }
+  
+  consume(TokenType::RBrace, "Expect '}' after closure body.");
+  return std::make_unique<Closure>(std::move(parameters), returnType, std::move(body));
 }
 
 } // namespace miniswift

@@ -18,6 +18,7 @@ struct ArrayLiteral;
 struct DictionaryLiteral;
 struct IndexAccess;
 struct Call;
+struct Closure;
 
 // Visitor interface for expressions
 class ExprVisitor {
@@ -33,6 +34,7 @@ public:
     virtual void visit(const DictionaryLiteral& expr) = 0;
     virtual void visit(const IndexAccess& expr) = 0;
     virtual void visit(const Call& expr) = 0;
+    virtual void visit(const Closure& expr) = 0;
 };
 
 // Base class for all expression nodes
@@ -222,7 +224,10 @@ struct Call : Expr {
     const std::vector<std::unique_ptr<Expr>> arguments;
 };
 
-// Forward declarations for Stmt
+
+
+// Forward declarations
+struct Parameter;
 struct ExprStmt;
 struct PrintStmt; // For testing
 struct VarStmt;
@@ -354,6 +359,29 @@ struct Parameter {
     Token type; // Can be empty for type inference
     
     Parameter(Token n, Token t) : name(n), type(t) {}
+};
+
+// Closure expression: { (parameters) -> ReturnType in body }
+struct Closure : Expr {
+    Closure(std::vector<Parameter> parameters, Token returnType, std::vector<std::unique_ptr<Stmt>> body)
+        : parameters(std::move(parameters)), returnType(returnType), body(std::move(body)) {}
+
+    void accept(ExprVisitor& visitor) const override {
+        visitor.visit(*this);
+    }
+
+    std::unique_ptr<Expr> clone() const override {
+        // For now, we'll create a shallow copy that shares the same body
+        // This is a temporary solution until we implement proper Stmt cloning
+        std::vector<std::unique_ptr<Stmt>> clonedBody;
+        // We can't clone statements easily, so we'll avoid cloning closures for now
+        // This is a limitation that should be addressed in a full implementation
+        return std::make_unique<Closure>(parameters, returnType, std::move(clonedBody));
+    }
+
+    const std::vector<Parameter> parameters;
+    const Token returnType; // Can be empty for type inference
+    const std::vector<std::unique_ptr<Stmt>> body;
 };
 
 // Function declaration: func name(parameters) -> returnType { body }

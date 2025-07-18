@@ -54,7 +54,11 @@ void Interpreter::visit(const PrintStmt& stmt) {
             std::cout << "nil" << std::endl;
             break;
         case ValueType::Function:
-            std::cout << "<function>" << std::endl;
+            if (val.isClosure()) {
+                std::cout << "<closure>" << std::endl;
+            } else {
+                std::cout << "<function>" << std::endl;
+            }
             break;
     }
 }
@@ -354,7 +358,11 @@ void Interpreter::printValue(const Value& val) {
             std::cout << "nil";
             break;
         case ValueType::Function:
-            std::cout << "<function>";
+            if (val.isClosure()) {
+                std::cout << "<closure>";
+            } else {
+                std::cout << "<function>";
+            }
             break;
     }
 }
@@ -458,7 +466,7 @@ void Interpreter::visit(const Call& expr) {
     Value callee = evaluate(*expr.callee);
     
     if (!callee.isFunction()) {
-        throw std::runtime_error("Can only call functions.");
+        throw std::runtime_error("Can only call functions and closures.");
     }
     
     std::vector<Value> arguments;
@@ -466,42 +474,87 @@ void Interpreter::visit(const Call& expr) {
         arguments.push_back(evaluate(*argument));
     }
     
-    auto function = callee.asFunction();
+    auto callable = callee.asFunction();
     
-    // Check arity
-    if (arguments.size() != function->declaration->parameters.size()) {
-        throw std::runtime_error("Expected " + 
-            std::to_string(function->declaration->parameters.size()) + 
-            " arguments but got " + std::to_string(arguments.size()) + ".");
-    }
-    
-    // Create new environment for function execution
-    auto previous = environment;
-    environment = std::make_shared<Environment>(function->closure);
-    
-    // Bind parameters
-    for (size_t i = 0; i < function->declaration->parameters.size(); ++i) {
-        environment->define(
-            function->declaration->parameters[i].name.lexeme,
-            arguments[i],
-            false, // parameters are not const
-            function->declaration->parameters[i].type.lexeme
-        );
-    }
-    
-    try {
-        // Execute function body
-        function->declaration->body->accept(*this);
+    if (callable->isFunction) {
+        // Handle function call
+        if (arguments.size() != callable->functionDecl->parameters.size()) {
+            throw std::runtime_error("Expected " + 
+                std::to_string(callable->functionDecl->parameters.size()) + 
+                " arguments but got " + std::to_string(arguments.size()) + ".");
+        }
         
-        // If no return statement was executed, return nil
-        result = Value();
-    } catch (const ReturnException& returnValue) {
-        // Function returned a value
-        result = returnValue.value;
+        // Create new environment for function execution
+        auto previous = environment;
+        environment = std::make_shared<Environment>(callable->closure);
+        
+        // Bind parameters
+        for (size_t i = 0; i < callable->functionDecl->parameters.size(); ++i) {
+            environment->define(
+                callable->functionDecl->parameters[i].name.lexeme,
+                arguments[i],
+                false, // parameters are not const
+                callable->functionDecl->parameters[i].type.lexeme
+            );
+        }
+        
+        try {
+            // Execute function body
+            callable->functionDecl->body->accept(*this);
+            
+            // If no return statement was executed, return nil
+            result = Value();
+        } catch (const ReturnException& returnValue) {
+            // Function returned a value
+            result = returnValue.value;
+        }
+        
+        // Restore previous environment
+        environment = previous;
+    } else {
+        // Handle closure call
+        if (arguments.size() != callable->closureDecl->parameters.size()) {
+            throw std::runtime_error("Expected " + 
+                std::to_string(callable->closureDecl->parameters.size()) + 
+                " arguments but got " + std::to_string(arguments.size()) + ".");
+        }
+        
+        // Create new environment for closure execution
+        auto previous = environment;
+        environment = std::make_shared<Environment>(callable->closure);
+        
+        // Bind parameters
+        for (size_t i = 0; i < callable->closureDecl->parameters.size(); ++i) {
+            environment->define(
+                callable->closureDecl->parameters[i].name.lexeme,
+                arguments[i],
+                false, // parameters are not const
+                callable->closureDecl->parameters[i].type.lexeme
+            );
+        }
+        
+        try {
+            // Execute closure body
+            for (const auto& statement : callable->closureDecl->body) {
+                statement->accept(*this);
+            }
+            
+            // If no return statement was executed, return nil
+            result = Value();
+        } catch (const ReturnException& returnValue) {
+            // Closure returned a value
+            result = returnValue.value;
+        }
+        
+        // Restore previous environment
+        environment = previous;
     }
-    
-    // Restore previous environment
-    environment = previous;
+}
+
+// Execute closure expression: { (parameters) -> ReturnType in body }
+void Interpreter::visit(const Closure& expr) {
+    auto closure = std::make_shared<Function>(&expr, environment);
+    result = Value(closure);
 }
 
 } // namespace miniswift

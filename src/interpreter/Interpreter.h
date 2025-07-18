@@ -34,6 +34,7 @@ public:
     void visit(const DictionaryLiteral& expr) override;
     void visit(const IndexAccess& expr) override;
     void visit(const Call& expr) override;
+    void visit(const Closure& expr) override;
 
 private:
     std::shared_ptr<Environment> environment;

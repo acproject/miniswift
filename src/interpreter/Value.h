@@ -12,20 +12,31 @@ namespace miniswift {
 // Forward declarations
 struct Value;
 struct FunctionStmt;
+struct Closure;
 class Environment;
 
 // Collection types
 using Array = std::vector<Value>;
 using Dictionary = std::unordered_map<std::string, Value>;
 
-// Function type
-struct Function {
-    const FunctionStmt* declaration;
+// Callable type (for both functions and closures)
+struct Callable {
+    const FunctionStmt* functionDecl;
+    const Closure* closureDecl;
     std::shared_ptr<Environment> closure;
+    bool isFunction;
     
-    Function(const FunctionStmt* decl, std::shared_ptr<Environment> env)
-        : declaration(decl), closure(env) {}
+    // Constructor for function
+    Callable(const FunctionStmt* decl, std::shared_ptr<Environment> env)
+        : functionDecl(decl), closureDecl(nullptr), closure(env), isFunction(true) {}
+    
+    // Constructor for closure
+    Callable(const Closure* decl, std::shared_ptr<Environment> env)
+        : functionDecl(nullptr), closureDecl(decl), closure(env), isFunction(false) {}
 };
+
+// Keep Function as alias for backward compatibility
+using Function = Callable;
 
 enum class ValueType {
     Nil,
@@ -55,6 +66,11 @@ struct Value {
     bool isArray() const { return type == ValueType::Array; }
     bool isDictionary() const { return type == ValueType::Dictionary; }
     bool isFunction() const { return type == ValueType::Function; }
+    bool isClosure() const { 
+        if (type != ValueType::Function) return false;
+        auto func = std::get<std::shared_ptr<Function>>(value);
+        return func && !func->isFunction;
+    }
     
     Array& asArray() { return std::get<Array>(value); }
     const Array& asArray() const { return std::get<Array>(value); }
@@ -64,6 +80,9 @@ struct Value {
     
     std::shared_ptr<Function>& asFunction() { return std::get<std::shared_ptr<Function>>(value); }
     const std::shared_ptr<Function>& asFunction() const { return std::get<std::shared_ptr<Function>>(value); }
+    
+    std::shared_ptr<Function>& asClosure() { return std::get<std::shared_ptr<Function>>(value); }
+    const std::shared_ptr<Function>& asClosure() const { return std::get<std::shared_ptr<Function>>(value); }
     
     // Comparison operators
     bool operator==(const Value& other) const {

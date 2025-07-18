@@ -1,0 +1,19 @@
+# CMake build files
+build/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# other
+docs/
+other_project/
+
+# Visual Studio files
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+
+# Other
+*.DS_Store

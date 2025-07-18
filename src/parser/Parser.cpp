@@ -22,6 +22,11 @@ std::vector<std::unique_ptr<Stmt>> Parser::declaration() {
     result.push_back(functionDeclaration());
     return result;
   }
+  if (match({TokenType::Enum})) {
+    std::vector<std::unique_ptr<Stmt>> result;
+    result.push_back(enumDeclaration());
+    return result;
+  }
   if (match({TokenType::Var, TokenType::Let})) {
     bool isConst = previous().type == TokenType::Let;
     std::vector<Token> names;
@@ -515,6 +520,23 @@ std::unique_ptr<Expr> Parser::call() {
       expr = finishCall(std::move(expr));
     } else if (match({TokenType::LSquare})) {
       expr = indexAccess(std::move(expr));
+    } else if (match({TokenType::Dot})) {
+      // Enum member access: EnumType.caseName or EnumType.caseName(arguments)
+      consume(TokenType::Identifier, "Expect enum case name after '.'.");
+      Token caseName = previous();
+      
+      std::vector<std::unique_ptr<Expr>> arguments;
+      if (match({TokenType::LParen})) {
+        // Associated values: EnumType.caseName(arg1, arg2)
+        if (!check(TokenType::RParen)) {
+          do {
+            arguments.push_back(expression());
+          } while (match({TokenType::Comma}));
+        }
+        consume(TokenType::RParen, "Expect ')' after enum case arguments.");
+      }
+      
+      expr = std::make_unique<EnumAccess>(std::move(expr), caseName, std::move(arguments));
     } else {
       break;
     }
@@ -573,6 +595,55 @@ std::unique_ptr<Expr> Parser::closure() {
   
   consume(TokenType::RBrace, "Expect '}' after closure body.");
   return std::make_unique<Closure>(std::move(parameters), returnType, std::move(body));
+}
+
+// Parse enum declaration: enum Name: RawType { case1, case2(AssociatedType), case3 = rawValue }
+std::unique_ptr<Stmt> Parser::enumDeclaration() {
+  consume(TokenType::Identifier, "Expect enum name.");
+  Token name = previous();
+  
+  Token rawType = Token(TokenType::Nil, "", name.line);
+  if (match({TokenType::Colon})) {
+    rawType = parseType();
+  }
+  
+  consume(TokenType::LBrace, "Expect '{' after enum name.");
+  
+  std::vector<EnumCase> cases;
+  while (!check(TokenType::RBrace) && !isAtEnd()) {
+    consume(TokenType::Case, "Expect 'case' in enum declaration.");
+    
+    do {
+      consume(TokenType::Identifier, "Expect case name.");
+      Token caseName = previous();
+      
+      std::vector<Token> associatedTypes;
+      std::unique_ptr<Expr> rawValue = nullptr;
+      
+      // Check for associated values: case name(Type1, Type2)
+      if (match({TokenType::LParen})) {
+        if (!check(TokenType::RParen)) {
+          do {
+            Token associatedType = parseType();
+            associatedTypes.push_back(associatedType);
+          } while (match({TokenType::Comma}));
+        }
+        consume(TokenType::RParen, "Expect ')' after associated types.");
+      }
+      // Check for raw value: case name = value
+      else if (match({TokenType::Equal})) {
+        rawValue = expression();
+      }
+      
+      cases.emplace_back(caseName, std::move(associatedTypes), std::move(rawValue));
+    } while (match({TokenType::Comma}));
+    
+    // Optional semicolon or newline
+    match({TokenType::Semicolon});
+  }
+  
+  consume(TokenType::RBrace, "Expect '}' after enum cases.");
+  return std::make_unique<EnumStmt>(name, rawType, std::move(cases));
 }
 
 } // namespace miniswift

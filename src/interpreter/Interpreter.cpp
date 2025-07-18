@@ -60,6 +60,20 @@ void Interpreter::visit(const PrintStmt& stmt) {
                 std::cout << "<function>" << std::endl;
             }
             break;
+        case ValueType::Enum: {
+            const auto& enumVal = val.asEnum();
+            std::cout << enumVal.enumName << "." << enumVal.caseName;
+            if (!enumVal.associatedValues.empty()) {
+                std::cout << "(";
+                for (size_t i = 0; i < enumVal.associatedValues.size(); ++i) {
+                    if (i > 0) std::cout << ", ";
+                    printValue(enumVal.associatedValues[i]);
+                }
+                std::cout << ")";
+            }
+            std::cout << std::endl;
+            break;
+        }
     }
 }
 
@@ -364,6 +378,19 @@ void Interpreter::printValue(const Value& val) {
                 std::cout << "<function>";
             }
             break;
+        case ValueType::Enum: {
+            const auto& enumVal = val.asEnum();
+            std::cout << enumVal.enumName << "." << enumVal.caseName;
+            if (!enumVal.associatedValues.empty()) {
+                std::cout << "(";
+                for (size_t i = 0; i < enumVal.associatedValues.size(); ++i) {
+                    if (i > 0) std::cout << ", ";
+                    printValue(enumVal.associatedValues[i]);
+                }
+                std::cout << ")";
+            }
+            break;
+        }
     }
 }
 
@@ -555,6 +582,39 @@ void Interpreter::visit(const Call& expr) {
 void Interpreter::visit(const Closure& expr) {
     auto closure = std::make_shared<Function>(&expr, environment);
     result = Value(closure);
+}
+
+// Execute enum declaration: enum Name: RawType { cases }
+void Interpreter::visit(const EnumStmt& stmt) {
+    // Store enum definition in environment for later use
+    // For now, we'll store the enum name as a special marker
+    environment->define(stmt.name.lexeme, Value(), false, "Enum");
+}
+
+// Execute enum access: EnumType.caseName or EnumType.caseName(arguments)
+void Interpreter::visit(const EnumAccess& expr) {
+    // Get the enum type name from the expression
+    std::string enumTypeName;
+    if (expr.enumType) {
+        if (auto varExpr = dynamic_cast<const VarExpr*>(expr.enumType.get())) {
+            enumTypeName = varExpr->name.lexeme;
+        } else {
+            throw std::runtime_error("Invalid enum access expression");
+        }
+    } else {
+        // Handle shorthand .caseName syntax - would need context to determine enum type
+        throw std::runtime_error("Shorthand enum access not yet supported");
+    }
+    
+    // Evaluate associated values if any
+    std::vector<Value> associatedValues;
+    for (const auto& arg : expr.arguments) {
+        associatedValues.push_back(evaluate(*arg));
+    }
+    
+    // Create enum value
+    EnumValue enumValue(enumTypeName, expr.caseName.lexeme, std::move(associatedValues));
+    result = Value(enumValue);
 }
 
 } // namespace miniswift

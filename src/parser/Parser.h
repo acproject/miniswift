@@ -16,6 +16,7 @@ public:
 private:
     std::vector<std::unique_ptr<Stmt>> declaration();
     std::unique_ptr<Stmt> functionDeclaration();
+    std::unique_ptr<Stmt> enumDeclaration();
     std::unique_ptr<Stmt> statement();
     std::unique_ptr<Stmt> printStatement();
     std::unique_ptr<Stmt> expressionStatement();

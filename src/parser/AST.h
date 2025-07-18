@@ -19,6 +19,7 @@ struct DictionaryLiteral;
 struct IndexAccess;
 struct Call;
 struct Closure;
+struct EnumAccess;
 
 // Visitor interface for expressions
 class ExprVisitor {
@@ -35,6 +36,7 @@ public:
     virtual void visit(const IndexAccess& expr) = 0;
     virtual void visit(const Call& expr) = 0;
     virtual void visit(const Closure& expr) = 0;
+    virtual void visit(const EnumAccess& expr) = 0;
 };
 
 // Base class for all expression nodes
@@ -237,6 +239,7 @@ struct WhileStmt;
 struct ForStmt;
 struct FunctionStmt;
 struct ReturnStmt;
+struct EnumStmt;
 
 // Visitor for Stmt
 class StmtVisitor {
@@ -251,6 +254,7 @@ public:
     virtual void visit(const ForStmt& stmt) = 0;
     virtual void visit(const FunctionStmt& stmt) = 0;
     virtual void visit(const ReturnStmt& stmt) = 0;
+    virtual void visit(const EnumStmt& stmt) = 0;
 };
 
 // Base class for Stmt
@@ -409,6 +413,54 @@ struct ReturnStmt : Stmt {
     }
 
     const std::unique_ptr<Expr> value; // Can be null for void return
+};
+
+// Enum case definition
+struct EnumCase {
+    Token name;
+    std::vector<Token> associatedTypes; // For associated values like case upc(Int, Int, Int, Int)
+    std::unique_ptr<Expr> rawValue; // For raw values like case mercury = 1
+    
+    EnumCase(Token n, std::vector<Token> types = {}, std::unique_ptr<Expr> value = nullptr)
+        : name(n), associatedTypes(std::move(types)), rawValue(std::move(value)) {}
+};
+
+// Enum declaration: enum Name: RawType { cases }
+struct EnumStmt : Stmt {
+    EnumStmt(Token name, Token rawType, std::vector<EnumCase> cases)
+        : name(name), rawType(rawType), cases(std::move(cases)) {}
+
+    void accept(StmtVisitor& visitor) const override {
+        visitor.visit(*this);
+    }
+
+    const Token name;
+    const Token rawType; // Can be empty for no raw type
+    const std::vector<EnumCase> cases;
+};
+
+// Enum case access expression: EnumName.caseName or .caseName
+struct EnumAccess : Expr {
+    std::unique_ptr<Expr> enumType;
+    Token caseName;
+    std::vector<std::unique_ptr<Expr>> arguments;
+    
+    EnumAccess(std::unique_ptr<Expr> enumType, Token caseName, std::vector<std::unique_ptr<Expr>> arguments = {})
+        : enumType(std::move(enumType)), caseName(caseName), arguments(std::move(arguments)) {}
+
+    void accept(ExprVisitor& visitor) const override {
+        visitor.visit(*this);
+    }
+
+    std::unique_ptr<Expr> clone() const override {
+        std::vector<std::unique_ptr<Expr>> clonedValues;
+        for (const auto& value : arguments) {
+            clonedValues.push_back(value->clone());
+        }
+        return std::make_unique<EnumAccess>(enumType ? enumType->clone() : nullptr, caseName, std::move(clonedValues));
+    }
+
+    
 };
 
 } // namespace miniswift

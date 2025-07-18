@@ -23,6 +23,7 @@ public:
     void visit(const ForStmt& stmt) override;
     void visit(const FunctionStmt& stmt) override;
     void visit(const ReturnStmt& stmt) override;
+    void visit(const EnumStmt& stmt) override;
 
     void visit(const Binary& expr) override;
     void visit(const Grouping& expr) override;
@@ -35,6 +36,7 @@ public:
     void visit(const IndexAccess& expr) override;
     void visit(const Call& expr) override;
     void visit(const Closure& expr) override;
+    void visit(const EnumAccess& expr) override;
 
 private:
     std::shared_ptr<Environment> environment;

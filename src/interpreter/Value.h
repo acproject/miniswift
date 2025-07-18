@@ -19,6 +19,27 @@ class Environment;
 using Array = std::vector<Value>;
 using Dictionary = std::unordered_map<std::string, Value>;
 
+// Enum value type
+struct EnumValue {
+    std::string enumName;
+    std::string caseName;
+    std::vector<Value> associatedValues;
+    
+    EnumValue(const std::string& enumName, const std::string& caseName)
+        : enumName(enumName), caseName(caseName) {}
+    
+    EnumValue(const std::string& enumName, const std::string& caseName, std::vector<Value> values)
+        : enumName(enumName), caseName(caseName), associatedValues(std::move(values)) {}
+    
+    bool operator==(const EnumValue& other) const {
+        return enumName == other.enumName && caseName == other.caseName && associatedValues == other.associatedValues;
+    }
+    
+    bool operator!=(const EnumValue& other) const {
+        return !(*this == other);
+    }
+};
+
 // Callable type (for both functions and closures)
 struct Callable {
     const FunctionStmt* functionDecl;
@@ -46,12 +67,13 @@ enum class ValueType {
     String,
     Array,
     Dictionary,
-    Function
+    Function,
+    Enum
 };
 
 struct Value {
     ValueType type;
-    std::variant<std::monostate, bool, int, double, std::string, Array, Dictionary, std::shared_ptr<Function>> value;
+    std::variant<std::monostate, bool, int, double, std::string, Array, Dictionary, std::shared_ptr<Function>, EnumValue> value;
 
     Value() : type(ValueType::Nil), value(std::monostate{}) {}
     Value(bool v) : type(ValueType::Bool), value(v) {}
@@ -61,11 +83,13 @@ struct Value {
     Value(Array v) : type(ValueType::Array), value(v) {}
     Value(Dictionary v) : type(ValueType::Dictionary), value(v) {}
     Value(std::shared_ptr<Function> v) : type(ValueType::Function), value(v) {}
+    Value(EnumValue v) : type(ValueType::Enum), value(v) {}
     
     // Helper methods for collections and functions
     bool isArray() const { return type == ValueType::Array; }
     bool isDictionary() const { return type == ValueType::Dictionary; }
     bool isFunction() const { return type == ValueType::Function; }
+    bool isEnum() const { return type == ValueType::Enum; }
     bool isClosure() const { 
         if (type != ValueType::Function) return false;
         auto func = std::get<std::shared_ptr<Function>>(value);
@@ -83,6 +107,9 @@ struct Value {
     
     std::shared_ptr<Function>& asClosure() { return std::get<std::shared_ptr<Function>>(value); }
     const std::shared_ptr<Function>& asClosure() const { return std::get<std::shared_ptr<Function>>(value); }
+    
+    EnumValue& asEnum() { return std::get<EnumValue>(value); }
+    const EnumValue& asEnum() const { return std::get<EnumValue>(value); }
     
     // Comparison operators
     bool operator==(const Value& other) const {

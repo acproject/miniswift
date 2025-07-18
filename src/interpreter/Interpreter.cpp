@@ -1,4 +1,5 @@
 #include "Interpreter.h"
+#include "OOP/Property.h"
 #include <stdexcept>
 #include <iostream>
 
@@ -124,16 +125,58 @@ void Interpreter::visit(const Assign& expr) {
         environment->assign(varExpr->name, value);
     } else if (auto memberAccess = dynamic_cast<const MemberAccess*>(expr.target.get())) {
         // Member access assignment: object.member = value
-        Value object = evaluate(*memberAccess->object);
-        
-        if (object.isStruct()) {
-            auto& structValue = object.asStruct();
-            (*structValue.members)[memberAccess->member.lexeme] = value;
-        } else if (object.isClass()) {
-            auto& classValue = object.asClass();
-            (*classValue->members)[memberAccess->member.lexeme] = value;
+        // For simple variable access, modify the original variable directly
+        if (auto varExpr = dynamic_cast<const VarExpr*>(memberAccess->object.get())) {
+            // Get reference to the original variable in environment
+            Token varName = varExpr->name;
+            Value& originalObject = environment->getReference(varName);
+            
+            if (originalObject.isStruct()) {
+                auto& structValue = originalObject.asStruct();
+                // Try property system first
+                if (structValue.properties && structValue.properties->hasProperty(memberAccess->member.lexeme)) {
+                    structValue.properties->setProperty(*this, memberAccess->member.lexeme, value);
+                } else {
+                    // Fallback to legacy member assignment
+                    (*structValue.members)[memberAccess->member.lexeme] = value;
+                }
+            } else if (originalObject.isClass()) {
+                auto& classValue = originalObject.asClass();
+                // Try property system first
+                if (classValue->properties && classValue->properties->hasProperty(memberAccess->member.lexeme)) {
+                    classValue->properties->setProperty(*this, memberAccess->member.lexeme, value);
+                } else {
+                    // Fallback to legacy member assignment
+                    (*classValue->members)[memberAccess->member.lexeme] = value;
+                }
+            } else {
+                throw std::runtime_error("Only structs and classes have members");
+            }
         } else {
-            throw std::runtime_error("Only structs and classes have members");
+            // For complex expressions, fall back to the old behavior
+            Value object = evaluate(*memberAccess->object);
+            
+            if (object.isStruct()) {
+                auto& structValue = object.asStruct();
+                // Try property system first
+                if (structValue.properties && structValue.properties->hasProperty(memberAccess->member.lexeme)) {
+                    structValue.properties->setProperty(*this, memberAccess->member.lexeme, value);
+                } else {
+                    // Fallback to legacy member assignment
+                    (*structValue.members)[memberAccess->member.lexeme] = value;
+                }
+            } else if (object.isClass()) {
+                auto& classValue = object.asClass();
+                // Try property system first
+                if (classValue->properties && classValue->properties->hasProperty(memberAccess->member.lexeme)) {
+                    classValue->properties->setProperty(*this, memberAccess->member.lexeme, value);
+                } else {
+                    // Fallback to legacy member assignment
+                    (*classValue->members)[memberAccess->member.lexeme] = value;
+                }
+            } else {
+                throw std::runtime_error("Only structs and classes have members");
+            }
         }
     } else {
         throw std::runtime_error("Invalid assignment target");
@@ -692,55 +735,227 @@ void Interpreter::visit(const EnumAccess& expr) {
 
 // Execute struct declaration: struct Name { members }
 void Interpreter::visit(const StructStmt& stmt) {
+    // Register struct properties
+    registerStructProperties(stmt.name.lexeme, stmt.members);
+    
+    // Registered struct with property system
+    
     // Store struct definition in environment for later use
-    // We'll store the struct name as a special marker and keep the definition
     environment->define(stmt.name.lexeme, Value(), false, "Struct");
 }
 
 // Execute class declaration: class Name { members }
 void Interpreter::visit(const ClassStmt& stmt) {
+    // Register class properties
+    registerClassProperties(stmt.name.lexeme, stmt.members);
+    
     // Store class definition in environment for later use
-    // We'll store the class name as a special marker and keep the definition
     environment->define(stmt.name.lexeme, Value(), false, "Class");
 }
 
 // Execute member access: object.member
 void Interpreter::visit(const MemberAccess& expr) {
     Value object = evaluate(*expr.object);
+    result = getMemberValue(object, expr.member.lexeme);
+}
+
+// Execute struct initialization: StructName(member1: value1, member2: value2)
+void Interpreter::visit(const StructInit& expr) {
+    // Get property manager for this struct
+    auto* propManager = getStructPropertyManager(expr.structName.lexeme);
     
+    // Create struct with property system if available
+    
+    if (propManager) {
+        // Create struct with property support
+        auto propContainer = std::make_unique<InstancePropertyContainer>(*propManager, environment);
+        
+        // Initialize provided members
+        for (const auto& member : expr.members) {
+            Value memberValue = evaluate(*member.second);
+            propContainer->setProperty(*this, member.first.lexeme, memberValue);
+        }
+        
+        // Initialize default values for unspecified properties
+        propContainer->initializeDefaults(*this);
+        
+        StructValue structValue(expr.structName.lexeme, std::move(propContainer));
+        result = Value(structValue);
+    } else {
+        // Fallback to legacy struct creation
+        StructValue structValue(expr.structName.lexeme);
+        
+        // Initialize members with provided values
+        for (const auto& member : expr.members) {
+            Value memberValue = evaluate(*member.second);
+            (*structValue.members)[member.first.lexeme] = memberValue;
+        }
+        
+        result = Value(structValue);
+    }
+}
+
+// Property system helper methods
+
+void Interpreter::executeWithEnvironment(const Stmt& stmt, std::shared_ptr<Environment> env) {
+    auto previous = environment;
+    environment = env;
+    
+    try {
+        stmt.accept(*this);
+    } catch (const ReturnException& returnValue) {
+        // 捕获返回值并存储在环境中
+        env->define("return", returnValue.value);
+        environment = previous;
+        throw; // 重新抛出以便上层处理
+    } catch (...) {
+        environment = previous;
+        throw;
+    }
+    
+    environment = previous;
+}
+
+PropertyManager* Interpreter::getStructPropertyManager(const std::string& structName) {
+    auto it = structPropertyManagers.find(structName);
+    return (it != structPropertyManagers.end()) ? it->second.get() : nullptr;
+}
+
+PropertyManager* Interpreter::getClassPropertyManager(const std::string& className) {
+    auto it = classPropertyManagers.find(className);
+    return (it != classPropertyManagers.end()) ? it->second.get() : nullptr;
+}
+
+void Interpreter::registerStructProperties(const std::string& structName, const std::vector<StructMember>& members) {
+    auto propManager = std::make_unique<PropertyManager>();
+    
+    for (const auto& member : members) {
+        PropertyDefinition propDef(member.name, member.type);
+        propDef.isVar = member.isVar;
+        propDef.isStatic = member.isStatic;
+        propDef.isLazy = member.isLazy;
+        propDef.defaultValue = member.defaultValue ? member.defaultValue->clone() : nullptr;
+        
+        // Determine property type based on accessors
+        if (member.isComputedProperty()) {
+            propDef.propertyType = PropertyType::COMPUTED;
+        } else if (member.isLazy) {
+            propDef.propertyType = PropertyType::LAZY;
+        } else {
+            propDef.propertyType = PropertyType::STORED;
+        }
+        
+        // Copy accessors with their bodies (using unique_ptr)
+        for (const auto& accessor : member.accessors) {
+            propDef.accessors.emplace_back(
+                accessor.type,
+                accessor.body ? std::unique_ptr<Stmt>(accessor.body->clone()) : nullptr,
+                accessor.parameterName
+            );
+        }
+        
+        propManager->addProperty(std::move(propDef));
+    }
+    
+    structPropertyManagers[structName] = std::move(propManager);
+}
+
+void Interpreter::registerClassProperties(const std::string& className, const std::vector<StructMember>& members) {
+    auto propManager = std::make_unique<PropertyManager>();
+    
+    for (const auto& member : members) {
+        PropertyDefinition propDef(member.name, member.type);
+        propDef.isVar = member.isVar;
+        propDef.isStatic = member.isStatic;
+        propDef.isLazy = member.isLazy;
+        propDef.defaultValue = member.defaultValue ? member.defaultValue->clone() : nullptr;
+        
+        // Determine property type based on accessors
+        if (member.isComputedProperty()) {
+            propDef.propertyType = PropertyType::COMPUTED;
+        } else if (member.isLazy) {
+            propDef.propertyType = PropertyType::LAZY;
+        } else {
+            propDef.propertyType = PropertyType::STORED;
+        }
+        
+        // Copy accessors with their bodies (using unique_ptr)
+        for (const auto& accessor : member.accessors) {
+            propDef.accessors.emplace_back(
+                accessor.type,
+                accessor.body ? std::unique_ptr<Stmt>(accessor.body->clone()) : nullptr,
+                accessor.parameterName
+            );
+        }
+        
+        propManager->addProperty(std::move(propDef));
+    }
+    
+    classPropertyManagers[className] = std::move(propManager);
+}
+
+Value Interpreter::getMemberValue(const Value& object, const std::string& memberName) {
     if (object.isStruct()) {
-        auto& structValue = object.asStruct();
-        auto it = structValue.members->find(expr.member.lexeme);
+        const auto& structValue = object.asStruct();
+        
+        // Try property system first
+        if (structValue.properties && structValue.properties->hasProperty(memberName)) {
+            return structValue.properties->getProperty(*this, memberName);
+        }
+        
+        // Fallback to legacy member access
+        auto it = structValue.members->find(memberName);
         if (it != structValue.members->end()) {
-            result = it->second;
-        } else {
-            throw std::runtime_error("Struct '" + structValue.structName + "' has no member '" + expr.member.lexeme + "'");
+            return it->second;
         }
+        
+        throw std::runtime_error("Struct '" + structValue.structName + "' has no member '" + memberName + "'");
     } else if (object.isClass()) {
-        auto& classValue = object.asClass();
-        auto it = classValue->members->find(expr.member.lexeme);
-        if (it != classValue->members->end()) {
-            result = it->second;
-        } else {
-            throw std::runtime_error("Class '" + classValue->className + "' has no member '" + expr.member.lexeme + "'");
+        const auto& classValue = object.asClass();
+        
+        // Try property system first
+        if (classValue->properties && classValue->properties->hasProperty(memberName)) {
+            return classValue->properties->getProperty(*this, memberName);
         }
+        
+        // Fallback to legacy member access
+        auto it = classValue->members->find(memberName);
+        if (it != classValue->members->end()) {
+            return it->second;
+        }
+        
+        throw std::runtime_error("Class '" + classValue->className + "' has no member '" + memberName + "'");
     } else {
         throw std::runtime_error("Only structs and classes have members");
     }
 }
 
-// Execute struct initialization: StructName(member1: value1, member2: value2)
-void Interpreter::visit(const StructInit& expr) {
-    // Create a new struct instance
-    StructValue structValue(expr.structName.lexeme);
-    
-    // Initialize members with provided values
-    for (const auto& member : expr.members) {
-        Value memberValue = evaluate(*member.second);
-        (*structValue.members)[member.first.lexeme] = memberValue;
+void Interpreter::setMemberValue(Value& object, const std::string& memberName, const Value& value) {
+    if (object.isStruct()) {
+        auto& structValue = object.asStruct();
+        
+        // Try property system first
+        if (structValue.properties && structValue.properties->hasProperty(memberName)) {
+            structValue.properties->setProperty(*this, memberName, value);
+            return;
+        }
+        
+        // Fallback to legacy member assignment
+        (*structValue.members)[memberName] = value;
+    } else if (object.isClass()) {
+        auto& classValue = object.asClass();
+        
+        // Try property system first
+        if (classValue->properties && classValue->properties->hasProperty(memberName)) {
+            classValue->properties->setProperty(*this, memberName, value);
+            return;
+        }
+        
+        // Fallback to legacy member assignment
+        (*classValue->members)[memberName] = value;
+    } else {
+        throw std::runtime_error("Only structs and classes have members");
     }
-    
-    result = Value(structValue);
 }
 
 } // namespace miniswift

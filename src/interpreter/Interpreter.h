@@ -4,7 +4,9 @@
 #include "../parser/AST.h"
 #include "Value.h"
 #include "Environment.h"
+#include "OOP/Property.h"
 #include <memory>
+#include <unordered_map>
 
 namespace miniswift {
 
@@ -42,13 +44,32 @@ public:
     void visit(const MemberAccess& expr) override;
     void visit(const StructInit& expr) override;
 
+public:
+    // Public methods for property system
+    Value evaluate(const Expr& expr);
+    void executeWithEnvironment(const Stmt& stmt, std::shared_ptr<Environment> env);
+    
 private:
     std::shared_ptr<Environment> environment;
-    Value evaluate(const Expr& expr);
+    
+    // Property managers for types
+    std::unordered_map<std::string, std::unique_ptr<PropertyManager>> structPropertyManagers;
+    std::unordered_map<std::string, std::unique_ptr<PropertyManager>> classPropertyManagers;
+    
     bool isTruthy(const Value& value);
     void printArray(const Array& arr);
     void printDictionary(const Dictionary& dict);
     void printValue(const Value& val);
+    
+    // Property system helpers
+    PropertyManager* getStructPropertyManager(const std::string& structName);
+    PropertyManager* getClassPropertyManager(const std::string& className);
+    void registerStructProperties(const std::string& structName, const std::vector<StructMember>& members);
+    void registerClassProperties(const std::string& className, const std::vector<StructMember>& members);
+    
+    // Enhanced member access with property support
+    Value getMemberValue(const Value& object, const std::string& memberName);
+    void setMemberValue(Value& object, const std::string& memberName, const Value& value);
 
     Value result;
 };

@@ -11,6 +11,10 @@ void Environment::define(const std::string& name, const Value& value, bool isCon
     values[name] = {value, isConst, typeName};
 }
 
+void Environment::define(const std::string& name, const Value& value) {
+    values[name] = {value, false, ""}; // Default: mutable, no type annotation
+}
+
 Value Environment::get(const Token& name) {
     if (values.count(name.lexeme)) {
         return values.at(name.lexeme).value;
@@ -18,6 +22,18 @@ Value Environment::get(const Token& name) {
 
     if (enclosing != nullptr) {
         return enclosing->get(name);
+    }
+
+    throw std::runtime_error("Undefined variable '" + name.lexeme + "'.");
+}
+
+Value& Environment::getReference(const Token& name) {
+    if (values.count(name.lexeme)) {
+        return values.at(name.lexeme).value;
+    }
+
+    if (enclosing != nullptr) {
+        return enclosing->getReference(name);
     }
 
     throw std::runtime_error("Undefined variable '" + name.lexeme + "'.");
@@ -66,6 +82,18 @@ void Environment::assign(const Token& name, const Value& value) {
     }
 
     throw std::runtime_error("Undefined variable '" + name.lexeme + "'.");
+}
+
+bool Environment::exists(const std::string& name) const {
+    if (values.count(name)) {
+        return true;
+    }
+    
+    if (enclosing != nullptr) {
+        return enclosing->exists(name);
+    }
+    
+    return false;
 }
 
 } // namespace miniswift

@@ -14,37 +14,66 @@ struct Value;
 struct FunctionStmt;
 struct Closure;
 class Environment;
+class InstancePropertyContainer;
 
 // Collection types (using shared_ptr to avoid recursive definition)
 using Array = std::shared_ptr<std::vector<Value>>;
 using Dictionary = std::shared_ptr<std::unordered_map<std::string, Value>>;
 
-// Struct value type
+// Struct value type with property support
 struct StructValue {
     std::string structName;
-    std::shared_ptr<std::unordered_map<std::string, Value>> members;
+    std::shared_ptr<std::unordered_map<std::string, Value>> members; // Legacy member storage
+    std::unique_ptr<InstancePropertyContainer> properties; // New property system
     
-    StructValue(const std::string& structName)
-        : structName(structName), members(std::make_shared<std::unordered_map<std::string, Value>>()) {}
+    StructValue(const std::string& structName);
+    StructValue(const std::string& structName, std::unordered_map<std::string, Value> memberMap);
+    StructValue(const std::string& structName, std::unique_ptr<InstancePropertyContainer> props);
     
-    StructValue(const std::string& structName, std::unordered_map<std::string, Value> memberMap)
-        : structName(structName), members(std::make_shared<std::unordered_map<std::string, Value>>(std::move(memberMap))) {}
+    // Destructor
+    ~StructValue();
+    
+    // Copy constructor
+    StructValue(const StructValue& other);
+    
+    // Move constructor
+    StructValue(StructValue&& other) noexcept;
+    
+    // Copy assignment operator
+    StructValue& operator=(const StructValue& other);
+    
+    // Move assignment operator
+    StructValue& operator=(StructValue&& other) noexcept;
     
     bool operator==(const StructValue& other) const;
     bool operator!=(const StructValue& other) const;
 };
 
-// Class value type (with reference counting for ARC)
+// Class value type (with reference counting for ARC and property support)
 struct ClassValue {
     std::string className;
-    std::shared_ptr<std::unordered_map<std::string, Value>> members;
+    std::shared_ptr<std::unordered_map<std::string, Value>> members; // Legacy member storage
+    std::unique_ptr<InstancePropertyContainer> properties; // New property system
     mutable int refCount; // For ARC implementation
     
-    ClassValue(const std::string& className)
-        : className(className), members(std::make_shared<std::unordered_map<std::string, Value>>()), refCount(1) {}
+    ClassValue(const std::string& className);
+    ClassValue(const std::string& className, std::unordered_map<std::string, Value> memberMap);
+    ClassValue(const std::string& className, std::unique_ptr<InstancePropertyContainer> props);
     
-    ClassValue(const std::string& className, std::unordered_map<std::string, Value> memberMap)
-        : className(className), members(std::make_shared<std::unordered_map<std::string, Value>>(std::move(memberMap))), refCount(1) {}
+    // Destructor
+    ~ClassValue();
+    
+    // Copy constructor
+    ClassValue(const ClassValue& other);
+    
+    // Move constructor
+    ClassValue(ClassValue&& other) noexcept;
+    
+    // Copy assignment operator
+    ClassValue& operator=(const ClassValue& other);
+    
+    // Move assignment operator
+    ClassValue& operator=(ClassValue&& other) noexcept;
     
     bool operator==(const ClassValue& other) const;
     bool operator!=(const ClassValue& other) const;

@@ -270,6 +270,7 @@ class Stmt {
 public:
     virtual ~Stmt() = default;
     virtual void accept(StmtVisitor& visitor) const = 0;
+    virtual std::unique_ptr<Stmt> clone() const = 0;
 };
 
 // Concrete statement classes
@@ -279,6 +280,10 @@ struct ExprStmt : Stmt {
 
     void accept(StmtVisitor& visitor) const override {
         visitor.visit(*this);
+    }
+
+    std::unique_ptr<Stmt> clone() const override {
+        return std::make_unique<ExprStmt>(expression->clone());
     }
 
     const std::unique_ptr<Expr> expression;
@@ -292,6 +297,10 @@ struct PrintStmt : Stmt {
         visitor.visit(*this);
     }
 
+    std::unique_ptr<Stmt> clone() const override {
+        return std::make_unique<PrintStmt>(expression->clone());
+    }
+
     const std::unique_ptr<Expr> expression;
 };
 
@@ -301,6 +310,10 @@ struct VarStmt : Stmt {
 
     void accept(StmtVisitor& visitor) const override {
         visitor.visit(*this);
+    }
+
+    std::unique_ptr<Stmt> clone() const override {
+        return std::make_unique<VarStmt>(name, initializer ? initializer->clone() : nullptr, isConst, type);
     }
 
     const Token name;
@@ -318,6 +331,14 @@ struct BlockStmt : Stmt {
         visitor.visit(*this);
     }
 
+    std::unique_ptr<Stmt> clone() const override {
+        std::vector<std::unique_ptr<Stmt>> clonedStatements;
+        for (const auto& stmt : statements) {
+            clonedStatements.push_back(stmt->clone());
+        }
+        return std::make_unique<BlockStmt>(std::move(clonedStatements));
+    }
+
     const std::vector<std::unique_ptr<Stmt>> statements;
 };
 
@@ -328,6 +349,10 @@ struct IfStmt : Stmt {
 
     void accept(StmtVisitor& visitor) const override {
         visitor.visit(*this);
+    }
+
+    std::unique_ptr<Stmt> clone() const override {
+        return std::make_unique<IfStmt>(condition->clone(), thenBranch->clone(), elseBranch ? elseBranch->clone() : nullptr);
     }
 
     const std::unique_ptr<Expr> condition;
@@ -344,6 +369,10 @@ struct WhileStmt : Stmt {
         visitor.visit(*this);
     }
 
+    std::unique_ptr<Stmt> clone() const override {
+        return std::make_unique<WhileStmt>(condition->clone(), body->clone());
+    }
+
     const std::unique_ptr<Expr> condition;
     const std::unique_ptr<Stmt> body;
 };
@@ -357,6 +386,15 @@ struct ForStmt : Stmt {
 
     void accept(StmtVisitor& visitor) const override {
         visitor.visit(*this);
+    }
+
+    std::unique_ptr<Stmt> clone() const override {
+        return std::make_unique<ForStmt>(
+            initializer ? initializer->clone() : nullptr,
+            condition ? condition->clone() : nullptr,
+            increment ? increment->clone() : nullptr,
+            body->clone()
+        );
     }
 
     const std::unique_ptr<Stmt> initializer; // Can be null
@@ -405,6 +443,10 @@ struct FunctionStmt : Stmt {
         visitor.visit(*this);
     }
 
+    std::unique_ptr<Stmt> clone() const override {
+        return std::make_unique<FunctionStmt>(name, parameters, returnType, body->clone());
+    }
+
     const Token name;
     const std::vector<Parameter> parameters;
     const Token returnType; // Can be empty for Void
@@ -418,6 +460,10 @@ struct ReturnStmt : Stmt {
 
     void accept(StmtVisitor& visitor) const override {
         visitor.visit(*this);
+    }
+
+    std::unique_ptr<Stmt> clone() const override {
+        return std::make_unique<ReturnStmt>(value ? value->clone() : nullptr);
     }
 
     const std::unique_ptr<Expr> value; // Can be null for void return
@@ -440,6 +486,18 @@ struct EnumStmt : Stmt {
 
     void accept(StmtVisitor& visitor) const override {
         visitor.visit(*this);
+    }
+
+    std::unique_ptr<Stmt> clone() const override {
+        std::vector<EnumCase> clonedCases;
+        for (const auto& enumCase : cases) {
+            clonedCases.emplace_back(
+                enumCase.name,
+                enumCase.associatedTypes,
+                enumCase.rawValue ? enumCase.rawValue->clone() : nullptr
+            );
+        }
+        return std::make_unique<EnumStmt>(name, rawType, std::move(clonedCases));
     }
 
     const Token name;
@@ -509,15 +567,54 @@ struct StructInit : Expr {
     }
 };
 
-// Struct member definition
+// Property accessor types
+enum class AccessorType {
+    GET,         // getter
+    SET,         // setter
+    WILL_SET,    // willSet observer
+    DID_SET      // didSet observer
+};
+
+// Property accessor definition
+struct PropertyAccessor {
+    AccessorType type;
+    std::unique_ptr<Stmt> body;
+    std::string parameterName; // Optional parameter name for willSet/didSet
+    
+    PropertyAccessor(AccessorType t, std::unique_ptr<Stmt> b = nullptr, const std::string& param = "")
+        : type(t), body(std::move(b)), parameterName(param) {}
+};
+
+// Enhanced struct member definition with property support
 struct StructMember {
     Token name;
     Token type;
     std::unique_ptr<Expr> defaultValue; // Optional default value
     bool isVar; // true for var, false for let
+    bool isStatic; // true for static properties
+    bool isLazy; // true for lazy properties
+    
+    // Property accessors (for computed properties and observers)
+    std::vector<PropertyAccessor> accessors;
     
     StructMember(Token name, Token type, std::unique_ptr<Expr> defaultValue = nullptr, bool isVar = true)
-        : name(name), type(type), defaultValue(std::move(defaultValue)), isVar(isVar) {}
+        : name(name), type(type), defaultValue(std::move(defaultValue)), isVar(isVar), 
+          isStatic(false), isLazy(false) {}
+    
+    // Check if this is a computed property
+    bool isComputedProperty() const {
+        return hasAccessor(AccessorType::GET) || hasAccessor(AccessorType::SET);
+    }
+    
+    // Check if this member has a specific accessor
+    bool hasAccessor(AccessorType type) const {
+        for (const auto& accessor : accessors) {
+            if (accessor.type == type) {
+                return true;
+            }
+        }
+        return false;
+    }
 };
 
 // Struct declaration: struct Name { members }
@@ -531,6 +628,12 @@ struct StructStmt : Stmt {
 
     void accept(StmtVisitor& visitor) const override {
         visitor.visit(*this);
+    }
+
+    std::unique_ptr<Stmt> clone() const override {
+        // For simplicity, we'll create a basic clone without deep copying members and methods
+        // This is sufficient for our current use case
+        return std::make_unique<StructStmt>(name, std::vector<StructMember>(), std::vector<std::unique_ptr<FunctionStmt>>());
     }
 };
 
@@ -546,6 +649,12 @@ struct ClassStmt : Stmt {
 
     void accept(StmtVisitor& visitor) const override {
         visitor.visit(*this);
+    }
+
+    std::unique_ptr<Stmt> clone() const override {
+        // For simplicity, we'll create a basic clone without deep copying members and methods
+        // This is sufficient for our current use case
+        return std::make_unique<ClassStmt>(name, superclass, std::vector<StructMember>(), std::vector<std::unique_ptr<FunctionStmt>>());
     }
 };
 

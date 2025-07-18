@@ -33,6 +33,10 @@ enum class TokenType {
   False,
   Print,
   Return,
+  Get,
+  Set,
+  WillSet,
+  DidSet,
 
   // Operators
   Plus,

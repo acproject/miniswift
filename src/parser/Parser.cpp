@@ -691,11 +691,57 @@ std::unique_ptr<Stmt> Parser::structDeclaration() {
       Token memberType = parseType();
       
       std::unique_ptr<Expr> defaultValue = nullptr;
+      std::vector<PropertyAccessor> accessors;
+      
       if (match({TokenType::Equal})) {
         defaultValue = expression();
+      } else if (match({TokenType::LBrace})) {
+        // Parse property accessors
+        while (!check(TokenType::RBrace) && !isAtEnd()) {
+          if (match({TokenType::Get})) {
+            consume(TokenType::LBrace, "Expect '{' after 'get'.");
+            auto body = blockStatement();
+            accessors.emplace_back(AccessorType::GET, std::move(body));
+          } else if (match({TokenType::Set})) {
+            std::string paramName = "newValue";
+            if (match({TokenType::LParen})) {
+              consume(TokenType::Identifier, "Expect parameter name.");
+              paramName = previous().lexeme;
+              consume(TokenType::RParen, "Expect ')' after parameter name.");
+            }
+            consume(TokenType::LBrace, "Expect '{' after 'set'.");
+            auto body = blockStatement();
+            accessors.emplace_back(AccessorType::SET, std::move(body), paramName);
+          } else if (match({TokenType::WillSet})) {
+            std::string paramName = "newValue";
+            if (match({TokenType::LParen})) {
+              consume(TokenType::Identifier, "Expect parameter name.");
+              paramName = previous().lexeme;
+              consume(TokenType::RParen, "Expect ')' after parameter name.");
+            }
+            consume(TokenType::LBrace, "Expect '{' after 'willSet'.");
+            auto body = blockStatement();
+            accessors.emplace_back(AccessorType::WILL_SET, std::move(body), paramName);
+          } else if (match({TokenType::DidSet})) {
+            std::string paramName = "oldValue";
+            if (match({TokenType::LParen})) {
+              consume(TokenType::Identifier, "Expect parameter name.");
+              paramName = previous().lexeme;
+              consume(TokenType::RParen, "Expect ')' after parameter name.");
+            }
+            consume(TokenType::LBrace, "Expect '{' after 'didSet'.");
+            auto body = blockStatement();
+            accessors.emplace_back(AccessorType::DID_SET, std::move(body), paramName);
+          } else {
+            throw std::runtime_error("Expect 'get', 'set', 'willSet', or 'didSet' in property accessor.");
+          }
+        }
+        consume(TokenType::RBrace, "Expect '}' after property accessors.");
       }
       
-      members.emplace_back(memberName, memberType, std::move(defaultValue), isVar);
+      StructMember member(memberName, memberType, std::move(defaultValue), isVar);
+      member.accessors = std::move(accessors);
+      members.push_back(std::move(member));
       
       match({TokenType::Semicolon}); // Optional semicolon
     } else {

@@ -32,6 +32,10 @@ static void initializeKeywords() {
   keywords["false"] = TokenType::False;
   keywords["print"] = TokenType::Print;
   keywords["return"] = TokenType::Return;
+  keywords["get"] = TokenType::Get;
+  keywords["set"] = TokenType::Set;
+  keywords["willSet"] = TokenType::WillSet;
+  keywords["didSet"] = TokenType::DidSet;
 }
 
 Lexer::Lexer(const std::string &source)

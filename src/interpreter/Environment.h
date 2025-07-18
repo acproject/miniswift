@@ -21,8 +21,11 @@ public:
     explicit Environment(std::shared_ptr<Environment> enclosing);
 
     void define(const std::string& name, const Value& value, bool isConst, const std::string& typeName);
-    Value get(const Token& name);
-    void assign(const Token& name, const Value& value);
+    void define(const std::string& name, const Value& value); // Simplified version
+    virtual Value get(const Token& name);
+    virtual Value& getReference(const Token& name); // Get reference to variable
+    virtual void assign(const Token& name, const Value& value);
+    bool exists(const std::string& name) const;
 
 private:
     std::shared_ptr<Environment> enclosing;

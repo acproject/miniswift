@@ -80,9 +80,16 @@ void Interpreter::visit(const Binary& expr) {
     }
 
     switch (expr.op.type) {
-        case TokenType::Minus:
-            result = Value(std::get<double>(left.value) - std::get<double>(right.value));
+        case TokenType::Minus: {
+            double leftVal = (left.type == ValueType::Int) ? std::get<int>(left.value) : std::get<double>(left.value);
+            double rightVal = (right.type == ValueType::Int) ? std::get<int>(right.value) : std::get<double>(right.value);
+            if (left.type == ValueType::Int && right.type == ValueType::Int) {
+                result = Value(static_cast<int>(leftVal - rightVal));
+            } else {
+                result = Value(leftVal - rightVal);
+            }
             return;
+        }
         case TokenType::Plus:
             if (left.type == ValueType::String) {
                 result = Value(std::get<std::string>(left.value) + std::get<std::string>(right.value));
@@ -96,24 +103,46 @@ void Interpreter::visit(const Binary& expr) {
                 }
             }
             return;
-        case TokenType::Slash:
-            result = Value(std::get<double>(left.value) / std::get<double>(right.value));
+        case TokenType::Slash: {
+            double leftVal = (left.type == ValueType::Int) ? std::get<int>(left.value) : std::get<double>(left.value);
+            double rightVal = (right.type == ValueType::Int) ? std::get<int>(right.value) : std::get<double>(right.value);
+            result = Value(leftVal / rightVal);
             return;
-        case TokenType::Star:
-            result = Value(std::get<double>(left.value) * std::get<double>(right.value));
+        }
+        case TokenType::Star: {
+            double leftVal = (left.type == ValueType::Int) ? std::get<int>(left.value) : std::get<double>(left.value);
+            double rightVal = (right.type == ValueType::Int) ? std::get<int>(right.value) : std::get<double>(right.value);
+            if (left.type == ValueType::Int && right.type == ValueType::Int) {
+                result = Value(static_cast<int>(leftVal * rightVal));
+            } else {
+                result = Value(leftVal * rightVal);
+            }
             return;
-        case TokenType::Greater:
-            result = Value(std::get<double>(left.value) > std::get<double>(right.value));
+        }
+        case TokenType::Greater: {
+            double leftVal = (left.type == ValueType::Int) ? std::get<int>(left.value) : std::get<double>(left.value);
+            double rightVal = (right.type == ValueType::Int) ? std::get<int>(right.value) : std::get<double>(right.value);
+            result = Value(leftVal > rightVal);
             return;
-        case TokenType::GreaterEqual:
-            result = Value(std::get<double>(left.value) >= std::get<double>(right.value));
+        }
+        case TokenType::GreaterEqual: {
+            double leftVal = (left.type == ValueType::Int) ? std::get<int>(left.value) : std::get<double>(left.value);
+            double rightVal = (right.type == ValueType::Int) ? std::get<int>(right.value) : std::get<double>(right.value);
+            result = Value(leftVal >= rightVal);
             return;
-        case TokenType::Less:
-            result = Value(std::get<double>(left.value) < std::get<double>(right.value));
+        }
+        case TokenType::Less: {
+            double leftVal = (left.type == ValueType::Int) ? std::get<int>(left.value) : std::get<double>(left.value);
+            double rightVal = (right.type == ValueType::Int) ? std::get<int>(right.value) : std::get<double>(right.value);
+            result = Value(leftVal < rightVal);
             return;
-        case TokenType::LessEqual:
-            result = Value(std::get<double>(left.value) <= std::get<double>(right.value));
+        }
+        case TokenType::LessEqual: {
+            double leftVal = (left.type == ValueType::Int) ? std::get<int>(left.value) : std::get<double>(left.value);
+            double rightVal = (right.type == ValueType::Int) ? std::get<int>(right.value) : std::get<double>(right.value);
+            result = Value(leftVal <= rightVal);
             return;
+        }
         case TokenType::BangEqual:
             result = Value(left.value != right.value);
             return;
@@ -162,9 +191,16 @@ void Interpreter::visit(const Unary& expr) {
     Value right = evaluate(*expr.right);
 
     switch (expr.op.type) {
-        case TokenType::Minus:
-            result = Value(-std::get<double>(right.value));
+        case TokenType::Minus: {
+            if (right.type == ValueType::Int) {
+                result = Value(-std::get<int>(right.value));
+            } else if (right.type == ValueType::Double) {
+                result = Value(-std::get<double>(right.value));
+            } else {
+                throw std::runtime_error("Operand must be a number.");
+            }
             return;
+        }
         case TokenType::Bang:
             result = Value(!isTruthy(right));
             return;
@@ -308,6 +344,85 @@ void Interpreter::printValue(const Value& val) {
             std::cout << "nil";
             break;
     }
+}
+
+// Execute block statement: { statements }
+void Interpreter::visit(const BlockStmt& stmt) {
+    // Create new environment for block scope
+    auto previous = environment;
+    environment = std::make_shared<Environment>(environment);
+    
+    try {
+        for (const auto& statement : stmt.statements) {
+            statement->accept(*this);
+        }
+    } catch (...) {
+        // Restore previous environment even if exception occurs
+        environment = previous;
+        throw;
+    }
+    
+    // Restore previous environment
+    environment = previous;
+}
+
+// Execute if statement: if condition { thenBranch } else { elseBranch }
+void Interpreter::visit(const IfStmt& stmt) {
+    Value condition = evaluate(*stmt.condition);
+    
+    if (isTruthy(condition)) {
+        stmt.thenBranch->accept(*this);
+    } else if (stmt.elseBranch) {
+        stmt.elseBranch->accept(*this);
+    }
+}
+
+// Execute while statement: while condition { body }
+void Interpreter::visit(const WhileStmt& stmt) {
+    while (true) {
+        Value condition = evaluate(*stmt.condition);
+        if (!isTruthy(condition)) break;
+        
+        stmt.body->accept(*this);
+    }
+}
+
+// Execute for statement: for initializer; condition; increment { body }
+void Interpreter::visit(const ForStmt& stmt) {
+    // Create new environment for for loop scope
+    auto previous = environment;
+    environment = std::make_shared<Environment>(environment);
+    
+    try {
+        // Execute initializer
+        if (stmt.initializer) {
+            stmt.initializer->accept(*this);
+        }
+        
+        // Loop
+        while (true) {
+            // Check condition
+            if (stmt.condition) {
+                Value condition = evaluate(*stmt.condition);
+                if (!isTruthy(condition)) break;
+            }
+            
+            // Execute body
+            stmt.body->accept(*this);
+            
+            // Execute increment
+            if (stmt.increment) {
+                evaluate(*stmt.increment);
+            }
+        }
+    } catch (...) {
+        // Restore previous environment even if exception occurs
+        environment = previous;
+        throw;
+    }
+    
+    // Restore previous environment
+    environment = previous;
 }
 
 } // namespace miniswift

@@ -56,6 +56,18 @@ std::unique_ptr<Stmt> Parser::statement() {
     advance(); // consume 'print'
     return printStatement();
   }
+  if (match({TokenType::LBrace})) {
+    return blockStatement();
+  }
+  if (match({TokenType::If})) {
+    return ifStatement();
+  }
+  if (match({TokenType::While})) {
+    return whileStatement();
+  }
+  if (match({TokenType::For})) {
+    return forStatement();
+  }
   return expressionStatement();
 }
 
@@ -329,6 +341,104 @@ std::unique_ptr<Expr> Parser::indexAccess(std::unique_ptr<Expr> object) {
 bool Parser::check(TokenType type) {
   if (isAtEnd()) return false;
   return peek().type == type;
+}
+
+// Parse block statement: { statements }
+std::unique_ptr<Stmt> Parser::blockStatement() {
+  std::vector<std::unique_ptr<Stmt>> statements;
+  
+  while (!check(TokenType::RBrace) && !isAtEnd()) {
+    auto decls = declaration();
+    statements.insert(statements.end(), std::make_move_iterator(decls.begin()),
+                      std::make_move_iterator(decls.end()));
+  }
+  
+  consume(TokenType::RBrace, "Expect '}' after block.");
+  return std::make_unique<BlockStmt>(std::move(statements));
+}
+
+// Parse if statement: if condition { thenBranch } else { elseBranch }
+std::unique_ptr<Stmt> Parser::ifStatement() {
+  auto condition = expression();
+  
+  consume(TokenType::LBrace, "Expect '{' after if condition.");
+  auto thenBranch = blockStatement();
+  
+  std::unique_ptr<Stmt> elseBranch = nullptr;
+  if (match({TokenType::Else})) {
+    if (match({TokenType::If})) {
+      // else if
+      elseBranch = ifStatement();
+    } else {
+      consume(TokenType::LBrace, "Expect '{' after else.");
+      elseBranch = blockStatement();
+    }
+  }
+  
+  return std::make_unique<IfStmt>(std::move(condition), std::move(thenBranch), std::move(elseBranch));
+}
+
+// Parse while statement: while condition { body }
+std::unique_ptr<Stmt> Parser::whileStatement() {
+  auto condition = expression();
+  
+  consume(TokenType::LBrace, "Expect '{' after while condition.");
+  auto body = blockStatement();
+  
+  return std::make_unique<WhileStmt>(std::move(condition), std::move(body));
+}
+
+// Parse for statement: for initializer; condition; increment { body }
+std::unique_ptr<Stmt> Parser::forStatement() {
+  consume(TokenType::LParen, "Expect '(' after 'for'.");
+  
+  // Initializer
+  std::unique_ptr<Stmt> initializer = nullptr;
+  if (match({TokenType::Semicolon})) {
+    initializer = nullptr;
+  } else if (match({TokenType::Var, TokenType::Let})) {
+    // Variable declaration
+    bool isConst = previous().type == TokenType::Let;
+    consume(TokenType::Identifier, "Expect variable name.");
+    Token name = previous();
+    
+    Token type = Token(TokenType::Nil, "", 0);
+    std::unique_ptr<Expr> init = nullptr;
+    
+    if (match({TokenType::Colon})) {
+      type = parseType();
+    }
+    
+    if (match({TokenType::Equal})) {
+      init = expression();
+    }
+    
+    initializer = std::make_unique<VarStmt>(name, std::move(init), isConst, type);
+    consume(TokenType::Semicolon, "Expect ';' after for loop initializer.");
+  } else {
+    initializer = expressionStatement();
+  }
+  
+  // Condition
+  std::unique_ptr<Expr> condition = nullptr;
+  if (!check(TokenType::Semicolon)) {
+    condition = expression();
+  }
+  consume(TokenType::Semicolon, "Expect ';' after for loop condition.");
+  
+  // Increment
+  std::unique_ptr<Expr> increment = nullptr;
+  if (!check(TokenType::RParen)) {
+    increment = expression();
+  }
+  consume(TokenType::RParen, "Expect ')' after for clauses.");
+  
+  // Body
+  consume(TokenType::LBrace, "Expect '{' after for clauses.");
+  auto body = blockStatement();
+  
+  return std::make_unique<ForStmt>(std::move(initializer), std::move(condition), 
+                                   std::move(increment), std::move(body));
 }
 
 } // namespace miniswift

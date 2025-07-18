@@ -203,6 +203,10 @@ struct IndexAccess : Expr {
 struct ExprStmt;
 struct PrintStmt; // For testing
 struct VarStmt;
+struct BlockStmt;
+struct IfStmt;
+struct WhileStmt;
+struct ForStmt;
 
 // Visitor for Stmt
 class StmtVisitor {
@@ -211,6 +215,10 @@ public:
     virtual void visit(const ExprStmt& stmt) = 0;
     virtual void visit(const PrintStmt& stmt) = 0;
     virtual void visit(const VarStmt& stmt) = 0;
+    virtual void visit(const BlockStmt& stmt) = 0;
+    virtual void visit(const IfStmt& stmt) = 0;
+    virtual void visit(const WhileStmt& stmt) = 0;
+    virtual void visit(const ForStmt& stmt) = 0;
 };
 
 // Base class for Stmt
@@ -255,6 +263,62 @@ struct VarStmt : Stmt {
     const std::unique_ptr<Expr> initializer;
     const bool isConst;
     const Token type;
+};
+
+// Block statement: { statements }
+struct BlockStmt : Stmt {
+    explicit BlockStmt(std::vector<std::unique_ptr<Stmt>> statements)
+        : statements(std::move(statements)) {}
+
+    void accept(StmtVisitor& visitor) const override {
+        visitor.visit(*this);
+    }
+
+    const std::vector<std::unique_ptr<Stmt>> statements;
+};
+
+// If statement: if condition { thenBranch } else { elseBranch }
+struct IfStmt : Stmt {
+    IfStmt(std::unique_ptr<Expr> condition, std::unique_ptr<Stmt> thenBranch, std::unique_ptr<Stmt> elseBranch)
+        : condition(std::move(condition)), thenBranch(std::move(thenBranch)), elseBranch(std::move(elseBranch)) {}
+
+    void accept(StmtVisitor& visitor) const override {
+        visitor.visit(*this);
+    }
+
+    const std::unique_ptr<Expr> condition;
+    const std::unique_ptr<Stmt> thenBranch;
+    const std::unique_ptr<Stmt> elseBranch; // Can be null
+};
+
+// While statement: while condition { body }
+struct WhileStmt : Stmt {
+    WhileStmt(std::unique_ptr<Expr> condition, std::unique_ptr<Stmt> body)
+        : condition(std::move(condition)), body(std::move(body)) {}
+
+    void accept(StmtVisitor& visitor) const override {
+        visitor.visit(*this);
+    }
+
+    const std::unique_ptr<Expr> condition;
+    const std::unique_ptr<Stmt> body;
+};
+
+// For statement: for initializer; condition; increment { body }
+struct ForStmt : Stmt {
+    ForStmt(std::unique_ptr<Stmt> initializer, std::unique_ptr<Expr> condition, 
+            std::unique_ptr<Expr> increment, std::unique_ptr<Stmt> body)
+        : initializer(std::move(initializer)), condition(std::move(condition)), 
+          increment(std::move(increment)), body(std::move(body)) {}
+
+    void accept(StmtVisitor& visitor) const override {
+        visitor.visit(*this);
+    }
+
+    const std::unique_ptr<Stmt> initializer; // Can be null
+    const std::unique_ptr<Expr> condition;   // Can be null
+    const std::unique_ptr<Expr> increment;   // Can be null
+    const std::unique_ptr<Stmt> body;
 };
 
 } // namespace miniswift

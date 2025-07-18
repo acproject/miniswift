@@ -17,6 +17,10 @@ public:
     void visit(const ExprStmt& stmt) override;
     void visit(const PrintStmt& stmt) override;
     void visit(const VarStmt& stmt) override;
+    void visit(const BlockStmt& stmt) override;
+    void visit(const IfStmt& stmt) override;
+    void visit(const WhileStmt& stmt) override;
+    void visit(const ForStmt& stmt) override;
 
     void visit(const Binary& expr) override;
     void visit(const Grouping& expr) override;

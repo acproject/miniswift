@@ -20,6 +20,8 @@ struct IndexAccess;
 struct Call;
 struct Closure;
 struct EnumAccess;
+struct MemberAccess;
+struct StructInit;
 
 // Visitor interface for expressions
 class ExprVisitor {
@@ -37,6 +39,8 @@ public:
     virtual void visit(const Call& expr) = 0;
     virtual void visit(const Closure& expr) = 0;
     virtual void visit(const EnumAccess& expr) = 0;
+    virtual void visit(const MemberAccess& expr) = 0;
+    virtual void visit(const StructInit& expr) = 0;
 };
 
 // Base class for all expression nodes
@@ -80,18 +84,18 @@ struct VarExpr : Expr {
 };
 
 struct Assign : Expr {
-    Assign(Token name, std::unique_ptr<Expr> value)
-        : name(name), value(std::move(value)) {}
+    Assign(std::unique_ptr<Expr> target, std::unique_ptr<Expr> value)
+        : target(std::move(target)), value(std::move(value)) {}
 
     void accept(ExprVisitor& visitor) const override {
         visitor.visit(*this);
     }
 
     std::unique_ptr<Expr> clone() const override {
-        return std::make_unique<Assign>(name, value->clone());
+        return std::make_unique<Assign>(target->clone(), value->clone());
     }
 
-    const Token name;
+    const std::unique_ptr<Expr> target;  // Can be VarExpr or MemberAccess
     const std::unique_ptr<Expr> value;
 };
 
@@ -240,6 +244,8 @@ struct ForStmt;
 struct FunctionStmt;
 struct ReturnStmt;
 struct EnumStmt;
+struct StructStmt;
+struct ClassStmt;
 
 // Visitor for Stmt
 class StmtVisitor {
@@ -255,6 +261,8 @@ public:
     virtual void visit(const FunctionStmt& stmt) = 0;
     virtual void visit(const ReturnStmt& stmt) = 0;
     virtual void visit(const EnumStmt& stmt) = 0;
+    virtual void visit(const StructStmt& stmt) = 0;
+    virtual void visit(const ClassStmt& stmt) = 0;
 };
 
 // Base class for Stmt
@@ -461,6 +469,84 @@ struct EnumAccess : Expr {
     }
 
     
+};
+
+// Member access expression: object.member
+struct MemberAccess : Expr {
+    std::unique_ptr<Expr> object;
+    Token member;
+    
+    MemberAccess(std::unique_ptr<Expr> object, Token member)
+        : object(std::move(object)), member(member) {}
+
+    void accept(ExprVisitor& visitor) const override {
+        visitor.visit(*this);
+    }
+
+    std::unique_ptr<Expr> clone() const override {
+        return std::make_unique<MemberAccess>(object->clone(), member);
+    }
+};
+
+// Struct initialization expression: StructName(member1: value1, member2: value2)
+struct StructInit : Expr {
+    Token structName;
+    std::vector<std::pair<Token, std::unique_ptr<Expr>>> members; // (memberName, value)
+    
+    StructInit(Token structName, std::vector<std::pair<Token, std::unique_ptr<Expr>>> members)
+        : structName(structName), members(std::move(members)) {}
+
+    void accept(ExprVisitor& visitor) const override {
+        visitor.visit(*this);
+    }
+
+    std::unique_ptr<Expr> clone() const override {
+        std::vector<std::pair<Token, std::unique_ptr<Expr>>> clonedMembers;
+        for (const auto& member : members) {
+            clonedMembers.emplace_back(member.first, member.second->clone());
+        }
+        return std::make_unique<StructInit>(structName, std::move(clonedMembers));
+    }
+};
+
+// Struct member definition
+struct StructMember {
+    Token name;
+    Token type;
+    std::unique_ptr<Expr> defaultValue; // Optional default value
+    bool isVar; // true for var, false for let
+    
+    StructMember(Token name, Token type, std::unique_ptr<Expr> defaultValue = nullptr, bool isVar = true)
+        : name(name), type(type), defaultValue(std::move(defaultValue)), isVar(isVar) {}
+};
+
+// Struct declaration: struct Name { members }
+struct StructStmt : Stmt {
+    Token name;
+    std::vector<StructMember> members;
+    std::vector<std::unique_ptr<FunctionStmt>> methods; // Methods defined in the struct
+    
+    StructStmt(Token name, std::vector<StructMember> members, std::vector<std::unique_ptr<FunctionStmt>> methods = {})
+        : name(name), members(std::move(members)), methods(std::move(methods)) {}
+
+    void accept(StmtVisitor& visitor) const override {
+        visitor.visit(*this);
+    }
+};
+
+// Class declaration: class Name { members }
+struct ClassStmt : Stmt {
+    Token name;
+    Token superclass; // Optional superclass
+    std::vector<StructMember> members;
+    std::vector<std::unique_ptr<FunctionStmt>> methods;
+    
+    ClassStmt(Token name, Token superclass, std::vector<StructMember> members, std::vector<std::unique_ptr<FunctionStmt>> methods = {})
+        : name(name), superclass(superclass), members(std::move(members)), methods(std::move(methods)) {}
+
+    void accept(StmtVisitor& visitor) const override {
+        visitor.visit(*this);
+    }
 };
 
 } // namespace miniswift

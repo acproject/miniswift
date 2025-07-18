@@ -41,6 +41,8 @@ void Environment::assign(const Token& name, const Value& value) {
                 case ValueType::Dictionary: valueTypeName = "Dictionary"; break;
                 case ValueType::Function: valueTypeName = "Function"; break;
                 case ValueType::Enum:   valueTypeName = "Enum";   break;
+                case ValueType::Struct: valueTypeName = "Struct"; break;
+                case ValueType::Class:  valueTypeName = "Class";  break;
             }
 
             // Special case: assigning a Double to an Int variable

@@ -15,9 +15,40 @@ struct FunctionStmt;
 struct Closure;
 class Environment;
 
-// Collection types
-using Array = std::vector<Value>;
-using Dictionary = std::unordered_map<std::string, Value>;
+// Collection types (using shared_ptr to avoid recursive definition)
+using Array = std::shared_ptr<std::vector<Value>>;
+using Dictionary = std::shared_ptr<std::unordered_map<std::string, Value>>;
+
+// Struct value type
+struct StructValue {
+    std::string structName;
+    std::shared_ptr<std::unordered_map<std::string, Value>> members;
+    
+    StructValue(const std::string& structName)
+        : structName(structName), members(std::make_shared<std::unordered_map<std::string, Value>>()) {}
+    
+    StructValue(const std::string& structName, std::unordered_map<std::string, Value> memberMap)
+        : structName(structName), members(std::make_shared<std::unordered_map<std::string, Value>>(std::move(memberMap))) {}
+    
+    bool operator==(const StructValue& other) const;
+    bool operator!=(const StructValue& other) const;
+};
+
+// Class value type (with reference counting for ARC)
+struct ClassValue {
+    std::string className;
+    std::shared_ptr<std::unordered_map<std::string, Value>> members;
+    mutable int refCount; // For ARC implementation
+    
+    ClassValue(const std::string& className)
+        : className(className), members(std::make_shared<std::unordered_map<std::string, Value>>()), refCount(1) {}
+    
+    ClassValue(const std::string& className, std::unordered_map<std::string, Value> memberMap)
+        : className(className), members(std::make_shared<std::unordered_map<std::string, Value>>(std::move(memberMap))), refCount(1) {}
+    
+    bool operator==(const ClassValue& other) const;
+    bool operator!=(const ClassValue& other) const;
+};
 
 // Enum value type
 struct EnumValue {
@@ -68,12 +99,14 @@ enum class ValueType {
     Array,
     Dictionary,
     Function,
-    Enum
+    Enum,
+    Struct,
+    Class
 };
 
 struct Value {
     ValueType type;
-    std::variant<std::monostate, bool, int, double, std::string, Array, Dictionary, std::shared_ptr<Function>, EnumValue> value;
+    std::variant<std::monostate, bool, int, double, std::string, Array, Dictionary, std::shared_ptr<Function>, EnumValue, StructValue, std::shared_ptr<ClassValue>> value;
 
     Value() : type(ValueType::Nil), value(std::monostate{}) {}
     Value(bool v) : type(ValueType::Bool), value(v) {}
@@ -84,12 +117,20 @@ struct Value {
     Value(Dictionary v) : type(ValueType::Dictionary), value(v) {}
     Value(std::shared_ptr<Function> v) : type(ValueType::Function), value(v) {}
     Value(EnumValue v) : type(ValueType::Enum), value(v) {}
+    Value(StructValue v) : type(ValueType::Struct), value(v) {}
+    Value(std::shared_ptr<ClassValue> v) : type(ValueType::Class), value(v) {}
+    
+    // Convenience constructors for collections
+    Value(std::vector<Value> v) : type(ValueType::Array), value(std::make_shared<std::vector<Value>>(std::move(v))) {}
+    Value(std::unordered_map<std::string, Value> v) : type(ValueType::Dictionary), value(std::make_shared<std::unordered_map<std::string, Value>>(std::move(v))) {}
     
     // Helper methods for collections and functions
     bool isArray() const { return type == ValueType::Array; }
     bool isDictionary() const { return type == ValueType::Dictionary; }
     bool isFunction() const { return type == ValueType::Function; }
     bool isEnum() const { return type == ValueType::Enum; }
+    bool isStruct() const { return type == ValueType::Struct; }
+    bool isClass() const { return type == ValueType::Class; }
     bool isClosure() const { 
         if (type != ValueType::Function) return false;
         auto func = std::get<std::shared_ptr<Function>>(value);
@@ -102,6 +143,13 @@ struct Value {
     Dictionary& asDictionary() { return std::get<Dictionary>(value); }
     const Dictionary& asDictionary() const { return std::get<Dictionary>(value); }
     
+    // Convenience methods for accessing collection contents
+    std::vector<Value>& asArrayRef() { return *std::get<Array>(value); }
+    const std::vector<Value>& asArrayRef() const { return *std::get<Array>(value); }
+    
+    std::unordered_map<std::string, Value>& asDictionaryRef() { return *std::get<Dictionary>(value); }
+    const std::unordered_map<std::string, Value>& asDictionaryRef() const { return *std::get<Dictionary>(value); }
+    
     std::shared_ptr<Function>& asFunction() { return std::get<std::shared_ptr<Function>>(value); }
     const std::shared_ptr<Function>& asFunction() const { return std::get<std::shared_ptr<Function>>(value); }
     
@@ -110,6 +158,12 @@ struct Value {
     
     EnumValue& asEnum() { return std::get<EnumValue>(value); }
     const EnumValue& asEnum() const { return std::get<EnumValue>(value); }
+    
+    StructValue& asStruct() { return std::get<StructValue>(value); }
+    const StructValue& asStruct() const { return std::get<StructValue>(value); }
+    
+    std::shared_ptr<ClassValue>& asClass() { return std::get<std::shared_ptr<ClassValue>>(value); }
+    const std::shared_ptr<ClassValue>& asClass() const { return std::get<std::shared_ptr<ClassValue>>(value); }
     
     // Comparison operators
     bool operator==(const Value& other) const {

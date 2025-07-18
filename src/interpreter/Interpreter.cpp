@@ -74,6 +74,32 @@ void Interpreter::visit(const PrintStmt& stmt) {
             std::cout << std::endl;
             break;
         }
+        case ValueType::Struct: {
+            const auto& structVal = val.asStruct();
+            std::cout << structVal.structName << "(";
+            bool first = true;
+            for (const auto& member : *structVal.members) {
+                if (!first) std::cout << ", ";
+                std::cout << member.first << ": ";
+                printValue(member.second);
+                first = false;
+            }
+            std::cout << ")" << std::endl;
+            break;
+        }
+        case ValueType::Class: {
+            const auto& classVal = val.asClass();
+            std::cout << classVal->className << "(";
+            bool first = true;
+            for (const auto& member : *classVal->members) {
+                if (!first) std::cout << ", ";
+                std::cout << member.first << ": ";
+                printValue(member.second);
+                first = false;
+            }
+            std::cout << ")" << std::endl;
+            break;
+        }
     }
 }
 
@@ -91,7 +117,28 @@ void Interpreter::visit(const VarExpr& expr) {
 
 void Interpreter::visit(const Assign& expr) {
     Value value = evaluate(*expr.value);
-    environment->assign(expr.name, value);
+    
+    // Check if target is a simple variable or member access
+    if (auto varExpr = dynamic_cast<const VarExpr*>(expr.target.get())) {
+        // Simple variable assignment
+        environment->assign(varExpr->name, value);
+    } else if (auto memberAccess = dynamic_cast<const MemberAccess*>(expr.target.get())) {
+        // Member access assignment: object.member = value
+        Value object = evaluate(*memberAccess->object);
+        
+        if (object.isStruct()) {
+            auto& structValue = object.asStruct();
+            (*structValue.members)[memberAccess->member.lexeme] = value;
+        } else if (object.isClass()) {
+            auto& classValue = object.asClass();
+            (*classValue->members)[memberAccess->member.lexeme] = value;
+        } else {
+            throw std::runtime_error("Only structs and classes have members");
+        }
+    } else {
+        throw std::runtime_error("Invalid assignment target");
+    }
+    
     result = value;
 }
 
@@ -248,7 +295,7 @@ bool Interpreter::isTruthy(const Value& value) {
 }
 
 void Interpreter::visit(const ArrayLiteral& expr) {
-    Array elements;
+    std::vector<Value> elements;
     for (const auto& element : expr.elements) {
         elements.push_back(evaluate(*element));
     }
@@ -256,7 +303,7 @@ void Interpreter::visit(const ArrayLiteral& expr) {
 }
 
 void Interpreter::visit(const DictionaryLiteral& expr) {
-    Dictionary dict;
+    std::unordered_map<std::string, Value> dict;
     for (const auto& pair : expr.pairs) {
         Value key = evaluate(*pair.key);
         Value value = evaluate(*pair.value);
@@ -292,7 +339,7 @@ void Interpreter::visit(const IndexAccess& expr) {
         }
         
         int idx = std::get<int>(index.value);
-        const Array& arr = object.asArray();
+        const auto& arr = *object.asArray();
         
         if (idx < 0 || idx >= static_cast<int>(arr.size())) {
             throw std::runtime_error("Array index out of bounds.");
@@ -315,7 +362,7 @@ void Interpreter::visit(const IndexAccess& expr) {
                 throw std::runtime_error("Dictionary key must be a string or number.");
         }
         
-        const Dictionary& dict = object.asDictionary();
+        const auto& dict = *object.asDictionary();
         auto it = dict.find(key);
         if (it != dict.end()) {
             result = it->second;
@@ -329,9 +376,9 @@ void Interpreter::visit(const IndexAccess& expr) {
 
 void Interpreter::printArray(const Array& arr) {
     std::cout << "[";
-    for (size_t i = 0; i < arr.size(); ++i) {
+    for (size_t i = 0; i < arr->size(); ++i) {
         if (i > 0) std::cout << ", ";
-        printValue(arr[i]);
+        printValue((*arr)[i]);
     }
     std::cout << "]" << std::endl;
 }
@@ -339,7 +386,7 @@ void Interpreter::printArray(const Array& arr) {
 void Interpreter::printDictionary(const Dictionary& dict) {
     std::cout << "{";
     bool first = true;
-    for (const auto& pair : dict) {
+    for (const auto& pair : *dict) {
         if (!first) std::cout << ", ";
         std::cout << "\"" << pair.first << "\": ";
         printValue(pair.second);
@@ -389,6 +436,32 @@ void Interpreter::printValue(const Value& val) {
                 }
                 std::cout << ")";
             }
+            break;
+        }
+        case ValueType::Struct: {
+            const auto& structVal = val.asStruct();
+            std::cout << structVal.structName << "(";
+            bool first = true;
+            for (const auto& member : *structVal.members) {
+                if (!first) std::cout << ", ";
+                std::cout << member.first << ": ";
+                printValue(member.second);
+                first = false;
+            }
+            std::cout << ")";
+            break;
+        }
+        case ValueType::Class: {
+            const auto& classVal = val.asClass();
+            std::cout << classVal->className << "(";
+            bool first = true;
+            for (const auto& member : *classVal->members) {
+                if (!first) std::cout << ", ";
+                std::cout << member.first << ": ";
+                printValue(member.second);
+                first = false;
+            }
+            std::cout << ")";
             break;
         }
     }
@@ -615,6 +688,59 @@ void Interpreter::visit(const EnumAccess& expr) {
     // Create enum value
     EnumValue enumValue(enumTypeName, expr.caseName.lexeme, std::move(associatedValues));
     result = Value(enumValue);
+}
+
+// Execute struct declaration: struct Name { members }
+void Interpreter::visit(const StructStmt& stmt) {
+    // Store struct definition in environment for later use
+    // We'll store the struct name as a special marker and keep the definition
+    environment->define(stmt.name.lexeme, Value(), false, "Struct");
+}
+
+// Execute class declaration: class Name { members }
+void Interpreter::visit(const ClassStmt& stmt) {
+    // Store class definition in environment for later use
+    // We'll store the class name as a special marker and keep the definition
+    environment->define(stmt.name.lexeme, Value(), false, "Class");
+}
+
+// Execute member access: object.member
+void Interpreter::visit(const MemberAccess& expr) {
+    Value object = evaluate(*expr.object);
+    
+    if (object.isStruct()) {
+        auto& structValue = object.asStruct();
+        auto it = structValue.members->find(expr.member.lexeme);
+        if (it != structValue.members->end()) {
+            result = it->second;
+        } else {
+            throw std::runtime_error("Struct '" + structValue.structName + "' has no member '" + expr.member.lexeme + "'");
+        }
+    } else if (object.isClass()) {
+        auto& classValue = object.asClass();
+        auto it = classValue->members->find(expr.member.lexeme);
+        if (it != classValue->members->end()) {
+            result = it->second;
+        } else {
+            throw std::runtime_error("Class '" + classValue->className + "' has no member '" + expr.member.lexeme + "'");
+        }
+    } else {
+        throw std::runtime_error("Only structs and classes have members");
+    }
+}
+
+// Execute struct initialization: StructName(member1: value1, member2: value2)
+void Interpreter::visit(const StructInit& expr) {
+    // Create a new struct instance
+    StructValue structValue(expr.structName.lexeme);
+    
+    // Initialize members with provided values
+    for (const auto& member : expr.members) {
+        Value memberValue = evaluate(*member.second);
+        (*structValue.members)[member.first.lexeme] = memberValue;
+    }
+    
+    result = Value(structValue);
 }
 
 } // namespace miniswift

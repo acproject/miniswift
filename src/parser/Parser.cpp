@@ -27,6 +27,16 @@ std::vector<std::unique_ptr<Stmt>> Parser::declaration() {
     result.push_back(enumDeclaration());
     return result;
   }
+  if (match({TokenType::Struct})) {
+    std::vector<std::unique_ptr<Stmt>> result;
+    result.push_back(structDeclaration());
+    return result;
+  }
+  if (match({TokenType::Class})) {
+    std::vector<std::unique_ptr<Stmt>> result;
+    result.push_back(classDeclaration());
+    return result;
+  }
   if (match({TokenType::Var, TokenType::Let})) {
     bool isConst = previous().type == TokenType::Let;
     std::vector<Token> names;
@@ -115,12 +125,12 @@ std::unique_ptr<Expr> Parser::assignment() {
     Token equals = previous();
     auto value = assignment();
 
-    if (auto *var = dynamic_cast<VarExpr *>(expr.get())) {
-      Token name = var->name;
-      return std::make_unique<Assign>(name, std::move(value));
+    // Check if the left side is a valid assignment target
+    if (dynamic_cast<VarExpr *>(expr.get()) || dynamic_cast<MemberAccess *>(expr.get())) {
+      return std::make_unique<Assign>(std::move(expr), std::move(value));
     }
 
-    // In a real compiler, you'd report an error.
+    throw std::runtime_error("Invalid assignment target.");
   }
 
   return expr;
@@ -210,7 +220,14 @@ std::unique_ptr<Expr> Parser::primary() {
   }
 
   if (match({TokenType::Identifier})) {
-    std::unique_ptr<Expr> expr = std::make_unique<VarExpr>(previous());
+    Token identifier = previous();
+    
+    // Check for struct initialization: StructName(member1: value1, member2: value2)
+    if (check(TokenType::LParen)) {
+      return structInit();
+    }
+    
+    std::unique_ptr<Expr> expr = std::make_unique<VarExpr>(identifier);
     
     // Check for index access: identifier[index]
     while (match({TokenType::LSquare})) {
@@ -521,22 +538,24 @@ std::unique_ptr<Expr> Parser::call() {
     } else if (match({TokenType::LSquare})) {
       expr = indexAccess(std::move(expr));
     } else if (match({TokenType::Dot})) {
-      // Enum member access: EnumType.caseName or EnumType.caseName(arguments)
-      consume(TokenType::Identifier, "Expect enum case name after '.'.");
-      Token caseName = previous();
+      consume(TokenType::Identifier, "Expect member name after '.'.");
+      Token memberName = previous();
       
-      std::vector<std::unique_ptr<Expr>> arguments;
+      // Check if this is an enum access with arguments
       if (match({TokenType::LParen})) {
-        // Associated values: EnumType.caseName(arg1, arg2)
+        // Enum member access with associated values: EnumType.caseName(arg1, arg2)
+        std::vector<std::unique_ptr<Expr>> arguments;
         if (!check(TokenType::RParen)) {
           do {
             arguments.push_back(expression());
           } while (match({TokenType::Comma}));
         }
         consume(TokenType::RParen, "Expect ')' after enum case arguments.");
+        expr = std::make_unique<EnumAccess>(std::move(expr), memberName, std::move(arguments));
+      } else {
+        // Regular member access: object.member
+        expr = std::make_unique<MemberAccess>(std::move(expr), memberName);
       }
-      
-      expr = std::make_unique<EnumAccess>(std::move(expr), caseName, std::move(arguments));
     } else {
       break;
     }
@@ -644,6 +663,127 @@ std::unique_ptr<Stmt> Parser::enumDeclaration() {
   
   consume(TokenType::RBrace, "Expect '}' after enum cases.");
   return std::make_unique<EnumStmt>(name, rawType, std::move(cases));
+}
+
+// Parse struct declaration: struct Name { var member1: Type, let member2: Type = defaultValue }
+std::unique_ptr<Stmt> Parser::structDeclaration() {
+  consume(TokenType::Identifier, "Expect struct name.");
+  Token name = previous();
+  
+  consume(TokenType::LBrace, "Expect '{' after struct name.");
+  
+  std::vector<StructMember> members;
+  std::vector<std::unique_ptr<FunctionStmt>> methods;
+  
+  while (!check(TokenType::RBrace) && !isAtEnd()) {
+    if (match({TokenType::Func})) {
+      // Parse method declaration
+      auto method = std::unique_ptr<FunctionStmt>(static_cast<FunctionStmt*>(functionDeclaration().release()));
+      methods.push_back(std::move(method));
+    } else if (match({TokenType::Var, TokenType::Let})) {
+      // Parse member declaration
+      bool isVar = previous().type == TokenType::Var;
+      
+      consume(TokenType::Identifier, "Expect member name.");
+      Token memberName = previous();
+      
+      consume(TokenType::Colon, "Expect ':' after member name.");
+      Token memberType = parseType();
+      
+      std::unique_ptr<Expr> defaultValue = nullptr;
+      if (match({TokenType::Equal})) {
+        defaultValue = expression();
+      }
+      
+      members.emplace_back(memberName, memberType, std::move(defaultValue), isVar);
+      
+      match({TokenType::Semicolon}); // Optional semicolon
+    } else {
+      throw std::runtime_error("Expect 'var', 'let', or 'func' in struct body.");
+    }
+  }
+  
+  consume(TokenType::RBrace, "Expect '}' after struct body.");
+  return std::make_unique<StructStmt>(name, std::move(members), std::move(methods));
+}
+
+// Parse class declaration: class Name: Superclass { var member1: Type, func method() {} }
+std::unique_ptr<Stmt> Parser::classDeclaration() {
+  consume(TokenType::Identifier, "Expect class name.");
+  Token name = previous();
+  
+  Token superclass = Token(TokenType::Nil, "", name.line);
+  if (match({TokenType::Colon})) {
+    consume(TokenType::Identifier, "Expect superclass name.");
+    superclass = previous();
+  }
+  
+  consume(TokenType::LBrace, "Expect '{' after class name.");
+  
+  std::vector<StructMember> members;
+  std::vector<std::unique_ptr<FunctionStmt>> methods;
+  
+  while (!check(TokenType::RBrace) && !isAtEnd()) {
+    if (match({TokenType::Func})) {
+      // Parse method declaration
+      auto method = std::unique_ptr<FunctionStmt>(static_cast<FunctionStmt*>(functionDeclaration().release()));
+      methods.push_back(std::move(method));
+    } else if (match({TokenType::Var, TokenType::Let})) {
+      // Parse member declaration
+      bool isVar = previous().type == TokenType::Var;
+      
+      consume(TokenType::Identifier, "Expect member name.");
+      Token memberName = previous();
+      
+      consume(TokenType::Colon, "Expect ':' after member name.");
+      Token memberType = parseType();
+      
+      std::unique_ptr<Expr> defaultValue = nullptr;
+      if (match({TokenType::Equal})) {
+        defaultValue = expression();
+      }
+      
+      members.emplace_back(memberName, memberType, std::move(defaultValue), isVar);
+      
+      match({TokenType::Semicolon}); // Optional semicolon
+    } else {
+      throw std::runtime_error("Expect 'var', 'let', or 'func' in class body.");
+    }
+  }
+  
+  consume(TokenType::RBrace, "Expect '}' after class body.");
+  return std::make_unique<ClassStmt>(name, superclass, std::move(members), std::move(methods));
+}
+
+// Parse member access: object.member
+std::unique_ptr<Expr> Parser::memberAccess(std::unique_ptr<Expr> object) {
+  consume(TokenType::Identifier, "Expect member name after '.'.");
+  Token member = previous();
+  return std::make_unique<MemberAccess>(std::move(object), member);
+}
+
+// Parse struct initialization: StructName(member1: value1, member2: value2)
+std::unique_ptr<Expr> Parser::structInit() {
+  Token structName = previous(); // We've already consumed the identifier
+  
+  consume(TokenType::LParen, "Expect '(' after struct name.");
+  
+  std::vector<std::pair<Token, std::unique_ptr<Expr>>> members;
+  
+  if (!check(TokenType::RParen)) {
+    do {
+      consume(TokenType::Identifier, "Expect member name.");
+      Token memberName = previous();
+      
+      consume(TokenType::Colon, "Expect ':' after member name.");
+      auto value = expression();
+      
+      members.emplace_back(memberName, std::move(value));
+    } while (match({TokenType::Comma}));
+  }
+  
+  consume(TokenType::RParen, "Expect ')' after struct members.");
+  return std::make_unique<StructInit>(structName, std::move(members));
 }
 
 } // namespace miniswift

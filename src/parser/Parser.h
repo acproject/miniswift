@@ -17,6 +17,8 @@ private:
     std::vector<std::unique_ptr<Stmt>> declaration();
     std::unique_ptr<Stmt> functionDeclaration();
     std::unique_ptr<Stmt> enumDeclaration();
+    std::unique_ptr<Stmt> structDeclaration();
+    std::unique_ptr<Stmt> classDeclaration();
     std::unique_ptr<Stmt> statement();
     std::unique_ptr<Stmt> printStatement();
     std::unique_ptr<Stmt> expressionStatement();
@@ -38,6 +40,8 @@ private:
     std::unique_ptr<Expr> arrayLiteral();
     std::unique_ptr<Expr> dictionaryLiteral();
     std::unique_ptr<Expr> indexAccess(std::unique_ptr<Expr> object);
+    std::unique_ptr<Expr> memberAccess(std::unique_ptr<Expr> object);
+    std::unique_ptr<Expr> structInit();
     std::unique_ptr<Expr> closure();
 
     bool match(const std::vector<TokenType>& types);

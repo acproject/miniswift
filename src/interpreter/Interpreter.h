@@ -29,6 +29,8 @@ public:
     void visit(const EnumStmt& stmt) override;
     void visit(const StructStmt& stmt) override;
     void visit(const ClassStmt& stmt) override;
+    void visit(const InitStmt& stmt) override;
+    void visit(const DeinitStmt& stmt) override;
 
     void visit(const Binary& expr) override;
     void visit(const Grouping& expr) override;
@@ -49,6 +51,10 @@ public:
     // Public methods for property system
     Value evaluate(const Expr& expr);
     void executeWithEnvironment(const Stmt& stmt, std::shared_ptr<Environment> env);
+    
+    // Environment access methods for OOP system
+    std::shared_ptr<Environment> getCurrentEnvironment() const { return environment; }
+    void setCurrentEnvironment(std::shared_ptr<Environment> env) { environment = env; }
     
 protected:
     std::shared_ptr<Environment> environment;

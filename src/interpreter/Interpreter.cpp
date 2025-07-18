@@ -1,5 +1,6 @@
 #include "Interpreter.h"
 #include "OOP/Property.h"
+#include "OOP/Constructor.h"
 #include <stdexcept>
 #include <iostream>
 
@@ -103,6 +104,12 @@ void Interpreter::visit(const PrintStmt& stmt) {
             std::cout << ")" << std::endl;
             break;
         }
+        case ValueType::Constructor:
+            std::cout << "<constructor>" << std::endl;
+            break;
+        case ValueType::Destructor:
+            std::cout << "<destructor>" << std::endl;
+            break;
     }
 }
 
@@ -509,6 +516,12 @@ void Interpreter::printValue(const Value& val) {
             std::cout << ")";
             break;
         }
+        case ValueType::Constructor:
+            std::cout << "<constructor>";
+            break;
+        case ValueType::Destructor:
+            std::cout << "<destructor>";
+            break;
     }
 }
 
@@ -757,10 +770,39 @@ void Interpreter::visit(const ClassStmt& stmt) {
     // Register class properties
     registerClassProperties(stmt.name.lexeme, stmt.members);
     
-
-    
     // Store class definition in environment for later use
     environment->define(stmt.name.lexeme, Value(), false, "Class");
+}
+
+// Execute init declaration: init(parameters) { body }
+void Interpreter::visit(const InitStmt& stmt) {
+    // Create constructor definition with proper parameters
+    InitType initType = stmt.initType;
+    
+    // Clone the body to create a unique_ptr<BlockStmt>
+    auto clonedStmt = stmt.body->clone();
+    auto bodyClone = std::unique_ptr<BlockStmt>(static_cast<BlockStmt*>(clonedStmt.release()));
+    
+    // Create constructor definition
+    ConstructorDefinition constructorDef(initType, stmt.parameters, std::move(bodyClone));
+    
+    // Create constructor value and store in environment
+    auto constructorValue = std::make_shared<ConstructorValue>(constructorDef, environment);
+    environment->define("init", Value(constructorValue), false, "Constructor");
+}
+
+// Execute deinit declaration: deinit { body }
+void Interpreter::visit(const DeinitStmt& stmt) {
+    // Clone the body to create a unique_ptr<BlockStmt>
+    auto clonedStmt = stmt.body->clone();
+    auto bodyClone = std::unique_ptr<BlockStmt>(static_cast<BlockStmt*>(clonedStmt.release()));
+    
+    // Create destructor definition
+    DestructorDefinition destructorDef(std::move(bodyClone));
+    
+    // Create destructor value and store in environment
+    auto destructorValue = std::make_shared<DestructorValue>(destructorDef, environment);
+    environment->define("deinit", Value(destructorValue), false, "Destructor");
 }
 
 // Execute member access: object.member

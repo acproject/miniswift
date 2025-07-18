@@ -37,6 +37,8 @@ enum class TokenType {
   Set,
   WillSet,
   DidSet,
+  Init,
+  Deinit,
 
   // Operators
   Plus,

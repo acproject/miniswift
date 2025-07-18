@@ -15,6 +15,8 @@ struct FunctionStmt;
 struct Closure;
 class Environment;
 class InstancePropertyContainer;
+class ConstructorValue;
+class DestructorValue;
 
 // Collection types (using shared_ptr to avoid recursive definition)
 using Array = std::shared_ptr<std::vector<Value>>;
@@ -130,12 +132,14 @@ enum class ValueType {
     Function,
     Enum,
     Struct,
-    Class
+    Class,
+    Constructor,
+    Destructor
 };
 
 struct Value {
     ValueType type;
-    std::variant<std::monostate, bool, int, double, std::string, Array, Dictionary, std::shared_ptr<Function>, EnumValue, StructValue, std::shared_ptr<ClassValue>> value;
+    std::variant<std::monostate, bool, int, double, std::string, Array, Dictionary, std::shared_ptr<Function>, EnumValue, StructValue, std::shared_ptr<ClassValue>, std::shared_ptr<ConstructorValue>, std::shared_ptr<DestructorValue>> value;
 
     Value() : type(ValueType::Nil), value(std::monostate{}) {}
     Value(bool v) : type(ValueType::Bool), value(v) {}
@@ -148,6 +152,8 @@ struct Value {
     Value(EnumValue v) : type(ValueType::Enum), value(v) {}
     Value(StructValue v) : type(ValueType::Struct), value(v) {}
     Value(std::shared_ptr<ClassValue> v) : type(ValueType::Class), value(v) {}
+    Value(std::shared_ptr<ConstructorValue> v) : type(ValueType::Constructor), value(v) {}
+    Value(std::shared_ptr<DestructorValue> v) : type(ValueType::Destructor), value(v) {}
     
     // Convenience constructors for collections
     Value(std::vector<Value> v) : type(ValueType::Array), value(std::make_shared<std::vector<Value>>(std::move(v))) {}
@@ -160,6 +166,8 @@ struct Value {
     bool isEnum() const { return type == ValueType::Enum; }
     bool isStruct() const { return type == ValueType::Struct; }
     bool isClass() const { return type == ValueType::Class; }
+    bool isConstructor() const { return type == ValueType::Constructor; }
+    bool isDestructor() const { return type == ValueType::Destructor; }
     bool isClosure() const { 
         if (type != ValueType::Function) return false;
         auto func = std::get<std::shared_ptr<Function>>(value);
@@ -193,6 +201,12 @@ struct Value {
     
     std::shared_ptr<ClassValue>& asClass() { return std::get<std::shared_ptr<ClassValue>>(value); }
     const std::shared_ptr<ClassValue>& asClass() const { return std::get<std::shared_ptr<ClassValue>>(value); }
+    
+    std::shared_ptr<ConstructorValue>& asConstructor() { return std::get<std::shared_ptr<ConstructorValue>>(value); }
+    const std::shared_ptr<ConstructorValue>& asConstructor() const { return std::get<std::shared_ptr<ConstructorValue>>(value); }
+    
+    std::shared_ptr<DestructorValue>& asDestructor() { return std::get<std::shared_ptr<DestructorValue>>(value); }
+    const std::shared_ptr<DestructorValue>& asDestructor() const { return std::get<std::shared_ptr<DestructorValue>>(value); }
     
     // Comparison operators
     bool operator==(const Value& other) const {

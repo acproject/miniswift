@@ -37,6 +37,16 @@ std::vector<std::unique_ptr<Stmt>> Parser::declaration() {
     result.push_back(classDeclaration());
     return result;
   }
+  if (match({TokenType::Init})) {
+    std::vector<std::unique_ptr<Stmt>> result;
+    result.push_back(initDeclaration());
+    return result;
+  }
+  if (match({TokenType::Deinit})) {
+    std::vector<std::unique_ptr<Stmt>> result;
+    result.push_back(deinitDeclaration());
+    return result;
+  }
   if (match({TokenType::Var, TokenType::Let})) {
     bool isConst = previous().type == TokenType::Let;
     std::vector<Token> names;
@@ -192,6 +202,12 @@ std::unique_ptr<Expr> Parser::primary() {
              TokenType::StringLiteral})) {
     return std::make_unique<Literal>(previous());
   }
+  
+  // Handle 'self' keyword as a special identifier
+  if (match({TokenType::Self})) {
+    Token selfToken = previous();
+    return std::make_unique<VarExpr>(selfToken);
+  }
 
   // Handle string interpolation
   if (match({TokenType::InterpolatedStringLiteral})) {
@@ -214,18 +230,8 @@ std::unique_ptr<Expr> Parser::primary() {
     return arrayLiteral();
   }
 
-  // Closure literal: { (parameters) -> ReturnType in body }
-  if (match({TokenType::LBrace})) {
-    return closure();
-  }
-
   if (match({TokenType::Identifier})) {
     Token identifier = previous();
-    
-    // Check for struct initialization: StructName(member1: value1, member2: value2)
-    if (check(TokenType::LParen)) {
-      return structInit();
-    }
     
     std::unique_ptr<Expr> expr = std::make_unique<VarExpr>(identifier);
     
@@ -566,6 +572,52 @@ std::unique_ptr<Expr> Parser::call() {
 
 // Parse function call arguments
 std::unique_ptr<Expr> Parser::finishCall(std::unique_ptr<Expr> callee) {
+  // Check if this might be a struct initialization by looking ahead
+  // Struct init has pattern: StructName(memberName: value, ...)
+  // Function call has pattern: functionName(arg1, arg2, ...)
+  
+  if (!check(TokenType::RParen)) {
+    // Look ahead to see if the first argument has the pattern "identifier:"
+    int savedCurrent = current;
+    bool isStructInit = false;
+    
+    if (check(TokenType::Identifier)) {
+      advance(); // consume identifier
+      if (check(TokenType::Colon)) {
+        isStructInit = true;
+      }
+    }
+    
+    // Restore position
+    current = savedCurrent;
+    
+    if (isStructInit) {
+      // Parse as struct initialization
+      std::vector<std::pair<Token, std::unique_ptr<Expr>>> members;
+      
+      do {
+        consume(TokenType::Identifier, "Expect member name.");
+        Token memberName = previous();
+        
+        consume(TokenType::Colon, "Expect ':' after member name.");
+        auto value = expression();
+        
+        members.emplace_back(memberName, std::move(value));
+      } while (match({TokenType::Comma}));
+      
+      consume(TokenType::RParen, "Expect ')' after struct members.");
+      
+      // Extract struct name from callee (should be a VarExpr)
+      if (auto varExpr = dynamic_cast<VarExpr*>(callee.get())) {
+        Token structName = varExpr->name;
+        return std::make_unique<StructInit>(structName, std::move(members));
+      } else {
+        throw std::runtime_error("Invalid struct initialization.");
+      }
+    }
+  }
+  
+  // Parse as regular function call
   std::vector<std::unique_ptr<Expr>> arguments;
   
   if (!check(TokenType::RParen)) {
@@ -676,12 +728,24 @@ std::unique_ptr<Stmt> Parser::structDeclaration() {
   
   std::vector<StructMember> members;
   std::vector<std::unique_ptr<FunctionStmt>> methods;
+  std::vector<std::unique_ptr<InitStmt>> initializers;
+  std::unique_ptr<DeinitStmt> deinitializer;
   
   while (!check(TokenType::RBrace) && !isAtEnd()) {
     if (match({TokenType::Func})) {
       // Parse method declaration
       auto method = std::unique_ptr<FunctionStmt>(static_cast<FunctionStmt*>(functionDeclaration().release()));
       methods.push_back(std::move(method));
+    } else if (match({TokenType::Init})) {
+      // Parse initializer declaration
+      auto init = std::unique_ptr<InitStmt>(static_cast<InitStmt*>(initDeclaration().release()));
+      initializers.push_back(std::move(init));
+    } else if (match({TokenType::Deinit})) {
+      // Parse deinitializer declaration
+      if (deinitializer) {
+        throw std::runtime_error("Multiple deinitializers not allowed.");
+      }
+      deinitializer = std::unique_ptr<DeinitStmt>(static_cast<DeinitStmt*>(deinitDeclaration().release()));
     } else if (match({TokenType::Var, TokenType::Let})) {
       // Parse member declaration
       bool isVar = previous().type == TokenType::Var;
@@ -747,12 +811,13 @@ std::unique_ptr<Stmt> Parser::structDeclaration() {
       
       match({TokenType::Semicolon}); // Optional semicolon
     } else {
-      throw std::runtime_error("Expect 'var', 'let', or 'func' in struct body.");
+      throw std::runtime_error("Expect 'var', 'let', 'func', 'init', or 'deinit' in struct body.");
     }
   }
   
   consume(TokenType::RBrace, "Expect '}' after struct body.");
-  return std::make_unique<StructStmt>(name, std::move(members), std::move(methods));
+  return std::make_unique<StructStmt>(name, std::move(members), std::move(methods), 
+                                      std::move(initializers), std::move(deinitializer));
 }
 
 // Parse class declaration: class Name: Superclass { var member1: Type, func method() {} }
@@ -770,12 +835,24 @@ std::unique_ptr<Stmt> Parser::classDeclaration() {
   
   std::vector<StructMember> members;
   std::vector<std::unique_ptr<FunctionStmt>> methods;
+  std::vector<std::unique_ptr<InitStmt>> initializers;
+  std::unique_ptr<DeinitStmt> deinitializer;
   
   while (!check(TokenType::RBrace) && !isAtEnd()) {
     if (match({TokenType::Func})) {
       // Parse method declaration
       auto method = std::unique_ptr<FunctionStmt>(static_cast<FunctionStmt*>(functionDeclaration().release()));
       methods.push_back(std::move(method));
+    } else if (match({TokenType::Init})) {
+      // Parse initializer declaration
+      auto init = std::unique_ptr<InitStmt>(static_cast<InitStmt*>(initDeclaration().release()));
+      initializers.push_back(std::move(init));
+    } else if (match({TokenType::Deinit})) {
+      // Parse deinitializer declaration
+      if (deinitializer) {
+        throw std::runtime_error("Multiple deinitializers not allowed.");
+      }
+      deinitializer = std::unique_ptr<DeinitStmt>(static_cast<DeinitStmt*>(deinitDeclaration().release()));
     } else if (match({TokenType::Var, TokenType::Let})) {
       // Parse member declaration
       bool isVar = previous().type == TokenType::Var;
@@ -795,12 +872,13 @@ std::unique_ptr<Stmt> Parser::classDeclaration() {
       
       match({TokenType::Semicolon}); // Optional semicolon
     } else {
-      throw std::runtime_error("Expect 'var', 'let', or 'func' in class body.");
+      throw std::runtime_error("Expect 'var', 'let', 'func', 'init', or 'deinit' in class body.");
     }
   }
   
   consume(TokenType::RBrace, "Expect '}' after class body.");
-  return std::make_unique<ClassStmt>(name, superclass, std::move(members), std::move(methods));
+  return std::make_unique<ClassStmt>(name, superclass, std::move(members), std::move(methods),
+                                     std::move(initializers), std::move(deinitializer));
 }
 
 // Parse member access: object.member
@@ -832,6 +910,45 @@ std::unique_ptr<Expr> Parser::structInit() {
   
   consume(TokenType::RParen, "Expect ')' after struct members.");
   return std::make_unique<StructInit>(structName, std::move(members));
+}
+
+// Parse init declaration: init(parameters) { body } or init?(parameters) { body }
+std::unique_ptr<Stmt> Parser::initDeclaration() {
+  // Check for failable initializer
+  bool isFailable = false;
+  if (match({TokenType::Unknown}) && previous().lexeme == "?") {
+    isFailable = true;
+  }
+  
+  consume(TokenType::LParen, "Expect '(' after 'init'.");
+  
+  std::vector<Parameter> parameters;
+  if (!check(TokenType::RParen)) {
+    do {
+      consume(TokenType::Identifier, "Expect parameter name.");
+      Token paramName = previous();
+      consume(TokenType::Colon, "Expect ':' after parameter name.");
+      Token paramType = parseType();
+      parameters.emplace_back(paramName, paramType);
+    } while (match({TokenType::Comma}));
+  }
+  
+  consume(TokenType::RParen, "Expect ')' after parameters.");
+  
+  consume(TokenType::LBrace, "Expect '{' before initializer body.");
+  auto body = blockStatement();
+  
+  InitType initType = isFailable ? InitType::FAILABLE : InitType::DESIGNATED;
+  
+  return std::make_unique<InitStmt>(initType, std::move(parameters), std::move(body), false);
+}
+
+// Parse deinit declaration: deinit { body }
+std::unique_ptr<Stmt> Parser::deinitDeclaration() {
+  consume(TokenType::LBrace, "Expect '{' before deinitializer body.");
+  auto body = blockStatement();
+  
+  return std::make_unique<DeinitStmt>(std::move(body));
 }
 
 } // namespace miniswift

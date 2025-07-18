@@ -209,5 +209,5 @@ MiniSwift/
 MIT License
 
 ## 联系方式
-
+acproject@qq.com
 如有问题或建议，请创建 Issue 或 Pull Request。

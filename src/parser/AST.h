@@ -246,6 +246,8 @@ struct ReturnStmt;
 struct EnumStmt;
 struct StructStmt;
 struct ClassStmt;
+struct InitStmt;
+struct DeinitStmt;
 
 // Visitor for Stmt
 class StmtVisitor {
@@ -263,6 +265,8 @@ public:
     virtual void visit(const EnumStmt& stmt) = 0;
     virtual void visit(const StructStmt& stmt) = 0;
     virtual void visit(const ClassStmt& stmt) = 0;
+    virtual void visit(const InitStmt& stmt) = 0;
+    virtual void visit(const DeinitStmt& stmt) = 0;
 };
 
 // Base class for Stmt
@@ -622,9 +626,15 @@ struct StructStmt : Stmt {
     Token name;
     std::vector<StructMember> members;
     std::vector<std::unique_ptr<FunctionStmt>> methods; // Methods defined in the struct
+    std::vector<std::unique_ptr<InitStmt>> initializers; // Constructors
+    std::unique_ptr<DeinitStmt> deinitializer; // Destructor
     
-    StructStmt(Token name, std::vector<StructMember> members, std::vector<std::unique_ptr<FunctionStmt>> methods = {})
-        : name(name), members(std::move(members)), methods(std::move(methods)) {}
+    StructStmt(Token name, std::vector<StructMember> members, 
+               std::vector<std::unique_ptr<FunctionStmt>> methods = {},
+               std::vector<std::unique_ptr<InitStmt>> initializers = {},
+               std::unique_ptr<DeinitStmt> deinitializer = nullptr)
+        : name(name), members(std::move(members)), methods(std::move(methods)),
+          initializers(std::move(initializers)), deinitializer(std::move(deinitializer)) {}
 
     void accept(StmtVisitor& visitor) const override {
         visitor.visit(*this);
@@ -643,9 +653,15 @@ struct ClassStmt : Stmt {
     Token superclass; // Optional superclass
     std::vector<StructMember> members;
     std::vector<std::unique_ptr<FunctionStmt>> methods;
+    std::vector<std::unique_ptr<InitStmt>> initializers; // Constructors
+    std::unique_ptr<DeinitStmt> deinitializer; // Destructor
     
-    ClassStmt(Token name, Token superclass, std::vector<StructMember> members, std::vector<std::unique_ptr<FunctionStmt>> methods = {})
-        : name(name), superclass(superclass), members(std::move(members)), methods(std::move(methods)) {}
+    ClassStmt(Token name, Token superclass, std::vector<StructMember> members, 
+              std::vector<std::unique_ptr<FunctionStmt>> methods = {},
+              std::vector<std::unique_ptr<InitStmt>> initializers = {},
+              std::unique_ptr<DeinitStmt> deinitializer = nullptr)
+        : name(name), superclass(superclass), members(std::move(members)), methods(std::move(methods)),
+          initializers(std::move(initializers)), deinitializer(std::move(deinitializer)) {}
 
     void accept(StmtVisitor& visitor) const override {
         visitor.visit(*this);
@@ -655,6 +671,48 @@ struct ClassStmt : Stmt {
         // For simplicity, we'll create a basic clone without deep copying members and methods
         // This is sufficient for our current use case
         return std::make_unique<ClassStmt>(name, superclass, std::vector<StructMember>(), std::vector<std::unique_ptr<FunctionStmt>>());
+    }
+};
+
+// Constructor types
+enum class InitType {
+    DESIGNATED,  // 指定构造器
+    CONVENIENCE, // 便利构造器
+    FAILABLE     // 可失败构造器
+};
+
+// Constructor declaration: init(parameters) { body }
+struct InitStmt : Stmt {
+    InitType initType;
+    std::vector<Parameter> parameters;
+    std::unique_ptr<Stmt> body;
+    bool isRequired; // 是否为required构造器
+    
+    InitStmt(InitType type, std::vector<Parameter> parameters, std::unique_ptr<Stmt> body, bool required = false)
+        : initType(type), parameters(std::move(parameters)), body(std::move(body)), isRequired(required) {}
+
+    void accept(StmtVisitor& visitor) const override {
+        visitor.visit(*this);
+    }
+
+    std::unique_ptr<Stmt> clone() const override {
+        return std::make_unique<InitStmt>(initType, parameters, body->clone(), isRequired);
+    }
+};
+
+// Destructor declaration: deinit { body }
+struct DeinitStmt : Stmt {
+    std::unique_ptr<Stmt> body;
+    
+    explicit DeinitStmt(std::unique_ptr<Stmt> body)
+        : body(std::move(body)) {}
+
+    void accept(StmtVisitor& visitor) const override {
+        visitor.visit(*this);
+    }
+
+    std::unique_ptr<Stmt> clone() const override {
+        return std::make_unique<DeinitStmt>(body->clone());
     }
 };
 

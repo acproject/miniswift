@@ -14,6 +14,9 @@ struct Literal;
 struct Unary;
 struct VarExpr;
 struct Assign;
+struct ArrayLiteral;
+struct DictionaryLiteral;
+struct IndexAccess;
 
 // Visitor interface for expressions
 class ExprVisitor {
@@ -25,6 +28,9 @@ public:
     virtual void visit(const Unary& expr) = 0;
     virtual void visit(const VarExpr& expr) = 0;
     virtual void visit(const Assign& expr) = 0;
+    virtual void visit(const ArrayLiteral& expr) = 0;
+    virtual void visit(const DictionaryLiteral& expr) = 0;
+    virtual void visit(const IndexAccess& expr) = 0;
 };
 
 // Base class for all expression nodes
@@ -126,6 +132,71 @@ struct Unary : Expr {
 
     const Token op;
     const std::unique_ptr<Expr> right;
+};
+
+// Array literal expression: [1, 2, 3]
+struct ArrayLiteral : Expr {
+    explicit ArrayLiteral(std::vector<std::unique_ptr<Expr>> elements)
+        : elements(std::move(elements)) {}
+
+    void accept(ExprVisitor& visitor) const override {
+        visitor.visit(*this);
+    }
+
+    std::unique_ptr<Expr> clone() const override {
+        std::vector<std::unique_ptr<Expr>> clonedElements;
+        for (const auto& element : elements) {
+            clonedElements.push_back(element->clone());
+        }
+        return std::make_unique<ArrayLiteral>(std::move(clonedElements));
+    }
+
+    const std::vector<std::unique_ptr<Expr>> elements;
+};
+
+// Dictionary literal expression: ["key": value]
+struct DictionaryLiteral : Expr {
+    struct KeyValuePair {
+        std::unique_ptr<Expr> key;
+        std::unique_ptr<Expr> value;
+        
+        KeyValuePair(std::unique_ptr<Expr> k, std::unique_ptr<Expr> v)
+            : key(std::move(k)), value(std::move(v)) {}
+    };
+    
+    explicit DictionaryLiteral(std::vector<KeyValuePair> pairs)
+        : pairs(std::move(pairs)) {}
+
+    void accept(ExprVisitor& visitor) const override {
+        visitor.visit(*this);
+    }
+
+    std::unique_ptr<Expr> clone() const override {
+        std::vector<KeyValuePair> clonedPairs;
+        for (const auto& pair : pairs) {
+            clonedPairs.emplace_back(pair.key->clone(), pair.value->clone());
+        }
+        return std::make_unique<DictionaryLiteral>(std::move(clonedPairs));
+    }
+
+    const std::vector<KeyValuePair> pairs;
+};
+
+// Index access expression: array[index] or dict["key"]
+struct IndexAccess : Expr {
+    IndexAccess(std::unique_ptr<Expr> object, std::unique_ptr<Expr> index)
+        : object(std::move(object)), index(std::move(index)) {}
+
+    void accept(ExprVisitor& visitor) const override {
+        visitor.visit(*this);
+    }
+
+    std::unique_ptr<Expr> clone() const override {
+        return std::make_unique<IndexAccess>(object->clone(), index->clone());
+    }
+
+    const std::unique_ptr<Expr> object;
+    const std::unique_ptr<Expr> index;
 };
 
 // Forward declarations for Stmt

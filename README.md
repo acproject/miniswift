@@ -125,14 +125,9 @@ MiniSwift/
 │   │   └── Value.h
 │   └── main.cpp         # 主程序入口
 ├── build/               # 构建输出目录
-├── docs/                # 文档
+├── doc/                # 文档
 ├── playground.swift     # 完整测试用例
 ├── simple_playground.swift  # 简化测试用例
-├── test_playground.sh   # 测试脚本
-├── interactive_demo.sh  # 交互式演示脚本
-├── SYNTAX_GUIDE.md     # 语法指南
-├── CODE_QUALITY_SUGGESTIONS.md  # 代码质量建议
-└── README.md           # 项目说明
 ```
 
 ## 开发和调试

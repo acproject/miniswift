@@ -37,6 +37,12 @@ void Interpreter::visit(const PrintStmt& stmt) {
         case ValueType::String:
             std::cout << std::get<std::string>(val.value) << std::endl;
             break;
+        case ValueType::Array:
+            printArray(val.asArray());
+            break;
+        case ValueType::Dictionary:
+            printDictionary(val.asDictionary());
+            break;
         case ValueType::Nil:
             std::cout << "nil" << std::endl;
             break;
@@ -175,6 +181,133 @@ bool Interpreter::isTruthy(const Value& value) {
     if (value.type == ValueType::Nil) return false;
     if (value.type == ValueType::Bool) return std::get<bool>(value.value);
     return true;
+}
+
+void Interpreter::visit(const ArrayLiteral& expr) {
+    Array elements;
+    for (const auto& element : expr.elements) {
+        elements.push_back(evaluate(*element));
+    }
+    result = Value(elements);
+}
+
+void Interpreter::visit(const DictionaryLiteral& expr) {
+    Dictionary dict;
+    for (const auto& pair : expr.pairs) {
+        Value key = evaluate(*pair.key);
+        Value value = evaluate(*pair.value);
+        
+        // Convert key to string for dictionary storage
+        std::string keyStr;
+        switch (key.type) {
+            case ValueType::String:
+                keyStr = std::get<std::string>(key.value);
+                break;
+            case ValueType::Int:
+                keyStr = std::to_string(std::get<int>(key.value));
+                break;
+            case ValueType::Double:
+                keyStr = std::to_string(std::get<double>(key.value));
+                break;
+            default:
+                throw std::runtime_error("Dictionary keys must be strings or numbers.");
+        }
+        
+        dict[keyStr] = value;
+    }
+    result = Value(dict);
+}
+
+void Interpreter::visit(const IndexAccess& expr) {
+    Value object = evaluate(*expr.object);
+    Value index = evaluate(*expr.index);
+    
+    if (object.type == ValueType::Array) {
+        if (index.type != ValueType::Int) {
+            throw std::runtime_error("Array index must be an integer.");
+        }
+        
+        int idx = std::get<int>(index.value);
+        const Array& arr = object.asArray();
+        
+        if (idx < 0 || idx >= static_cast<int>(arr.size())) {
+            throw std::runtime_error("Array index out of bounds.");
+        }
+        
+        result = arr[idx];
+    } else if (object.type == ValueType::Dictionary) {
+        std::string key;
+        switch (index.type) {
+            case ValueType::String:
+                key = std::get<std::string>(index.value);
+                break;
+            case ValueType::Int:
+                key = std::to_string(std::get<int>(index.value));
+                break;
+            case ValueType::Double:
+                key = std::to_string(std::get<double>(index.value));
+                break;
+            default:
+                throw std::runtime_error("Dictionary key must be a string or number.");
+        }
+        
+        const Dictionary& dict = object.asDictionary();
+        auto it = dict.find(key);
+        if (it != dict.end()) {
+            result = it->second;
+        } else {
+            result = Value(); // nil for missing keys
+        }
+    } else {
+        throw std::runtime_error("Only arrays and dictionaries can be indexed.");
+    }
+}
+
+void Interpreter::printArray(const Array& arr) {
+    std::cout << "[";
+    for (size_t i = 0; i < arr.size(); ++i) {
+        if (i > 0) std::cout << ", ";
+        printValue(arr[i]);
+    }
+    std::cout << "]" << std::endl;
+}
+
+void Interpreter::printDictionary(const Dictionary& dict) {
+    std::cout << "{";
+    bool first = true;
+    for (const auto& pair : dict) {
+        if (!first) std::cout << ", ";
+        std::cout << "\"" << pair.first << "\": ";
+        printValue(pair.second);
+        first = false;
+    }
+    std::cout << "}" << std::endl;
+}
+
+void Interpreter::printValue(const Value& val) {
+    switch (val.type) {
+        case ValueType::Int:
+            std::cout << std::get<int>(val.value);
+            break;
+        case ValueType::Double:
+            std::cout << std::get<double>(val.value);
+            break;
+        case ValueType::Bool:
+            std::cout << (std::get<bool>(val.value) ? "true" : "false");
+            break;
+        case ValueType::String:
+            std::cout << "\"" << std::get<std::string>(val.value) << "\"";
+            break;
+        case ValueType::Array:
+            printArray(val.asArray());
+            break;
+        case ValueType::Dictionary:
+            printDictionary(val.asDictionary());
+            break;
+        case ValueType::Nil:
+            std::cout << "nil";
+            break;
+    }
 }
 
 } // namespace miniswift

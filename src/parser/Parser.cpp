@@ -30,8 +30,7 @@ std::vector<std::unique_ptr<Stmt>> Parser::declaration() {
     std::unique_ptr<Expr> initializer = nullptr;
 
     if (match({TokenType::Colon})) {
-      consume(TokenType::Identifier, "Expect type name after ':'.");
-      type = previous();
+      type = parseType();
     }
 
     if (match({TokenType::Equal})) {
@@ -167,8 +166,20 @@ std::unique_ptr<Expr> Parser::primary() {
     return expr;
   }
 
+  // Array or dictionary literal
+  if (match({TokenType::LSquare})) {
+    return arrayLiteral();
+  }
+
   if (match({TokenType::Identifier})) {
-    return std::make_unique<VarExpr>(previous());
+    std::unique_ptr<Expr> expr = std::make_unique<VarExpr>(previous());
+    
+    // Check for index access: identifier[index]
+    while (match({TokenType::LSquare})) {
+      expr = indexAccess(std::move(expr));
+    }
+    
+    return expr;
   }
 
   if (match({TokenType::LParen})) {
@@ -208,6 +219,116 @@ void Parser::consume(TokenType type, const std::string &message) {
     return;
   }
   throw std::runtime_error(message);
+}
+
+// Parse type annotations including collection types
+Token Parser::parseType() {
+  if (match({TokenType::LSquare})) {
+    // Could be array type [ElementType] or dictionary type [KeyType: ValueType]
+    Token firstType(TokenType::Identifier, "", 0);
+    if (check(TokenType::LSquare)) {
+      // Nested array type
+      firstType = parseType();
+    } else {
+      consume(TokenType::Identifier, "Expect type name.");
+      firstType = previous();
+    }
+    
+    // Check if this is a dictionary type (has colon)
+    if (match({TokenType::Colon})) {
+      // Dictionary type: [KeyType: ValueType]
+      Token valueType(TokenType::Identifier, "", 0);
+      if (check(TokenType::LSquare)) {
+        // Nested type for value
+        valueType = parseType();
+      } else {
+        consume(TokenType::Identifier, "Expect value type name.");
+        valueType = previous();
+      }
+      consume(TokenType::RSquare, "Expect ']' after dictionary type.");
+      // Create a synthetic token for dictionary type
+      return Token(TokenType::Identifier, "[" + firstType.lexeme + ":" + valueType.lexeme + "]", firstType.line);
+    } else {
+      // Array type: [ElementType]
+      consume(TokenType::RSquare, "Expect ']' after array element type.");
+      // Create a synthetic token for array type
+      return Token(TokenType::Identifier, "[" + firstType.lexeme + "]", firstType.line);
+    }
+  }
+  
+  consume(TokenType::Identifier, "Expect type name.");
+  return previous();
+}
+
+// Parse array literal: [1, 2, 3] or dictionary literal: ["key": value]
+std::unique_ptr<Expr> Parser::arrayLiteral() {
+  // We've already consumed the '['
+  std::vector<std::unique_ptr<Expr>> elements;
+  
+  if (!check(TokenType::RSquare)) {
+    do {
+      auto expr = expression();
+      
+      // Check if this is a dictionary literal (key: value)
+      if (match({TokenType::Colon})) {
+        // This is a dictionary literal, parse as key-value pairs
+        auto value = expression();
+        
+        std::vector<DictionaryLiteral::KeyValuePair> pairs;
+        pairs.emplace_back(std::move(expr), std::move(value));
+        
+        // Parse remaining key-value pairs
+        while (match({TokenType::Comma})) {
+          if (check(TokenType::RSquare)) break; // Trailing comma
+          auto key = expression();
+          consume(TokenType::Colon, "Expect ':' after dictionary key.");
+          auto val = expression();
+          pairs.emplace_back(std::move(key), std::move(val));
+        }
+        
+        consume(TokenType::RSquare, "Expect ']' after dictionary literal.");
+        return std::make_unique<DictionaryLiteral>(std::move(pairs));
+      }
+      
+      // This is an array literal
+      elements.push_back(std::move(expr));
+    } while (match({TokenType::Comma}));
+  }
+  
+  consume(TokenType::RSquare, "Expect ']' after array literal.");
+  return std::make_unique<ArrayLiteral>(std::move(elements));
+}
+
+// Parse dictionary literal (called when we know it's a dictionary)
+std::unique_ptr<Expr> Parser::dictionaryLiteral() {
+  // This method is for future use if we need separate dictionary parsing
+  std::vector<DictionaryLiteral::KeyValuePair> pairs;
+  
+  if (!check(TokenType::RSquare)) {
+    do {
+      auto key = expression();
+      consume(TokenType::Colon, "Expect ':' after dictionary key.");
+      auto value = expression();
+      pairs.emplace_back(std::move(key), std::move(value));
+    } while (match({TokenType::Comma}));
+  }
+  
+  consume(TokenType::RSquare, "Expect ']' after dictionary literal.");
+  return std::make_unique<DictionaryLiteral>(std::move(pairs));
+}
+
+// Parse index access: object[index]
+std::unique_ptr<Expr> Parser::indexAccess(std::unique_ptr<Expr> object) {
+  // We've already consumed the '['
+  auto index = expression();
+  consume(TokenType::RSquare, "Expect ']' after index.");
+  return std::make_unique<IndexAccess>(std::move(object), std::move(index));
+}
+
+// Helper method to check current token type without consuming
+bool Parser::check(TokenType type) {
+  if (isAtEnd()) return false;
+  return peek().type == type;
 }
 
 } // namespace miniswift

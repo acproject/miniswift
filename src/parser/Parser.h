@@ -26,13 +26,18 @@ private:
     std::unique_ptr<Expr> factor();
     std::unique_ptr<Expr> unary();
     std::unique_ptr<Expr> primary();
+    std::unique_ptr<Expr> arrayLiteral();
+    std::unique_ptr<Expr> dictionaryLiteral();
+    std::unique_ptr<Expr> indexAccess(std::unique_ptr<Expr> object);
 
     bool match(const std::vector<TokenType>& types);
+    bool check(TokenType type);
     Token advance();
     bool isAtEnd();
     Token peek();
     Token previous();
     void consume(TokenType type, const std::string& message);
+    Token parseType();
 
     const std::vector<Token>& tokens;
     int current = 0;

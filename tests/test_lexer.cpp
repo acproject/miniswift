@@ -1,4 +1,4 @@
-#include "src/lexer/Lexer.h"
+#include "../src/lexer/Lexer.h"
 #include <iomanip>
 #include <iostream>
 

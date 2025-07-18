@@ -256,9 +256,46 @@ Token Lexer::stringLiteral() {
       inStringLiteral = false; // We're now in interpolation mode
       return {TokenType::InterpolationStart, "\\(", line};
     }
-    if (peek() == '\n')
-      line++;
-    value += advance();
+    
+    // Handle escape sequences
+    if (peek() == '\\') {
+      advance(); // consume backslash
+      char escaped = peek();
+      switch (escaped) {
+        case 'n':
+          value += '\n';
+          advance();
+          break;
+        case 't':
+          value += '\t';
+          advance();
+          break;
+        case 'r':
+          value += '\r';
+          advance();
+          break;
+        case '\\':
+          value += '\\';
+          advance();
+          break;
+        case '"':
+          value += '"';
+          advance();
+          break;
+        case '0':
+          value += '\0';
+          advance();
+          break;
+        default:
+          // Unknown escape sequence, keep the backslash
+          value += '\\';
+          break;
+      }
+    } else {
+      if (peek() == '\n')
+        line++;
+      value += advance();
+    }
   }
 
   if (current >= source.length()) {

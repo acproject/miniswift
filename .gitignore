@@ -17,3 +17,12 @@ other_project/
 
 # Other
 *.DS_Store
+debug_detailed
+debug_interpolation
+debug_parsing
+test_lexer
+test_print_debug
+test_simple_interpolation
+test_string_edge_cases
+test_string_print
+

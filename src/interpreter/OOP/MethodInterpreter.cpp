@@ -26,6 +26,7 @@ void MethodInterpreter::registerStructMethods(const std::string& structName, con
 
 // 注册类方法
 void MethodInterpreter::registerClassMethods(const std::string& className, const std::vector<std::unique_ptr<FunctionStmt>>& methods) {
+    std::cout << "Registering " << methods.size() << " methods for class '" << className << "'" << std::endl;
     auto manager = getClassMethodManager(className);
     if (!manager) {
         classMethods_[className] = std::make_unique<MethodManager>();
@@ -33,6 +34,7 @@ void MethodInterpreter::registerClassMethods(const std::string& className, const
     }
     
     for (const auto& method : methods) {
+        std::cout << "Registering method: " << method->name.lexeme << std::endl;
         auto methodDef = createMethodDefinition(*method);
         manager->addMethod(std::move(methodDef));
     }
@@ -49,11 +51,15 @@ const MethodDefinition* MethodInterpreter::getStructMethod(const std::string& st
 
 // 获取类方法
 const MethodDefinition* MethodInterpreter::getClassMethod(const std::string& className, const std::string& methodName) const {
+    std::cout << "getClassMethod called for class '" << className << "', method '" << methodName << "'" << std::endl;
     const auto* manager = getClassMethodManager(className);
     if (!manager) {
+        std::cout << "No method manager found for class '" << className << "'" << std::endl;
         return nullptr;
     }
-    return manager->getMethod(methodName);
+    const auto* result = manager->getMethod(methodName);
+    std::cout << "getMethod returned: " << (result ? "found" : "not found") << std::endl;
+    return result;
 }
 
 // 重写 getMemberValue 以支持方法调用
@@ -85,7 +91,7 @@ Value MethodInterpreter::getMemberValue(const Value& object, const std::string& 
                         parameters.emplace_back(param, emptyType);
                     }
                     
-                    auto funcStmt = std::make_unique<FunctionStmt>(
+                    auto funcStmt = std::make_shared<FunctionStmt>(
                         methodDef->name,
                         parameters,
                         emptyReturnType,
@@ -99,8 +105,10 @@ Value MethodInterpreter::getMemberValue(const Value& object, const std::string& 
         }
     } else if (object.isClass()) {
         const auto& classVal = *object.asClass();
+        std::cout << "Looking for method '" << memberName << "' in class '" << classVal.className << "'" << std::endl;
         const auto* methodDef = getClassMethod(classVal.className, memberName);
         if (methodDef) {
+            std::cout << "Found method '" << memberName << "' in class '" << classVal.className << "'" << std::endl;
             // 创建绑定了 self 的方法
             auto methodManager = getClassMethodManager(classVal.className);
             if (methodManager) {
@@ -123,7 +131,7 @@ Value MethodInterpreter::getMemberValue(const Value& object, const std::string& 
                         parameters.emplace_back(param, emptyType);
                     }
                     
-                    auto funcStmt = std::make_unique<FunctionStmt>(
+                    auto funcStmt = std::make_shared<FunctionStmt>(
                         methodDef->name,
                         parameters,
                         emptyReturnType,
@@ -253,6 +261,15 @@ const MethodManager* MethodInterpreter::getStructMethodManager(const std::string
 const MethodManager* MethodInterpreter::getClassMethodManager(const std::string& className) const {
     auto it = classMethods_.find(className);
     return (it != classMethods_.end()) ? it->second.get() : nullptr;
+}
+
+// 重写 visit 方法以注册类方法
+void MethodInterpreter::visit(const ClassStmt& stmt) {
+    // 首先调用父类的 visit 方法来处理基本的类注册
+    Interpreter::visit(stmt);
+    
+    // 然后注册类方法
+    registerClassMethods(stmt.name.lexeme, stmt.methods);
 }
 
 } // namespace miniswift

@@ -51,35 +51,52 @@ struct StructValue {
     bool operator!=(const StructValue& other) const;
 };
 
-// Class value type (with reference counting for ARC and property support)
-struct ClassValue {
+// Forward declaration for inheritance support
+class InheritanceManager;
+
+// Class instance type (with inheritance support)
+struct ClassInstance {
     std::string className;
     std::shared_ptr<std::unordered_map<std::string, Value>> members; // Legacy member storage
     std::unique_ptr<InstancePropertyContainer> properties; // New property system
     mutable int refCount; // For ARC implementation
     
-    ClassValue(const std::string& className);
-    ClassValue(const std::string& className, std::unordered_map<std::string, Value> memberMap);
-    ClassValue(const std::string& className, std::unique_ptr<InstancePropertyContainer> props);
+    // Inheritance support
+    std::string actualClassName; // The actual runtime type (for polymorphism)
+    
+    ClassInstance(const std::string& className);
+    ClassInstance(const std::string& className, std::unordered_map<std::string, Value> memberMap);
+    ClassInstance(const std::string& className, std::unique_ptr<InstancePropertyContainer> props);
     
     // Destructor
-    ~ClassValue();
+    ~ClassInstance();
     
     // Copy constructor
-    ClassValue(const ClassValue& other);
+    ClassInstance(const ClassInstance& other);
     
     // Move constructor
-    ClassValue(ClassValue&& other) noexcept;
+    ClassInstance(ClassInstance&& other) noexcept;
     
     // Copy assignment operator
-    ClassValue& operator=(const ClassValue& other);
+    ClassInstance& operator=(const ClassInstance& other);
     
     // Move assignment operator
-    ClassValue& operator=(ClassValue&& other) noexcept;
+    ClassInstance& operator=(ClassInstance&& other) noexcept;
     
-    bool operator==(const ClassValue& other) const;
-    bool operator!=(const ClassValue& other) const;
+    // Inheritance-related methods
+    std::string getClassName() const { return actualClassName.empty() ? className : actualClassName; }
+    void setActualClassName(const std::string& actualClass) { actualClassName = actualClass; }
+    
+    // Type checking methods
+    bool isInstanceOf(const std::string& targetClass, InheritanceManager* inheritanceManager = nullptr) const;
+    bool canCastTo(const std::string& targetClass, InheritanceManager* inheritanceManager = nullptr) const;
+    
+    bool operator==(const ClassInstance& other) const;
+    bool operator!=(const ClassInstance& other) const;
 };
+
+// Keep ClassValue as alias for backward compatibility
+using ClassValue = ClassInstance;
 
 // Enum value type
 struct EnumValue {

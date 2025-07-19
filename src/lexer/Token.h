@@ -39,6 +39,9 @@ enum class TokenType {
   DidSet,
   Init,
   Deinit,
+  Super,
+  Override,
+  Final,
 
   // Operators
   Plus,

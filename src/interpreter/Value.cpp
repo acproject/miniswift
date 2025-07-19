@@ -16,18 +16,18 @@ StructValue::StructValue(const std::string& structName, std::unique_ptr<Instance
 
 StructValue::~StructValue() = default;
 
-// ClassValue constructors and destructor
-ClassValue::ClassValue(const std::string& className)
+// ClassInstance constructors and destructor
+ClassInstance::ClassInstance(const std::string& className)
     : className(className), members(std::make_shared<std::unordered_map<std::string, Value>>()), refCount(1) {}
 
-ClassValue::ClassValue(const std::string& className, std::unordered_map<std::string, Value> memberMap)
+ClassInstance::ClassInstance(const std::string& className, std::unordered_map<std::string, Value> memberMap)
     : className(className), members(std::make_shared<std::unordered_map<std::string, Value>>(std::move(memberMap))), refCount(1) {}
 
-ClassValue::ClassValue(const std::string& className, std::unique_ptr<InstancePropertyContainer> props)
+ClassInstance::ClassInstance(const std::string& className, std::unique_ptr<InstancePropertyContainer> props)
     : className(className), members(std::make_shared<std::unordered_map<std::string, Value>>()), 
       properties(std::move(props)), refCount(1) {}
 
-ClassValue::~ClassValue() = default;
+ClassInstance::~ClassInstance() = default;
 
 // StructValue copy constructor
 StructValue::StructValue(const StructValue& other)
@@ -79,16 +79,16 @@ bool StructValue::operator!=(const StructValue& other) const {
     return !(*this == other);
 }
 
-// ClassValue copy constructor
-ClassValue::ClassValue(const ClassValue& other)
+// ClassInstance copy constructor
+ClassInstance::ClassInstance(const ClassInstance& other)
     : className(other.className), members(other.members), properties(nullptr), refCount(1) {
     // Note: properties are not copied, only shared members
     // This is intentional as property containers are instance-specific
     // refCount starts at 1 for new instance
 }
 
-// ClassValue move constructor
-ClassValue::ClassValue(ClassValue&& other) noexcept
+// ClassInstance move constructor
+ClassInstance::ClassInstance(ClassInstance&& other) noexcept
     : className(std::move(other.className)), 
       members(std::move(other.members)), 
       properties(std::move(other.properties)),
@@ -96,8 +96,8 @@ ClassValue::ClassValue(ClassValue&& other) noexcept
     other.refCount = 0; // Mark moved-from object
 }
 
-// ClassValue copy assignment operator
-ClassValue& ClassValue::operator=(const ClassValue& other) {
+// ClassInstance copy assignment operator
+ClassInstance& ClassInstance::operator=(const ClassInstance& other) {
     if (this != &other) {
         className = other.className;
         members = other.members;
@@ -107,8 +107,8 @@ ClassValue& ClassValue::operator=(const ClassValue& other) {
     return *this;
 }
 
-// ClassValue move assignment operator
-ClassValue& ClassValue::operator=(ClassValue&& other) noexcept {
+// ClassInstance move assignment operator
+ClassInstance& ClassInstance::operator=(ClassInstance&& other) noexcept {
     if (this != &other) {
         className = std::move(other.className);
         members = std::move(other.members);
@@ -119,12 +119,12 @@ ClassValue& ClassValue::operator=(ClassValue&& other) noexcept {
     return *this;
 }
 
-// ClassValue comparison operators
-bool ClassValue::operator==(const ClassValue& other) const {
+// ClassInstance comparison operators
+bool ClassInstance::operator==(const ClassInstance& other) const {
     return className == other.className && *members == *other.members;
 }
 
-bool ClassValue::operator!=(const ClassValue& other) const {
+bool ClassInstance::operator!=(const ClassInstance& other) const {
     return !(*this == other);
 }
 

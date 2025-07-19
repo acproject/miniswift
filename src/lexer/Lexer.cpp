@@ -39,6 +39,9 @@ static void initializeKeywords() {
   keywords["didSet"] = TokenType::DidSet;
   keywords["init"] = TokenType::Init;
   keywords["deinit"] = TokenType::Deinit;
+  keywords["super"] = TokenType::Super;
+  keywords["override"] = TokenType::Override;
+  keywords["final"] = TokenType::Final;
 }
 
 Lexer::Lexer(const std::string &source)

@@ -54,6 +54,7 @@ set(OOP_SOURCES
     src/interpreter/OOP/Method.cpp
     src/interpreter/OOP/MethodInterpreter.cpp
     src/interpreter/OOP/Constructor.cpp
+    src/interpreter/OOP/Inheritance.cpp
 )
 
 set(MAIN_SOURCES

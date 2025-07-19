@@ -209,6 +209,15 @@ std::unique_ptr<Expr> Parser::primary() {
     return std::make_unique<VarExpr>(selfToken);
   }
 
+  // Handle 'super' keyword
+  if (match({TokenType::Super})) {
+    Token keyword = previous();
+    consume(TokenType::Dot, "Expect '.' after 'super'.");
+    consume(TokenType::Identifier, "Expect superclass method name.");
+    Token method = previous();
+    return std::make_unique<Super>(keyword, method);
+  }
+
   // Handle string interpolation
   if (match({TokenType::InterpolatedStringLiteral})) {
     // For now, treat interpolated string literals as regular string literals

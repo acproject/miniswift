@@ -16,6 +16,10 @@ namespace miniswift {
 Interpreter::Interpreter() {
     globals = std::make_shared<Environment>();
     environment = globals;
+    
+    // Initialize inheritance management
+    inheritanceManager = std::make_unique<InheritanceManager>();
+    superHandler = std::make_unique<SuperHandler>(*inheritanceManager, *this);
 }
 
 void Interpreter::interpret(const std::vector<std::unique_ptr<Stmt>>& statements) {
@@ -621,7 +625,31 @@ void Interpreter::visit(const ReturnStmt& stmt) {
 
 // Execute function call: callee(arguments)
 void Interpreter::visit(const Call& expr) {
+    std::cout << "Call::visit called" << std::endl;
+    std::cout << "Callee expression type: " << typeid(*expr.callee).name() << std::endl;
+    
+    // Check if callee is MemberAccess
+    if (auto memberAccess = dynamic_cast<const MemberAccess*>(expr.callee.get())) {
+        std::cout << "Callee is MemberAccess: object=" << typeid(*memberAccess->object).name() 
+                  << ", member=" << memberAccess->member.lexeme << std::endl;
+    } else if (auto varExpr = dynamic_cast<const VarExpr*>(expr.callee.get())) {
+        std::cout << "Callee is VarExpr: name=" << varExpr->name.lexeme << std::endl;
+        
+        // Check if this is a class constructor call
+        if (auto* classPropManager = getClassPropertyManager(varExpr->name.lexeme)) {
+            std::cout << "Detected class constructor call for: " << varExpr->name.lexeme << std::endl;
+            
+            // Create a new class instance
+            auto propContainer = std::make_unique<InstancePropertyContainer>(*classPropManager, environment);
+            propContainer->initializeDefaults(*this);
+            auto classInstance = std::make_shared<ClassInstance>(varExpr->name.lexeme, std::move(propContainer));
+            result = Value(classInstance);
+            return;
+        }
+    }
+    
     Value callee = evaluate(*expr.callee);
+    std::cout << "Callee evaluated, type: " << static_cast<int>(callee.type) << std::endl;
     
     if (!callee.isFunction()) {
         throw std::runtime_error("Can only call functions and closures.");
@@ -770,8 +798,57 @@ void Interpreter::visit(const ClassStmt& stmt) {
     // Register class properties
     registerClassProperties(stmt.name.lexeme, stmt.members);
     
-    // Store class definition in environment for later use
-    environment->define(stmt.name.lexeme, Value(), false, "Class");
+    // Register inheritance relationship
+    std::string superclassName = "";
+    if (stmt.superclass.type != TokenType::Nil && !stmt.superclass.lexeme.empty()) {
+        superclassName = stmt.superclass.lexeme;
+    }
+    inheritanceManager->registerClass(stmt.name.lexeme, superclassName);
+    
+    // Register class methods for inheritance
+    for (const auto& method : stmt.methods) {
+        inheritanceManager->registerMethod(stmt.name.lexeme, method->name.lexeme, 
+                                         std::shared_ptr<FunctionStmt>(method.get(), [](FunctionStmt*) {}));
+    }
+    
+    // Create a default constructor if no explicit constructor is defined
+    bool hasExplicitConstructor = false;
+    for (const auto& method : stmt.methods) {
+        if (method->name.lexeme == "init") {
+            hasExplicitConstructor = true;
+            break;
+        }
+    }
+    
+    if (!hasExplicitConstructor) {
+        // Create a default constructor that returns a new class instance
+        Token constructorName{TokenType::Identifier, stmt.name.lexeme, 0};
+        std::vector<Parameter> emptyParams;
+        Token voidType{TokenType::Identifier, "Void", 0};
+        
+        // Create constructor body that creates and returns a class instance
+        std::vector<std::unique_ptr<Stmt>> constructorStmts;
+        
+        // Create return statement that returns a new class instance
+        // For now, we'll create an empty body and handle instance creation in the callable
+        auto constructorBody = std::make_unique<BlockStmt>(std::move(constructorStmts));
+        
+        // Create the constructor function statement
+        auto constructorFunc = std::make_shared<FunctionStmt>(
+            constructorName,
+            emptyParams,
+            voidType,
+            std::move(constructorBody)
+        );
+        
+        // Create a special callable that creates class instances
+        auto callable = std::make_shared<Function>(constructorFunc.get(), environment);
+        
+        // Store the constructor in the environment with the class name
+        environment->define(stmt.name.lexeme, Value(callable), false, "Constructor");
+        
+        std::cout << "Created default constructor for class: " << stmt.name.lexeme << std::endl;
+    }
 }
 
 // Execute init declaration: init(parameters) { body }
@@ -807,28 +884,49 @@ void Interpreter::visit(const DeinitStmt& stmt) {
 
 // Execute member access: object.member
 void Interpreter::visit(const MemberAccess& expr) {
-    Value object = evaluate(*expr.object);
-    result = getMemberValue(object, expr.member.lexeme);
+    std::cout << "MemberAccess::visit called for member: " << expr.member.lexeme << std::endl;
+    try {
+        Value object = evaluate(*expr.object);
+        std::cout << "Object evaluated, type: " << static_cast<int>(object.type) << ", calling getMemberValue" << std::endl;
+        result = getMemberValue(object, expr.member.lexeme);
+        std::cout << "getMemberValue returned, result type: " << static_cast<int>(result.type) << std::endl;
+    } catch (const std::exception& e) {
+        std::cout << "Exception in MemberAccess: " << e.what() << std::endl;
+        throw;
+    }
 }
 
 // Execute struct initialization: StructName(member1: value1, member2: value2)
 void Interpreter::visit(const StructInit& expr) {
-    // Get property manager for this struct
-    auto* propManager = getStructPropertyManager(expr.structName.lexeme);
+    // Check if this is a class or struct
+    auto* structPropManager = getStructPropertyManager(expr.structName.lexeme);
+    auto* classPropManager = getClassPropertyManager(expr.structName.lexeme);
     
     // Debug: Check property manager status
     std::cout << "StructInit for: " << expr.structName.lexeme << std::endl;
-    if (propManager) {
-        std::cout << "Property manager found, properties count: " << propManager->getAllProperties().size() << std::endl;
-    } else {
-        std::cout << "No property manager found" << std::endl;
-    }
     
-    // Create struct with property system if available
-    
-    if (propManager) {
+    if (classPropManager) {
+        // Create class instance
+        std::cout << "Creating class instance, properties count: " << classPropManager->getAllProperties().size() << std::endl;
+        
+        auto propContainer = std::make_unique<InstancePropertyContainer>(*classPropManager, environment);
+        
+        // Initialize provided members
+        for (const auto& member : expr.members) {
+            Value memberValue = evaluate(*member.second);
+            propContainer->setProperty(*this, member.first.lexeme, memberValue);
+        }
+        
+        // Initialize default values for unspecified properties
+        propContainer->initializeDefaults(*this);
+        
+        auto classInstance = std::make_shared<ClassInstance>(expr.structName.lexeme, std::move(propContainer));
+        result = Value(classInstance);
+    } else if (structPropManager) {
         // Create struct with property support
-        auto propContainer = std::make_unique<InstancePropertyContainer>(*propManager, environment);
+        std::cout << "Creating struct, properties count: " << structPropManager->getAllProperties().size() << std::endl;
+        
+        auto propContainer = std::make_unique<InstancePropertyContainer>(*structPropManager, environment);
         
         // Initialize provided members
         for (const auto& member : expr.members) {
@@ -842,16 +940,17 @@ void Interpreter::visit(const StructInit& expr) {
         StructValue structValue(expr.structName.lexeme, std::move(propContainer));
         result = Value(structValue);
     } else {
-        // Fallback to legacy struct creation
-        StructValue structValue(expr.structName.lexeme);
+        // Fallback: try to create class instance without property manager
+        std::cout << "No property manager found, creating basic class instance" << std::endl;
+        auto classInstance = std::make_shared<ClassInstance>(expr.structName.lexeme);
         
         // Initialize members with provided values
         for (const auto& member : expr.members) {
             Value memberValue = evaluate(*member.second);
-            (*structValue.members)[member.first.lexeme] = memberValue;
+            (*classInstance->members)[member.first.lexeme] = memberValue;
         }
         
-        result = Value(structValue);
+        result = Value(classInstance);
     }
 }
 
@@ -957,6 +1056,7 @@ void Interpreter::registerClassProperties(const std::string& className, const st
 
 
 Value Interpreter::getMemberValue(const Value& object, const std::string& memberName) {
+    std::cout << "Base Interpreter::getMemberValue called for member: " << memberName << std::endl;
     if (object.isStruct()) {
         const auto& structValue = object.asStruct();
         
@@ -1021,6 +1121,31 @@ void Interpreter::setMemberValue(Value& object, const std::string& memberName, c
         (*classValue->members)[memberName] = value;
     } else {
         throw std::runtime_error("Only structs and classes have members");
+    }
+}
+
+// Execute super expression: super.method() or super.property
+void Interpreter::visit(const Super& expr) {
+    // Get current class context from environment
+    // This should be set when we're inside a class method
+    std::string currentClass;
+    try {
+        Value classContext = environment->get(Token(TokenType::Identifier, "__current_class__", 0));
+        if (classContext.type == ValueType::String) {
+            currentClass = std::get<std::string>(classContext.value);
+        } else {
+            throw std::runtime_error("super can only be used within class methods");
+        }
+    } catch (const std::runtime_error&) {
+        throw std::runtime_error("super can only be used within class methods");
+    }
+    
+    // For now, we'll handle super.method as a property access
+    // In a full implementation, this would need to handle method calls differently
+    try {
+        result = superHandler->getSuperProperty(currentClass, expr.method.lexeme, environment);
+    } catch (const std::runtime_error& e) {
+        throw std::runtime_error("Failed to access super property '" + expr.method.lexeme + "': " + e.what());
     }
 }
 

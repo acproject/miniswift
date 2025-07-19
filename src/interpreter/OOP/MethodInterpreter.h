@@ -29,6 +29,9 @@ public:
     // 重写 getMemberValue 以支持方法调用
     Value getMemberValue(const Value& object, const std::string& memberName) override;
     
+    // 重写 visit 方法以注册类方法
+    void visit(const ClassStmt& stmt) override;
+    
     // 调用结构体方法
     Value callStructMethod(const std::string& structName, const std::string& methodName, 
                           const std::vector<Value>& arguments, const Value& selfValue);

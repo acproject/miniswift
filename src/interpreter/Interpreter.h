@@ -5,6 +5,7 @@
 #include "Value.h"
 #include "Environment.h"
 #include "OOP/Property.h"
+#include "OOP/Inheritance.h"
 #include <memory>
 #include <unordered_map>
 
@@ -46,6 +47,7 @@ public:
     void visit(const EnumAccess& expr) override;
     void visit(const MemberAccess& expr) override;
     void visit(const StructInit& expr) override;
+    void visit(const Super& expr) override;
 
 public:
     // Public methods for property system
@@ -65,6 +67,10 @@ private:
     // Property managers for types
     std::unordered_map<std::string, std::unique_ptr<PropertyManager>> structPropertyManagers;
     std::unordered_map<std::string, std::unique_ptr<PropertyManager>> classPropertyManagers;
+    
+    // Inheritance management
+    std::unique_ptr<InheritanceManager> inheritanceManager;
+    std::unique_ptr<SuperHandler> superHandler;
     
 
     

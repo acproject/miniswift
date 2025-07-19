@@ -20,6 +20,7 @@ struct Closure;
 struct EnumAccess;
 struct MemberAccess;
 struct StructInit;
+struct Super;
 
 // Visitor interface for expressions
 class ExprVisitor {
@@ -39,6 +40,7 @@ public:
   virtual void visit(const EnumAccess &expr) = 0;
   virtual void visit(const MemberAccess &expr) = 0;
   virtual void visit(const StructInit &expr) = 0;
+  virtual void visit(const Super &expr) = 0;
 };
 
 // Base class for all expression nodes
@@ -207,6 +209,21 @@ struct Call : Expr {
 
   const std::unique_ptr<Expr> callee;
   const std::vector<std::unique_ptr<Expr>> arguments;
+};
+
+// Super expression: super.method() or super.property
+struct Super : Expr {
+  Token keyword; // The 'super' token
+  Token method;  // The method or property name
+
+  Super(Token keyword, Token method)
+      : keyword(keyword), method(method) {}
+
+  void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
+
+  std::unique_ptr<Expr> clone() const override {
+    return std::make_unique<Super>(keyword, method);
+  }
 };
 
 }; // namespace miniswift

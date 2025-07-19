@@ -208,6 +208,11 @@ Value ConstructorChain::callSelfInit(Interpreter& interpreter,
 Value ConstructorChain::callSuperInit(Interpreter& interpreter,
                                     const std::vector<Value>& arguments,
                                     const Value& selfValue) {
+    // 抑制未使用参数警告
+    (void)interpreter;
+    (void)arguments;
+    (void)selfValue;
+    
     // 父类构造器调用 - 为将来的继承功能预留
     // 目前返回成功
     return Value(true);

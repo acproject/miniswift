@@ -185,7 +185,11 @@ public:
     ConstructorCallEnvironment(std::shared_ptr<Environment> enclosing, 
                               InstancePropertyContainer* properties,
                               InstanceMethodContainer* methods)
-        : Environment(enclosing), properties_(properties), methods_(methods) {}
+        : Environment(enclosing), properties_(properties), methods_(methods) {
+        (void)methods_; // 抑制未使用字段警告
+    }
+    
+    virtual ~ConstructorCallEnvironment() = default;
     
     // 重写变量访问以支持属性访问
     void assign(const Token& name, const Value& value) override;
@@ -193,7 +197,7 @@ public:
     
 private:
     InstancePropertyContainer* properties_;
-    InstanceMethodContainer* methods_;
+    InstanceMethodContainer* methods_; // 为将来的方法调用功能预留
 };
 
 // 析构器调用环境 - 为析构器调用创建特殊环境
@@ -204,6 +208,8 @@ public:
         // 在环境中定义 self
         define("self", selfValue_);
     }
+    
+    virtual ~DestructorCallEnvironment() = default;
     
     const Value& getSelf() const { return selfValue_; }
     

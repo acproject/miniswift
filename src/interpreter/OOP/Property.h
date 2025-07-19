@@ -176,6 +176,8 @@ public:
                                Interpreter* interpreter)
         : Environment(enclosing), container_(container), interpreter_(interpreter) {}
     
+    virtual ~PropertyAccessorEnvironment() = default;
+    
     void assign(const Token& name, const Value& value) override;
     Value get(const Token& name) override;
     

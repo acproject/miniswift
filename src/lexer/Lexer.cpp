@@ -1,6 +1,6 @@
 #include "Lexer.h"
-#include <unordered_map>
 #include <iostream>
+#include <unordered_map>
 
 namespace miniswift {
 
@@ -42,7 +42,8 @@ static void initializeKeywords() {
 }
 
 Lexer::Lexer(const std::string &source)
-    : source(source), inInterpolation(false), inStringLiteral(false), interpolationDepth(0) {
+    : source(source), inInterpolation(false), inStringLiteral(false),
+      interpolationDepth(0) {
   initializeKeywords();
 }
 
@@ -259,47 +260,46 @@ Token Lexer::stringLiteral() {
         // Keep inStringLiteral true, we'll handle interpolation in next call
         return {TokenType::InterpolatedStringLiteral, value, line};
       }
-      advance(); // consume \\
-      advance(); // consume (
+      advance(); // consume \\ advance(); // consume (
       inInterpolation = true;
       interpolationDepth = 1;
       inStringLiteral = false; // We're now in interpolation mode
       return {TokenType::InterpolationStart, "\\(", line};
     }
-    
+
     // Handle escape sequences
     if (peek() == '\\') {
       advance(); // consume backslash
       char escaped = peek();
       switch (escaped) {
-        case 'n':
-          value += '\n';
-          advance();
-          break;
-        case 't':
-          value += '\t';
-          advance();
-          break;
-        case 'r':
-          value += '\r';
-          advance();
-          break;
-        case '\\':
-          value += '\\';
-          advance();
-          break;
-        case '"':
-          value += '"';
-          advance();
-          break;
-        case '0':
-          value += '\0';
-          advance();
-          break;
-        default:
-          // Unknown escape sequence, keep the backslash
-          value += '\\';
-          break;
+      case 'n':
+        value += '\n';
+        advance();
+        break;
+      case 't':
+        value += '\t';
+        advance();
+        break;
+      case 'r':
+        value += '\r';
+        advance();
+        break;
+      case '\\':
+        value += '\\';
+        advance();
+        break;
+      case '"':
+        value += '"';
+        advance();
+        break;
+      case '0':
+        value += '\0';
+        advance();
+        break;
+      default:
+        // Unknown escape sequence, keep the backslash
+        value += '\\';
+        break;
       }
     } else {
       if (peek() == '\n')
@@ -318,7 +318,8 @@ Token Lexer::stringLiteral() {
   advance();
   inStringLiteral = false;
 
-  // If this is an empty string after interpolation, it might be the end of an interpolated string
+  // If this is an empty string after interpolation, it might be the end of an
+  // interpolated string
   if (value.empty()) {
     return {TokenType::StringLiteral, "", line};
   }
@@ -351,10 +352,11 @@ Token Lexer::identifier() {
 
   std::string text = source.substr(start, current - start);
   std::cout << "Lexer found identifier: " << text << std::endl;
-  
+
   auto it = keywords.find(text);
   if (it != keywords.end()) {
-    std::cout << "Recognized as keyword: " << static_cast<int>(it->second) << std::endl;
+    std::cout << "Recognized as keyword: " << static_cast<int>(it->second)
+              << std::endl;
     return {it->second, text, line};
   }
 

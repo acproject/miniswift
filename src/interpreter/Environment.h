@@ -19,6 +19,7 @@ class Environment {
 public:
     Environment();
     explicit Environment(std::shared_ptr<Environment> enclosing);
+    virtual ~Environment() = default;
 
     void define(const std::string& name, const Value& value, bool isConst, const std::string& typeName);
     void define(const std::string& name, const Value& value); // Simplified version

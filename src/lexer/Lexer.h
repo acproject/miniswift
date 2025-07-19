@@ -29,8 +29,8 @@ private:
   bool isUnicodeIdentifierContinue(char c);
 
   std::string source;
-  int start = 0;
-  int current = 0;
+  size_t start = 0;
+  size_t current = 0;
   int line = 1;
   bool inInterpolation = false;
   bool inStringLiteral = false; // Track if we're inside a string literal

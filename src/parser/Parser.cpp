@@ -250,8 +250,14 @@ std::unique_ptr<Expr> Parser::primary() {
           }
           // Continue the loop to look for more interpolations
         } else {
-          // No more string content, we're done
-          break;
+          // Check if there's another interpolation directly following
+          if (check(TokenType::InterpolationStart)) {
+            // Continue the loop for consecutive interpolations
+            continue;
+          } else {
+            // No more string content or interpolations, we're done
+            break;
+          }
         }
       } else {
         // No more interpolations, we're done

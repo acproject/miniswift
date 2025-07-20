@@ -1,61 +1,64 @@
 #include "Value.h"
 #include "OOP/Property.h"
+#include "OOP/Subscript.h"
 
 namespace miniswift {
 
 // StructValue constructors and destructor
 StructValue::StructValue(const std::string& structName)
-    : structName(structName), members(std::make_shared<std::unordered_map<std::string, Value>>()) {}
+    : structName(structName), members(std::make_shared<std::unordered_map<std::string, Value>>()), 
+      subscripts(std::make_unique<SubscriptManager>()) {}
 
 StructValue::StructValue(const std::string& structName, std::unordered_map<std::string, Value> memberMap)
-    : structName(structName), members(std::make_shared<std::unordered_map<std::string, Value>>(std::move(memberMap))) {}
+    : structName(structName), members(std::make_shared<std::unordered_map<std::string, Value>>(std::move(memberMap))), 
+      subscripts(std::make_unique<SubscriptManager>()) {}
 
-StructValue::StructValue(const std::string& structName, std::unique_ptr<InstancePropertyContainer> props)
+StructValue::StructValue(const std::string& structName, std::shared_ptr<InstancePropertyContainer> props)
     : structName(structName), members(std::make_shared<std::unordered_map<std::string, Value>>()), 
-      properties(std::move(props)) {}
+      properties(std::move(props)), subscripts(std::make_unique<SubscriptManager>()) {}
 
 StructValue::~StructValue() = default;
 
 // ClassInstance constructors and destructor
 ClassInstance::ClassInstance(const std::string& className)
-    : className(className), members(std::make_shared<std::unordered_map<std::string, Value>>()), refCount(1) {}
+    : className(className), members(std::make_shared<std::unordered_map<std::string, Value>>()), 
+      subscripts(std::make_unique<SubscriptManager>()), refCount(1) {}
 
 ClassInstance::ClassInstance(const std::string& className, std::unordered_map<std::string, Value> memberMap)
-    : className(className), members(std::make_shared<std::unordered_map<std::string, Value>>(std::move(memberMap))), refCount(1) {}
+    : className(className), members(std::make_shared<std::unordered_map<std::string, Value>>(std::move(memberMap))), 
+      subscripts(std::make_unique<SubscriptManager>()), refCount(1) {}
 
 ClassInstance::ClassInstance(const std::string& className, std::unique_ptr<InstancePropertyContainer> props)
     : className(className), members(std::make_shared<std::unordered_map<std::string, Value>>()), 
-      properties(std::move(props)), refCount(1) {}
+      properties(std::move(props)), subscripts(std::make_unique<SubscriptManager>()), refCount(1) {}
 
 ClassInstance::~ClassInstance() = default;
 
 // StructValue copy constructor
 StructValue::StructValue(const StructValue& other)
-    : structName(other.structName), members(other.members), properties(nullptr) {
-    // Copy property container if it exists
-    if (other.properties) {
-        // Create a new property container with the same manager and environment
-        properties = std::make_unique<InstancePropertyContainer>(*other.properties);
-    }
+    : structName(other.structName), members(other.members), properties(other.properties), 
+      subscripts(std::make_unique<SubscriptManager>()) {
+    // Share property container instead of copying it
+    // This ensures that modifications to properties are reflected across all copies
+    // Note: subscripts are not copied, each instance gets its own manager
 }
 
 // StructValue move constructor
 StructValue::StructValue(StructValue&& other) noexcept
     : structName(std::move(other.structName)), 
       members(std::move(other.members)), 
-      properties(std::move(other.properties)) {}
+      properties(std::move(other.properties)),
+      subscripts(std::move(other.subscripts)) {}
 
 // StructValue copy assignment operator
 StructValue& StructValue::operator=(const StructValue& other) {
     if (this != &other) {
         structName = other.structName;
         members = other.members;
-        // Copy property container if it exists
-        if (other.properties) {
-            properties = std::make_unique<InstancePropertyContainer>(*other.properties);
-        } else {
-            properties.reset();
-        }
+        // Share property container instead of copying it
+        properties = other.properties;
+        // Reset subscripts, each instance gets its own manager
+        subscripts = std::make_unique<SubscriptManager>();
     }
     return *this;
 }
@@ -66,6 +69,7 @@ StructValue& StructValue::operator=(StructValue&& other) noexcept {
         structName = std::move(other.structName);
         members = std::move(other.members);
         properties = std::move(other.properties);
+        subscripts = std::move(other.subscripts);
     }
     return *this;
 }
@@ -81,9 +85,11 @@ bool StructValue::operator!=(const StructValue& other) const {
 
 // ClassInstance copy constructor
 ClassInstance::ClassInstance(const ClassInstance& other)
-    : className(other.className), members(other.members), properties(nullptr), refCount(1) {
+    : className(other.className), members(other.members), properties(nullptr), 
+      subscripts(std::make_unique<SubscriptManager>()), refCount(1) {
     // Note: properties are not copied, only shared members
     // This is intentional as property containers are instance-specific
+    // Note: subscripts are not copied, each instance gets its own manager
     // refCount starts at 1 for new instance
 }
 
@@ -92,6 +98,7 @@ ClassInstance::ClassInstance(ClassInstance&& other) noexcept
     : className(std::move(other.className)), 
       members(std::move(other.members)), 
       properties(std::move(other.properties)),
+      subscripts(std::move(other.subscripts)),
       refCount(other.refCount) {
     other.refCount = 0; // Mark moved-from object
 }
@@ -102,6 +109,7 @@ ClassInstance& ClassInstance::operator=(const ClassInstance& other) {
         className = other.className;
         members = other.members;
         properties.reset(); // Reset properties, don't copy
+        subscripts = std::make_unique<SubscriptManager>(); // Reset subscripts
         refCount = 1; // Reset reference count
     }
     return *this;
@@ -113,6 +121,7 @@ ClassInstance& ClassInstance::operator=(ClassInstance&& other) noexcept {
         className = std::move(other.className);
         members = std::move(other.members);
         properties = std::move(other.properties);
+        subscripts = std::move(other.subscripts);
         refCount = other.refCount;
         other.refCount = 0; // Mark moved-from object
     }

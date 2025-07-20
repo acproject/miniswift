@@ -17,6 +17,7 @@ class Environment;
 class InstancePropertyContainer;
 class ConstructorValue;
 class DestructorValue;
+class SubscriptManager;
 
 // Collection types (using shared_ptr to avoid recursive definition)
 using Array = std::shared_ptr<std::vector<Value>>;
@@ -26,11 +27,12 @@ using Dictionary = std::shared_ptr<std::unordered_map<std::string, Value>>;
 struct StructValue {
     std::string structName;
     std::shared_ptr<std::unordered_map<std::string, Value>> members; // Legacy member storage
-    std::unique_ptr<InstancePropertyContainer> properties; // New property system
+    std::shared_ptr<InstancePropertyContainer> properties; // New property system (shared for value semantics)
+    std::unique_ptr<SubscriptManager> subscripts; // Subscript support
     
     StructValue(const std::string& structName);
     StructValue(const std::string& structName, std::unordered_map<std::string, Value> memberMap);
-    StructValue(const std::string& structName, std::unique_ptr<InstancePropertyContainer> props);
+    StructValue(const std::string& structName, std::shared_ptr<InstancePropertyContainer> props);
     
     // Destructor
     ~StructValue();
@@ -59,6 +61,7 @@ struct ClassInstance {
     std::string className;
     std::shared_ptr<std::unordered_map<std::string, Value>> members; // Legacy member storage
     std::unique_ptr<InstancePropertyContainer> properties; // New property system
+    std::unique_ptr<SubscriptManager> subscripts; // Subscript support
     mutable int refCount; // For ARC implementation
     
     // Inheritance support

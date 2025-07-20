@@ -141,7 +141,10 @@ std::unique_ptr<Expr> Parser::assignment() {
     auto value = assignment();
 
     // Check if the left side is a valid assignment target
-    if (dynamic_cast<VarExpr *>(expr.get()) || dynamic_cast<MemberAccess *>(expr.get())) {
+    if (dynamic_cast<VarExpr *>(expr.get()) || 
+        dynamic_cast<MemberAccess *>(expr.get()) ||
+        dynamic_cast<IndexAccess *>(expr.get()) ||
+        dynamic_cast<SubscriptAccess *>(expr.get())) {
       return std::make_unique<Assign>(std::move(expr), std::move(value));
     }
 

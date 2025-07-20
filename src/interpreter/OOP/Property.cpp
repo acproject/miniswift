@@ -2,6 +2,7 @@
 #include "../Environment.h"
 #include "../Interpreter.h"
 #include <stdexcept>
+#include <iostream>
 
 namespace miniswift {
 

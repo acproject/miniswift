@@ -1,39 +1,57 @@
-// Comprehensive subscript test
+// Test subscript functionality
 
-// Test 1: Basic struct with subscript
-struct SimpleArray {
-    subscript(index: Int) -> Int {
-        get {
-            return index * 2
-        }
-        set {
-            print("Setting value at index " + index + " to " + newValue)
-        }
-    }
-}
-
-// Test 2: Class with subscript
-class Dictionary {
-    subscript(key: String) -> String {
-        get {
-            return "value for " + key
-        }
-        set {
-            print("Setting " + key + " to " + newValue)
-        }
-    }
-}
-
-// Test 3: Multiple parameter subscript
 struct Matrix {
+    var data: Int
+    var rows: Int
+    var cols: Int
+    
     subscript(row: Int, col: Int) -> Int {
         get {
-            return row + col
+            return data  // Simplified for testing
         }
-        set(value) {
-            print("Setting matrix[" + row + "][" + col + "] to " + value)
+        set {
+            data = newValue  // Simplified for testing
         }
     }
 }
 
-print("All subscript declarations parsed successfully!")
+class Dictionary {
+    var value: Int
+    
+    subscript(key: String) -> Int {
+        get {
+            return value
+        }
+        set {
+            value = newValue
+        }
+    }
+}
+
+// Test the subscript functionality
+struct SimpleStruct {
+    var value: Int
+    
+    subscript(index: Int) -> Int {
+        get {
+            return value
+        }
+        set {
+            value = newValue
+        }
+    }
+}
+
+var simple = SimpleStruct()
+simple.value = 42
+print("Testing simple subscript...")
+print(simple[0])
+simple[1] = 5
+print(simple[1])
+
+var dict = Dictionary()
+dict.value = 10
+print("Testing dictionary subscript...")
+print(dict["test"])
+dict["key"] = 20
+print(dict["key"])

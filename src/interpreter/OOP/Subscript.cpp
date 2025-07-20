@@ -4,11 +4,18 @@
 #include <stdexcept>
 #include <iostream>
 
+// Forward declaration of ReturnException from Interpreter.cpp
+class ReturnException : public std::runtime_error {
+public:
+    miniswift::Value value;
+    ReturnException(miniswift::Value val) : std::runtime_error("return"), value(val) {}
+};
+
 namespace miniswift {
 
 // SubscriptValue implementation
-Value SubscriptValue::get(Interpreter& interpreter, const std::vector<Value>& indices) {
-    if (!getter) {
+Value SubscriptValue::get(Interpreter& interpreter, const std::vector<Value>& indices, const Value* instance) {
+    if (!definition.getter) {
         throw std::runtime_error("Subscript has no getter");
     }
     
@@ -18,12 +25,35 @@ Value SubscriptValue::get(Interpreter& interpreter, const std::vector<Value>& in
     
     try {
         // Bind parameters to indices
-        if (indices.size() != parameters.size()) {
+        if (indices.size() != definition.parameters.size()) {
             throw std::runtime_error("Subscript parameter count mismatch");
         }
         
-        for (size_t i = 0; i < parameters.size(); ++i) {
-            subscriptEnv->define(parameters[i].name.lexeme, indices[i], false, parameters[i].type.lexeme);
+        for (size_t i = 0; i < definition.parameters.size(); ++i) {
+            subscriptEnv->define(definition.parameters[i].name.lexeme, indices[i], false, definition.parameters[i].type.lexeme);
+        }
+        
+        // Bind instance members if instance is provided
+        if (instance) {
+            if (instance->type == ValueType::Struct) {
+                auto& structValue = instance->asStruct();
+                // 直接从结构体实例的属性容器获取所有属性
+                if (structValue.properties) {
+                    // 创建一个特殊的环境，能够访问属性系统
+                    auto propertyEnv = std::make_shared<PropertyAccessorEnvironment>(
+                        subscriptEnv, structValue.properties.get(), &interpreter);
+                    subscriptEnv = propertyEnv;
+                }
+            } else if (instance->type == ValueType::Class) {
+                auto classInstance = instance->asClass();
+                // 直接从类实例的属性容器获取所有属性
+                if (classInstance->properties) {
+                    // 创建一个特殊的环境，能够访问属性系统
+                    auto propertyEnv = std::make_shared<PropertyAccessorEnvironment>(
+                        subscriptEnv, classInstance->properties.get(), &interpreter);
+                    subscriptEnv = propertyEnv;
+                }
+            }
         }
         
         interpreter.setCurrentEnvironment(subscriptEnv);
@@ -31,18 +61,12 @@ Value SubscriptValue::get(Interpreter& interpreter, const std::vector<Value>& in
         // Execute getter body
         Value result;
         try {
-            interpreter.executeWithEnvironment(*getter, subscriptEnv);
+            interpreter.executeWithEnvironment(*definition.getter, subscriptEnv);
             // If no return statement, return nil
             result = Value();
-        } catch (const std::runtime_error& e) {
-            // Check if this is a return exception
-            std::string errorMsg = e.what();
-            if (errorMsg == "return") {
-                // This is a return statement, get the returned value
-                result = interpreter.evaluate(*getter->statements[0]); // Simplified for now
-            } else {
-                throw;
-            }
+        } catch (const ReturnException& returnValue) {
+            // This is a return statement, get the returned value
+            result = returnValue.value;
         }
         
         interpreter.setCurrentEnvironment(previous);
@@ -54,8 +78,8 @@ Value SubscriptValue::get(Interpreter& interpreter, const std::vector<Value>& in
     }
 }
 
-void SubscriptValue::set(Interpreter& interpreter, const std::vector<Value>& indices, const Value& newValue) {
-    if (isReadOnly || !setter) {
+void SubscriptValue::set(Interpreter& interpreter, const std::vector<Value>& indices, const Value& newValue, Value* instance) {
+    if (definition.isReadOnly || !definition.setter) {
         throw std::runtime_error("Subscript is read-only");
     }
     
@@ -65,12 +89,35 @@ void SubscriptValue::set(Interpreter& interpreter, const std::vector<Value>& ind
     
     try {
         // Bind parameters to indices
-        if (indices.size() != parameters.size()) {
+        if (indices.size() != definition.parameters.size()) {
             throw std::runtime_error("Subscript parameter count mismatch");
         }
         
-        for (size_t i = 0; i < parameters.size(); ++i) {
-            subscriptEnv->define(parameters[i].name.lexeme, indices[i], false, parameters[i].type.lexeme);
+        for (size_t i = 0; i < definition.parameters.size(); ++i) {
+            subscriptEnv->define(definition.parameters[i].name.lexeme, indices[i], false, definition.parameters[i].type.lexeme);
+        }
+        
+        // Bind instance members if instance is provided
+        if (instance) {
+            if (instance->type == ValueType::Struct) {
+                auto& structValue = instance->asStruct();
+                // 直接从结构体实例的属性容器获取所有属性
+                if (structValue.properties) {
+                    // 创建一个特殊的环境，能够访问属性系统
+                    auto propertyEnv = std::make_shared<PropertyAccessorEnvironment>(
+                        subscriptEnv, structValue.properties.get(), &interpreter);
+                    subscriptEnv = propertyEnv;
+                }
+            } else if (instance->type == ValueType::Class) {
+                auto classInstance = instance->asClass();
+                // 直接从类实例的属性容器获取所有属性
+                if (classInstance->properties) {
+                    // 创建一个特殊的环境，能够访问属性系统
+                    auto propertyEnv = std::make_shared<PropertyAccessorEnvironment>(
+                        subscriptEnv, classInstance->properties.get(), &interpreter);
+                    subscriptEnv = propertyEnv;
+                }
+            }
         }
         
         // Bind newValue to special parameter
@@ -79,7 +126,7 @@ void SubscriptValue::set(Interpreter& interpreter, const std::vector<Value>& ind
         interpreter.setCurrentEnvironment(subscriptEnv);
         
         // Execute setter body
-        interpreter.executeWithEnvironment(*setter, subscriptEnv);
+        interpreter.executeWithEnvironment(*definition.setter, subscriptEnv);
         
         interpreter.setCurrentEnvironment(previous);
         
@@ -90,14 +137,14 @@ void SubscriptValue::set(Interpreter& interpreter, const std::vector<Value>& ind
 }
 
 bool SubscriptValue::matchesSignature(const std::vector<Value>& indices) const {
-    if (indices.size() != parameters.size()) {
+    if (indices.size() != definition.parameters.size()) {
         return false;
     }
     
     // For now, we'll do basic type checking
     // In a full implementation, this would include more sophisticated type matching
-    for (size_t i = 0; i < parameters.size(); ++i) {
-        const auto& param = parameters[i];
+    for (size_t i = 0; i < definition.parameters.size(); ++i) {
+        const auto& param = definition.parameters[i];
         const auto& index = indices[i];
         
         // Skip type checking if parameter type is empty (type inference)

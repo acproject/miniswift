@@ -20,6 +20,9 @@ Interpreter::Interpreter() {
     // Initialize inheritance management
     inheritanceManager = std::make_unique<InheritanceManager>();
     superHandler = std::make_unique<SuperHandler>(*inheritanceManager, *this);
+    
+    // Initialize subscript management
+    staticSubscriptManager = std::make_unique<StaticSubscriptManager>();
 }
 
 void Interpreter::interpret(const std::vector<std::unique_ptr<Stmt>>& statements) {
@@ -189,6 +192,182 @@ void Interpreter::visit(const Assign& expr) {
                 }
             } else {
                 throw std::runtime_error("Only structs and classes have members");
+            }
+        }
+    } else if (auto indexAccess = dynamic_cast<const IndexAccess*>(expr.target.get())) {
+        // Array/Dictionary/Struct/Class index assignment: array[index] = value
+        Value object = evaluate(*indexAccess->object);
+        Value index = evaluate(*indexAccess->index);
+        
+        if (object.type == ValueType::Array) {
+            auto& arr = object.asArray();
+            if (index.type == ValueType::Int) {
+                int idx = std::get<int>(index.value);
+                if (idx >= 0 && idx < static_cast<int>(arr->size())) {
+                    (*arr)[idx] = value;
+                } else {
+                    throw std::runtime_error("Array index out of bounds");
+                }
+            } else {
+                throw std::runtime_error("Array index must be an integer");
+            }
+        } else if (object.type == ValueType::Dictionary) {
+            auto& dict = object.asDictionary();
+            if (index.type == ValueType::String) {
+                std::string key = std::get<std::string>(index.value);
+                (*dict)[key] = value;
+            } else {
+                throw std::runtime_error("Dictionary key must be a string");
+            }
+        } else if (object.type == ValueType::Class) {
+            // Handle class subscript assignment
+            auto classInstance = object.asClass();
+            std::vector<Value> arguments = {index};
+            
+            // Try to find matching subscript in the instance's subscript manager
+            auto subscriptValue = classInstance->subscripts->findSubscript(arguments);
+            if (subscriptValue) {
+                subscriptValue->set(*this, arguments, value, &object);
+                return;
+            }
+            
+            // If not found in instance, try static subscripts
+            auto typeSubscriptManager = staticSubscriptManager->getSubscriptManager(classInstance->className);
+            subscriptValue = typeSubscriptManager->findSubscript(arguments);
+            if (subscriptValue) {
+                subscriptValue->set(*this, arguments, value, &object);
+                return;
+            }
+            
+            throw std::runtime_error("No matching subscript found for class instance assignment");
+        } else if (object.type == ValueType::Struct) {
+            // Handle struct subscript assignment
+            auto& structValue = object.asStruct();
+            std::vector<Value> arguments = {index};
+            
+            // Try to find matching subscript in the struct's subscript manager
+            auto subscriptValue = structValue.subscripts->findSubscript(arguments);
+            if (subscriptValue) {
+                subscriptValue->set(*this, arguments, value, &object);
+                return;
+            }
+            
+            // If not found in instance, try static subscripts
+            auto typeSubscriptManager = staticSubscriptManager->getSubscriptManager(structValue.structName);
+            subscriptValue = typeSubscriptManager->findSubscript(arguments);
+            if (subscriptValue) {
+                subscriptValue->set(*this, arguments, value, &object);
+                return;
+            }
+            
+            throw std::runtime_error("No matching subscript found for struct assignment");
+        } else {
+            throw std::runtime_error("Object is not indexable");
+        }
+    } else if (auto subscriptAccess = dynamic_cast<const SubscriptAccess*>(expr.target.get())) {
+        // Subscript assignment: object[arg1, arg2, ...] = value
+        
+        // Evaluate all arguments
+        std::vector<Value> arguments;
+        for (const auto& arg : subscriptAccess->indices) {
+            arguments.push_back(evaluate(*arg));
+        }
+        
+        // For simple variable access, modify the original variable directly
+        if (auto varExpr = dynamic_cast<const VarExpr*>(subscriptAccess->object.get())) {
+            // Get reference to the original variable in environment
+            Token varName = varExpr->name;
+            Value& originalObject = environment->getReference(varName);
+            
+            // Handle subscript assignment based on object type
+            if (originalObject.type == ValueType::Class) {
+                auto classInstance = originalObject.asClass();
+                
+                // Try to find matching subscript in the instance's subscript manager
+                auto subscriptValue = classInstance->subscripts->findSubscript(arguments);
+                if (subscriptValue) {
+                    subscriptValue->set(*this, arguments, value, &originalObject);
+                    return;
+                }
+                
+                // If not found in instance, try static subscripts
+                auto typeSubscriptManager = staticSubscriptManager->getSubscriptManager(classInstance->className);
+                subscriptValue = typeSubscriptManager->findSubscript(arguments);
+                if (subscriptValue) {
+                    subscriptValue->set(*this, arguments, value, &originalObject);
+                    return;
+                }
+                
+                throw std::runtime_error("No matching subscript found for class instance assignment");
+            } else if (originalObject.type == ValueType::Struct) {
+                auto& structValue = originalObject.asStruct();
+                
+                // Try to find matching subscript in the struct's subscript manager
+                auto subscriptValue = structValue.subscripts->findSubscript(arguments);
+                if (subscriptValue) {
+                    subscriptValue->set(*this, arguments, value, &originalObject);
+                    return;
+                }
+                
+                // If not found in instance, try static subscripts
+                auto typeSubscriptManager = staticSubscriptManager->getSubscriptManager(structValue.structName);
+                subscriptValue = typeSubscriptManager->findSubscript(arguments);
+                if (subscriptValue) {
+                    subscriptValue->set(*this, arguments, value, &originalObject);
+                    return;
+                }
+                
+                throw std::runtime_error("No matching subscript found for struct assignment");
+            } else {
+                throw std::runtime_error("Object is not subscriptable for assignment");
+            }
+        } else {
+            // For complex expressions, fall back to the old behavior
+            Value object = evaluate(*subscriptAccess->object);
+            
+            // Handle subscript assignment based on object type
+            if (object.type == ValueType::Class) {
+                // Get the class instance
+                auto classInstance = object.asClass();
+                
+                // Try to find matching subscript in the instance's subscript manager
+                auto subscriptValue = classInstance->subscripts->findSubscript(arguments);
+                if (subscriptValue) {
+                    subscriptValue->set(*this, arguments, value, &object);
+                    return;
+                }
+                
+                // If not found in instance, try static subscripts
+                auto typeSubscriptManager = staticSubscriptManager->getSubscriptManager(classInstance->className);
+                subscriptValue = typeSubscriptManager->findSubscript(arguments);
+                if (subscriptValue) {
+                    subscriptValue->set(*this, arguments, value, &object);
+                    return;
+                }
+                
+                throw std::runtime_error("No matching subscript found for class instance assignment");
+            } else if (object.type == ValueType::Struct) {
+                // Get the struct value
+                auto& structValue = object.asStruct();
+                
+                // Try to find matching subscript in the struct's subscript manager
+                auto subscriptValue = structValue.subscripts->findSubscript(arguments);
+                if (subscriptValue) {
+                    subscriptValue->set(*this, arguments, value, &object);
+                    return;
+                }
+                
+                // If not found in instance, try static subscripts
+                auto typeSubscriptManager = staticSubscriptManager->getSubscriptManager(structValue.structName);
+                subscriptValue = typeSubscriptManager->findSubscript(arguments);
+                if (subscriptValue) {
+                    subscriptValue->set(*this, arguments, value, &object);
+                    return;
+                }
+                
+                throw std::runtime_error("No matching subscript found for struct assignment");
+            } else {
+                throw std::runtime_error("Object is not subscriptable for assignment");
             }
         }
     } else {
@@ -464,9 +643,51 @@ void Interpreter::visit(const IndexAccess& expr) {
             result = Value(); // nil for missing keys
         }
     } else if (object.type == ValueType::Class) {
-        // Handle subscript access on instances
-        // For now, throw an error as subscript system is not fully implemented
-        throw std::runtime_error("Subscript access on class instances not yet fully implemented.");
+        // Handle subscript access on class instances
+        auto classInstance = object.asClass();
+        
+        // Convert single index to vector for subscript system
+        std::vector<Value> arguments = {index};
+        
+        // Try to find matching subscript in the instance's subscript manager
+        auto subscriptValue = classInstance->subscripts->findSubscript(arguments);
+        if (subscriptValue) {
+            result = subscriptValue->get(*this, arguments, &object);
+            return;
+        }
+        
+        // If not found in instance, try static subscripts
+        auto typeSubscriptManager = staticSubscriptManager->getSubscriptManager(classInstance->className);
+        subscriptValue = typeSubscriptManager->findSubscript(arguments);
+        if (subscriptValue) {
+            result = subscriptValue->get(*this, arguments, &object);
+            return;
+        }
+        
+        throw std::runtime_error("No matching subscript found for class instance");
+    } else if (object.type == ValueType::Struct) {
+        // Handle subscript access on struct instances
+        auto& structValue = object.asStruct();
+        
+        // Convert single index to vector for subscript system
+        std::vector<Value> arguments = {index};
+        
+        // Try to find matching subscript in the struct's subscript manager
+        auto subscriptValue = structValue.subscripts->findSubscript(arguments);
+        if (subscriptValue) {
+            result = subscriptValue->get(*this, arguments, &object);
+            return;
+        }
+        
+        // If not found in instance, try static subscripts
+        auto typeSubscriptManager = staticSubscriptManager->getSubscriptManager(structValue.structName);
+        subscriptValue = typeSubscriptManager->findSubscript(arguments);
+        if (subscriptValue) {
+            result = subscriptValue->get(*this, arguments, &object);
+            return;
+        }
+        
+        throw std::runtime_error("No matching subscript found for struct");
     } else {
         throw std::runtime_error("Object is not subscriptable.");
     }
@@ -475,14 +696,60 @@ void Interpreter::visit(const IndexAccess& expr) {
 void Interpreter::visit(const SubscriptAccess& expr) {
     Value object = evaluate(*expr.object);
     
+    std::cout << "SubscriptAccess: object type = " << static_cast<int>(object.type) << std::endl;
+    std::cout << "ValueType::Struct = " << static_cast<int>(ValueType::Struct) << std::endl;
+    std::cout << "ValueType::Class = " << static_cast<int>(ValueType::Class) << std::endl;
+    
     // Evaluate all arguments
     std::vector<Value> arguments;
     for (const auto& arg : expr.indices) {
         arguments.push_back(evaluate(*arg));
     }
     
-    // For now, throw an error as multi-parameter subscript system is not fully implemented
-    throw std::runtime_error("Multi-parameter subscript access not yet fully implemented.");
+    // Handle subscript access based on object type
+    if (object.type == ValueType::Class) {
+        // Get the class instance
+        auto classInstance = object.asClass();
+        
+        // Try to find matching subscript in the instance's subscript manager
+        auto subscriptValue = classInstance->subscripts->findSubscript(arguments);
+        if (subscriptValue) {
+            result = subscriptValue->get(*this, arguments, &object);
+            return;
+        }
+        
+        // If not found in instance, try static subscripts
+        auto typeSubscriptManager = staticSubscriptManager->getSubscriptManager(classInstance->className);
+        subscriptValue = typeSubscriptManager->findSubscript(arguments);
+        if (subscriptValue) {
+            result = subscriptValue->get(*this, arguments, &object);
+            return;
+        }
+        
+        throw std::runtime_error("No matching subscript found for class instance");
+    } else if (object.type == ValueType::Struct) {
+         // Get the struct value
+         auto& structValue = object.asStruct();
+         
+         // Try to find matching subscript in the struct's subscript manager
+         auto subscriptValue = structValue.subscripts->findSubscript(arguments);
+         if (subscriptValue) {
+             result = subscriptValue->get(*this, arguments, &object);
+             return;
+         }
+         
+         // If not found in instance, try static subscripts
+         auto typeSubscriptManager = staticSubscriptManager->getSubscriptManager(structValue.structName);
+         subscriptValue = typeSubscriptManager->findSubscript(arguments);
+         if (subscriptValue) {
+             result = subscriptValue->get(*this, arguments, &object);
+             return;
+         }
+        
+        throw std::runtime_error("No matching subscript found for struct");
+    } else {
+        throw std::runtime_error("Object is not subscriptable");
+    }
 }
 
 void Interpreter::printArray(const Array& arr) {
@@ -701,6 +968,27 @@ void Interpreter::visit(const Call& expr) {
             result = Value(classInstance);
             return;
         }
+        
+        // Check if this is a struct constructor call
+        if (auto* structPropManager = getStructPropertyManager(varExpr->name.lexeme)) {
+            std::cout << "Detected struct constructor call for: " << varExpr->name.lexeme << std::endl;
+            
+            // Create a new struct instance
+            auto propContainer = std::make_shared<InstancePropertyContainer>(*structPropManager, environment);
+            propContainer->initializeDefaults(*this);
+            StructValue structValue(varExpr->name.lexeme, propContainer);
+            
+            // Copy subscripts from static manager to instance
+            auto* typeSubscriptManager = staticSubscriptManager->getSubscriptManager(varExpr->name.lexeme);
+            if (typeSubscriptManager) {
+                for (const auto& subscript : typeSubscriptManager->getAllSubscripts()) {
+                    structValue.subscripts->addSubscript(std::make_unique<SubscriptValue>(*subscript));
+                }
+            }
+            
+            result = Value(structValue);
+            return;
+        }
     }
     
     Value callee = evaluate(*expr.callee);
@@ -833,8 +1121,16 @@ void Interpreter::visit(const EnumAccess& expr) {
 
 // Execute struct declaration: struct Name { members }
 void Interpreter::visit(const StructStmt& stmt) {
+    // Set current type context for subscript registration
+    environment->define("__current_type__", Value(stmt.name.lexeme), false, "String");
+    
     // Register struct properties
     registerStructProperties(stmt.name.lexeme, stmt.members);
+    
+    // Process subscripts
+    for (const auto& subscript : stmt.subscripts) {
+        subscript->accept(*this);
+    }
     
     // Debug: Check if property manager was created
     auto* propManager = getStructPropertyManager(stmt.name.lexeme);
@@ -846,12 +1142,27 @@ void Interpreter::visit(const StructStmt& stmt) {
     
     // Store struct definition in environment for later use
     environment->define(stmt.name.lexeme, Value(), false, "Struct");
+    
+    // Clean up type context
+    try {
+        environment->assign(Token(TokenType::Identifier, "__current_type__", 0), Value());
+    } catch (...) {
+        // Ignore if __current_type__ doesn't exist
+    }
 }
 
 // Execute class declaration: class Name { members }
 void Interpreter::visit(const ClassStmt& stmt) {
+    // Set current type context for subscript registration
+    environment->define("__current_type__", Value(stmt.name.lexeme), false, "String");
+    
     // Register class properties
     registerClassProperties(stmt.name.lexeme, stmt.members);
+    
+    // Process subscripts
+    for (const auto& subscript : stmt.subscripts) {
+        subscript->accept(*this);
+    }
     
     // Register inheritance relationship
     std::string superclassName = "";
@@ -904,6 +1215,13 @@ void Interpreter::visit(const ClassStmt& stmt) {
         
         std::cout << "Created default constructor for class: " << stmt.name.lexeme << std::endl;
     }
+    
+    // Clean up type context
+    try {
+        environment->assign(Token(TokenType::Identifier, "__current_type__", 0), Value());
+    } catch (...) {
+        // Ignore if __current_type__ doesn't exist
+    }
 }
 
 // Execute init declaration: init(parameters) { body }
@@ -939,15 +1257,58 @@ void Interpreter::visit(const DeinitStmt& stmt) {
 
 // Execute subscript declaration: subscript(parameters) -> ReturnType { get { } set { } }
 void Interpreter::visit(const SubscriptStmt& stmt) {
-    // For now, we'll store subscript definitions for later use
-    // In a full implementation, this would register the subscript with the containing type
     std::cout << "Subscript declaration processed with " << stmt.parameters.size() << " parameters" << std::endl;
     
-    // TODO: Implement subscript registration with type system
-    // This would involve:
-    // 1. Creating a SubscriptDefinition from the statement
-    // 2. Registering it with the appropriate SubscriptManager
-    // 3. Handling static vs instance subscripts
+    // Get current type context (should be set when processing struct/class)
+    std::string currentType;
+    try {
+        Value typeContext = environment->get(Token(TokenType::Identifier, "__current_type__", 0));
+        if (typeContext.type == ValueType::String) {
+            currentType = std::get<std::string>(typeContext.value);
+        } else {
+            throw std::runtime_error("subscript can only be declared within struct or class");
+        }
+    } catch (const std::runtime_error&) {
+        throw std::runtime_error("subscript can only be declared within struct or class");
+    }
+    
+    // Extract getter and setter from accessors
+    std::unique_ptr<BlockStmt> getter = nullptr;
+    std::unique_ptr<BlockStmt> setter = nullptr;
+    
+    for (const auto& accessor : stmt.accessors) {
+        if (accessor.type == AccessorType::GET) {
+            getter = std::unique_ptr<BlockStmt>(static_cast<BlockStmt*>(accessor.body->clone().release()));
+        } else if (accessor.type == AccessorType::SET) {
+            setter = std::unique_ptr<BlockStmt>(static_cast<BlockStmt*>(accessor.body->clone().release()));
+        }
+    }
+    
+    if (!getter) {
+        throw std::runtime_error("subscript must have a getter");
+    }
+    
+    // Create subscript definition
+    auto subscriptDef = SubscriptDefinition(
+        stmt.parameters,
+        stmt.returnType,
+        std::move(getter),
+        std::move(setter)
+    );
+    
+    // Create subscript value with current environment as closure
+    auto subscriptValue = std::make_unique<SubscriptValue>(std::move(subscriptDef), environment);
+    
+    // Register with appropriate manager
+    if (stmt.isStatic) {
+        staticSubscriptManager->registerStaticSubscript(currentType, std::move(subscriptValue));
+    } else {
+        // For instance subscripts, we need to register with the type's subscript manager
+        // This will be handled when creating instances
+        staticSubscriptManager->getSubscriptManager(currentType)->addSubscript(std::move(subscriptValue));
+    }
+    
+    std::cout << "Subscript registered for type: " << currentType << std::endl;
 }
 
 // Execute member access: object.member
@@ -989,12 +1350,22 @@ void Interpreter::visit(const StructInit& expr) {
         propContainer->initializeDefaults(*this);
         
         auto classInstance = std::make_shared<ClassInstance>(expr.structName.lexeme, std::move(propContainer));
+        
+        // Copy subscripts from static manager to instance
+        auto* typeSubscriptManager = staticSubscriptManager->getSubscriptManager(expr.structName.lexeme);
+        if (typeSubscriptManager) {
+            // Copy all subscripts from type to instance
+            for (const auto& subscript : typeSubscriptManager->getAllSubscripts()) {
+                classInstance->subscripts->addSubscript(std::make_unique<SubscriptValue>(*subscript));
+            }
+        }
+        
         result = Value(classInstance);
     } else if (structPropManager) {
         // Create struct with property support
         std::cout << "Creating struct, properties count: " << structPropManager->getAllProperties().size() << std::endl;
         
-        auto propContainer = std::make_unique<InstancePropertyContainer>(*structPropManager, environment);
+        auto propContainer = std::make_shared<InstancePropertyContainer>(*structPropManager, environment);
         
         // Initialize provided members
         for (const auto& member : expr.members) {
@@ -1005,7 +1376,17 @@ void Interpreter::visit(const StructInit& expr) {
         // Initialize default values for unspecified properties
         propContainer->initializeDefaults(*this);
         
-        StructValue structValue(expr.structName.lexeme, std::move(propContainer));
+        StructValue structValue(expr.structName.lexeme, propContainer);
+        
+        // Copy subscripts from static manager to instance
+        auto* typeSubscriptManager = staticSubscriptManager->getSubscriptManager(expr.structName.lexeme);
+        if (typeSubscriptManager) {
+            // Copy all subscripts from type to instance
+            for (const auto& subscript : typeSubscriptManager->getAllSubscripts()) {
+                structValue.subscripts->addSubscript(std::make_unique<SubscriptValue>(*subscript));
+            }
+        }
+        
         result = Value(structValue);
     } else {
         // Fallback: try to create class instance without property manager
@@ -1016,6 +1397,15 @@ void Interpreter::visit(const StructInit& expr) {
         for (const auto& member : expr.members) {
             Value memberValue = evaluate(*member.second);
             (*classInstance->members)[member.first.lexeme] = memberValue;
+        }
+        
+        // Copy subscripts from static manager to instance
+        auto* typeSubscriptManager = staticSubscriptManager->getSubscriptManager(expr.structName.lexeme);
+        if (typeSubscriptManager) {
+            // Copy all subscripts from type to instance
+            for (const auto& subscript : typeSubscriptManager->getAllSubscripts()) {
+                classInstance->subscripts->addSubscript(std::make_unique<SubscriptValue>(*subscript));
+            }
         }
         
         result = Value(classInstance);

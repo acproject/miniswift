@@ -6,6 +6,7 @@
 #include "Environment.h"
 #include "OOP/Property.h"
 #include "OOP/Inheritance.h"
+#include "OOP/Subscript.h"
 #include <memory>
 #include <unordered_map>
 
@@ -75,7 +76,8 @@ private:
     std::unique_ptr<InheritanceManager> inheritanceManager;
     std::unique_ptr<SuperHandler> superHandler;
     
-
+    // Subscript management
+    std::unique_ptr<StaticSubscriptManager> staticSubscriptManager;
     
     bool isTruthy(const Value& value);
     void printArray(const Array& arr);

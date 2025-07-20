@@ -42,11 +42,18 @@ public:
     SubscriptValue(SubscriptDefinition def, std::shared_ptr<Environment> env)
         : definition(std::move(def)), closure(env) {}
     
+    // Copy constructor
+    SubscriptValue(const SubscriptValue& other)
+        : definition(other.definition.parameters, other.definition.returnType,
+                    other.definition.getter ? std::unique_ptr<BlockStmt>(static_cast<BlockStmt*>(other.definition.getter->clone().release())) : nullptr,
+                    other.definition.setter ? std::unique_ptr<BlockStmt>(static_cast<BlockStmt*>(other.definition.setter->clone().release())) : nullptr),
+          closure(other.closure) {}
+    
     // Execute subscript getter
-    Value get(Interpreter& interpreter, const std::vector<Value>& indices);
+    Value get(Interpreter& interpreter, const std::vector<Value>& indices, const Value* instance = nullptr);
     
     // Execute subscript setter
-    void set(Interpreter& interpreter, const std::vector<Value>& indices, const Value& newValue);
+    void set(Interpreter& interpreter, const std::vector<Value>& indices, const Value& newValue, Value* instance = nullptr);
     
     // Check if subscript matches given parameter types
     bool matchesSignature(const std::vector<Value>& indices) const;
@@ -75,6 +82,9 @@ public:
     
     // Get number of subscripts
     size_t getSubscriptCount() const { return subscripts.size(); }
+    
+    // Get all subscripts (for copying)
+    const std::vector<std::unique_ptr<SubscriptValue>>& getAllSubscripts() const { return subscripts; }
 };
 
 // Static subscript manager for type-level subscripts

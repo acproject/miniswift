@@ -134,7 +134,7 @@ std::unique_ptr<Stmt> Parser::expressionStatement() {
 std::unique_ptr<Expr> Parser::expression() { return assignment(); }
 
 std::unique_ptr<Expr> Parser::assignment() {
-  auto expr = equality();
+  auto expr = logicalOr();
 
   if (match({TokenType::Equal})) {
     Token equals = previous();
@@ -151,6 +151,30 @@ std::unique_ptr<Expr> Parser::assignment() {
     throw std::runtime_error("Invalid assignment target.");
   }
 
+  return expr;
+}
+
+std::unique_ptr<Expr> Parser::logicalOr() {
+  auto expr = logicalAnd();
+  
+  while (match({TokenType::PipePipe})) {
+    Token op = previous();
+    auto right = logicalAnd();
+    expr = std::make_unique<Binary>(std::move(expr), op, std::move(right));
+  }
+  
+  return expr;
+}
+
+std::unique_ptr<Expr> Parser::logicalAnd() {
+  auto expr = equality();
+  
+  while (match({TokenType::AmpAmp})) {
+    Token op = previous();
+    auto right = equality();
+    expr = std::make_unique<Binary>(std::move(expr), op, std::move(right));
+  }
+  
   return expr;
 }
 
@@ -687,6 +711,10 @@ std::unique_ptr<Expr> Parser::call() {
         // Regular member access: object.member
         expr = std::make_unique<MemberAccess>(std::move(expr), memberName);
       }
+    } else if (match({TokenType::Bang})) {
+      // Handle postfix bang operator for force unwrapping: expr!
+      Token op = previous();
+      expr = std::make_unique<Unary>(op, std::move(expr));
     } else {
       break;
     }
@@ -1126,24 +1154,35 @@ std::unique_ptr<Stmt> Parser::subscriptDeclaration() {
   
   std::vector<PropertyAccessor> accessors;
   
-  while (!check(TokenType::RBrace) && !isAtEnd()) {
-    if (match({TokenType::Get})) {
-      consume(TokenType::LBrace, "Expect '{' after 'get'.");
-      auto body = blockStatement();
-      accessors.emplace_back(AccessorType::GET, std::move(body));
-    } else if (match({TokenType::Set})) {
-      std::string paramName = "newValue";
-      if (match({TokenType::LParen})) {
-        consume(TokenType::Identifier, "Expect parameter name.");
-        paramName = previous().lexeme;
-        consume(TokenType::RParen, "Expect ')' after parameter name.");
+  // Check if this is a computed subscript (direct statements) or accessor-based subscript (get/set)
+  if (check(TokenType::Get) || check(TokenType::Set)) {
+    // Accessor-based subscript
+    while (!check(TokenType::RBrace) && !isAtEnd()) {
+      if (match({TokenType::Get})) {
+        consume(TokenType::LBrace, "Expect '{' after 'get'.");
+        auto body = blockStatement();
+        accessors.emplace_back(AccessorType::GET, std::move(body));
+      } else if (match({TokenType::Set})) {
+        std::string paramName = "newValue";
+        if (match({TokenType::LParen})) {
+          consume(TokenType::Identifier, "Expect parameter name.");
+          paramName = previous().lexeme;
+          consume(TokenType::RParen, "Expect ')' after parameter name.");
+        }
+        consume(TokenType::LBrace, "Expect '{' after 'set'.");
+        auto body = blockStatement();
+        accessors.emplace_back(AccessorType::SET, std::move(body), paramName);
+      } else {
+        throw std::runtime_error("Expect 'get' or 'set' in subscript accessor.");
       }
-      consume(TokenType::LBrace, "Expect '{' after 'set'.");
-      auto body = blockStatement();
-      accessors.emplace_back(AccessorType::SET, std::move(body), paramName);
-    } else {
-      throw std::runtime_error("Expect 'get' or 'set' in subscript accessor.");
     }
+  } else {
+    // Computed subscript - parse as a single block of statements
+    auto body = blockStatement();
+    // Create a getter accessor with the computed body
+    accessors.emplace_back(AccessorType::GET, std::move(body));
+    // The blockStatement already consumed the closing brace, so we need to return early
+    return std::make_unique<SubscriptStmt>(std::move(parameters), returnType, std::move(accessors), isStatic);
   }
   
   consume(TokenType::RBrace, "Expect '}' after subscript body.");

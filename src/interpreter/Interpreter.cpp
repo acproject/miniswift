@@ -378,15 +378,41 @@ void Interpreter::visit(const Assign& expr) {
 }
 
 void Interpreter::visit(const Binary& expr) {
+    // Handle logical operators with short-circuit evaluation
+    if (expr.op.type == TokenType::AmpAmp) {
+        Value left = evaluate(*expr.left);
+        if (!isTruthy(left)) {
+            result = Value(false);
+            return;
+        }
+        Value right = evaluate(*expr.right);
+        result = Value(isTruthy(right));
+        return;
+    }
+    
+    if (expr.op.type == TokenType::PipePipe) {
+        Value left = evaluate(*expr.left);
+        if (isTruthy(left)) {
+            result = Value(true);
+            return;
+        }
+        Value right = evaluate(*expr.right);
+        result = Value(isTruthy(right));
+        return;
+    }
+    
     Value left = evaluate(*expr.left);
     Value right = evaluate(*expr.right);
 
-    if ((left.type == ValueType::Int || left.type == ValueType::Double) && (right.type == ValueType::Int || right.type == ValueType::Double)) {
-        // Numeric operations
-    } else if (left.type == ValueType::String && right.type == ValueType::String) {
-        // String concatenation
-    } else {
-        throw std::runtime_error("Operands must be two numbers or two strings.");
+    // Type checking for non-logical operators
+    if (expr.op.type != TokenType::BangEqual && expr.op.type != TokenType::EqualEqual) {
+        if ((left.type == ValueType::Int || left.type == ValueType::Double) && (right.type == ValueType::Int || right.type == ValueType::Double)) {
+            // Numeric operations
+        } else if (left.type == ValueType::String && right.type == ValueType::String && expr.op.type == TokenType::Plus) {
+            // String concatenation
+        } else {
+            throw std::runtime_error("Operands must be two numbers or two strings.");
+        }
     }
 
     switch (expr.op.type) {

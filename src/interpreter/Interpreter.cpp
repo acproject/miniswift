@@ -318,6 +318,44 @@ void Interpreter::visit(const Literal& expr) {
     }
 }
 
+void Interpreter::visit(const StringInterpolation& expr) {
+    std::string result_str;
+    
+    for (const auto& part : expr.parts) {
+        if (part.expression) {
+            // This is an interpolated expression
+            Value value = evaluate(*part.expression);
+            
+            // Convert value to string
+            switch (value.type) {
+                case ValueType::Int:
+                    result_str += std::to_string(std::get<int>(value.value));
+                    break;
+                case ValueType::Double:
+                    result_str += std::to_string(std::get<double>(value.value));
+                    break;
+                case ValueType::Bool:
+                    result_str += std::get<bool>(value.value) ? "true" : "false";
+                    break;
+                case ValueType::String:
+                    result_str += std::get<std::string>(value.value);
+                    break;
+                case ValueType::Nil:
+                    result_str += "nil";
+                    break;
+                default:
+                    result_str += "<object>";
+                    break;
+            }
+        } else {
+            // This is a string literal part
+            result_str += part.text;
+        }
+    }
+    
+    result = Value(result_str);
+}
+
 void Interpreter::visit(const Unary& expr) {
     Value right = evaluate(*expr.right);
 

@@ -48,6 +48,7 @@ public:
     void visit(const MemberAccess& expr) override;
     void visit(const StructInit& expr) override;
     void visit(const Super& expr) override;
+    void visit(const StringInterpolation& expr) override;
 
 public:
     // Public methods for property system

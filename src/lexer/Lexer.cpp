@@ -76,8 +76,8 @@ Token Lexer::scanToken() {
         inInterpolation = false;
         // After interpolation ends, we're back in string context
         inStringLiteral = true;
-        // Return RParen first, then handle string continuation in next call
-        return {TokenType::RParen, ")", line};
+        // Return InterpolationEnd to properly close the interpolation
+        return {TokenType::InterpolationEnd, ")", line};
       } else {
         return {TokenType::RParen, ")", line};
       }
@@ -85,6 +85,11 @@ Token Lexer::scanToken() {
 
     // Put the character back and process normally
     current--;
+  }
+
+  // Handle string literal continuation after interpolation
+  if (inStringLiteral) {
+    return stringLiteral();
   }
 
   skipWhitespace();
@@ -112,7 +117,7 @@ Token Lexer::scanToken() {
       if (interpolationDepth == 0) {
         inInterpolation = false;
         inStringLiteral = true;
-        return {TokenType::RParen, ")", line};
+        return {TokenType::InterpolationEnd, ")", line};
       }
     }
     return {TokenType::RParen, ")", line};
@@ -263,7 +268,8 @@ Token Lexer::stringLiteral() {
         // Keep inStringLiteral true, we'll handle interpolation in next call
         return {TokenType::InterpolatedStringLiteral, value, line};
       }
-      advance(); // consume \\ advance(); // consume (
+      advance(); // consume backslash
+      advance(); // consume (
       inInterpolation = true;
       interpolationDepth = 1;
       inStringLiteral = false; // We're now in interpolation mode

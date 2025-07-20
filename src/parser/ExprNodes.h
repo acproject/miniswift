@@ -21,6 +21,7 @@ struct EnumAccess;
 struct MemberAccess;
 struct StructInit;
 struct Super;
+struct StringInterpolation;
 
 // Visitor interface for expressions
 class ExprVisitor {
@@ -41,6 +42,7 @@ public:
   virtual void visit(const MemberAccess &expr) = 0;
   virtual void visit(const StructInit &expr) = 0;
   virtual void visit(const Super &expr) = 0;
+  virtual void visit(const StringInterpolation &expr) = 0;
 };
 
 // Base class for all expression nodes
@@ -209,6 +211,36 @@ struct Call : Expr {
 
   const std::unique_ptr<Expr> callee;
   const std::vector<std::unique_ptr<Expr>> arguments;
+};
+
+// String interpolation expression: "Hello \(name)!"
+struct StringInterpolation : Expr {
+  struct InterpolationPart {
+    std::string text;  // String literal part
+    std::unique_ptr<Expr> expression;  // Expression to interpolate (null for text parts)
+    
+    InterpolationPart(std::string t) : text(std::move(t)), expression(nullptr) {}
+    InterpolationPart(std::unique_ptr<Expr> expr) : expression(std::move(expr)) {}
+  };
+
+  explicit StringInterpolation(std::vector<InterpolationPart> parts)
+      : parts(std::move(parts)) {}
+
+  void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
+
+  std::unique_ptr<Expr> clone() const override {
+    std::vector<InterpolationPart> clonedParts;
+    for (const auto &part : parts) {
+      if (part.expression) {
+        clonedParts.emplace_back(part.expression->clone());
+      } else {
+        clonedParts.emplace_back(part.text);
+      }
+    }
+    return std::make_unique<StringInterpolation>(std::move(clonedParts));
+  }
+
+  const std::vector<InterpolationPart> parts;
 };
 
 // Super expression: super.method() or super.property

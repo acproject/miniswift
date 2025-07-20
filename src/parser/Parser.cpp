@@ -218,19 +218,54 @@ std::unique_ptr<Expr> Parser::primary() {
     return std::make_unique<Super>(keyword, method);
   }
 
-  // Handle string interpolation
-  if (match({TokenType::InterpolatedStringLiteral})) {
-    // For now, treat interpolated string literals as regular string literals
-    // TODO: Implement proper string interpolation support
-    return std::make_unique<Literal>(previous());
+  // Handle string interpolation - can start with either InterpolatedStringLiteral or InterpolationStart
+  if (match({TokenType::InterpolatedStringLiteral, TokenType::InterpolationStart})) {
+    std::vector<StringInterpolation::InterpolationPart> parts;
+    
+    // Check what type of token we matched
+    if (previous().type == TokenType::InterpolatedStringLiteral) {
+      // String starts with text
+      std::string initialText = previous().lexeme;
+      if (!initialText.empty()) {
+        parts.emplace_back(initialText);
+      }
+    } else {
+      // String starts with interpolation - put the token back
+      current--;
+    }
+    
+    // Parse the complete interpolation sequence
+    while (true) {
+      // Look for interpolation start
+      if (match({TokenType::InterpolationStart})) {
+        auto expr = expression();
+        consume(TokenType::InterpolationEnd, "Expect ')' after interpolation expression.");
+        parts.emplace_back(std::move(expr));
+        
+        // After interpolation, check for more string content
+        if (match({TokenType::InterpolatedStringLiteral, TokenType::StringLiteral})) {
+          std::string nextText = previous().lexeme;
+          if (!nextText.empty()) {
+            parts.emplace_back(nextText);
+          }
+          // Continue the loop to look for more interpolations
+        } else {
+          // No more string content, we're done
+          break;
+        }
+      } else {
+        // No more interpolations, we're done
+        break;
+      }
+    }
+    
+    return std::make_unique<StringInterpolation>(std::move(parts));
   }
 
   if (match({TokenType::InterpolationStart})) {
-    // Skip interpolation for now - this is a simplified implementation
-    // In a full implementation, we would parse the expression inside the interpolation
+    // Handle standalone interpolation (shouldn't normally happen)
     auto expr = expression();
-    consume(TokenType::RParen, "Expect ')' after interpolation expression.");
-    // For now, just return the expression (this won't work properly with mixed string/interpolation)
+    consume(TokenType::InterpolationEnd, "Expect ')' after interpolation expression.");
     return expr;
   }
 

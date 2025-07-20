@@ -22,6 +22,7 @@ struct MemberAccess;
 struct StructInit;
 struct Super;
 struct StringInterpolation;
+struct SubscriptAccess;
 
 // Visitor interface for expressions
 class ExprVisitor {
@@ -36,6 +37,7 @@ public:
   virtual void visit(const ArrayLiteral &expr) = 0;
   virtual void visit(const DictionaryLiteral &expr) = 0;
   virtual void visit(const IndexAccess &expr) = 0;
+  virtual void visit(const SubscriptAccess &expr) = 0;
   virtual void visit(const Call &expr) = 0;
   virtual void visit(const Closure &expr) = 0;
   virtual void visit(const EnumAccess &expr) = 0;
@@ -256,6 +258,25 @@ struct Super : Expr {
   std::unique_ptr<Expr> clone() const override {
     return std::make_unique<Super>(keyword, method);
   }
+};
+
+// Subscript access expression: object[index1, index2, ...]
+struct SubscriptAccess : Expr {
+  SubscriptAccess(std::unique_ptr<Expr> object, std::vector<std::unique_ptr<Expr>> indices)
+      : object(std::move(object)), indices(std::move(indices)) {}
+
+  void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
+
+  std::unique_ptr<Expr> clone() const override {
+    std::vector<std::unique_ptr<Expr>> clonedIndices;
+    for (const auto &index : indices) {
+      clonedIndices.push_back(index->clone());
+    }
+    return std::make_unique<SubscriptAccess>(object->clone(), std::move(clonedIndices));
+  }
+
+  const std::unique_ptr<Expr> object;
+  const std::vector<std::unique_ptr<Expr>> indices;
 };
 
 }; // namespace miniswift

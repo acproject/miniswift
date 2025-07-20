@@ -42,6 +42,8 @@ enum class TokenType {
   Super,
   Override,
   Final,
+  Static,
+  Subscript,
 
   // Operators
   Plus,

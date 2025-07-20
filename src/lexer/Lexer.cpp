@@ -42,6 +42,8 @@ static void initializeKeywords() {
   keywords["super"] = TokenType::Super;
   keywords["override"] = TokenType::Override;
   keywords["final"] = TokenType::Final;
+  keywords["static"] = TokenType::Static;
+  keywords["subscript"] = TokenType::Subscript;
 }
 
 Lexer::Lexer(const std::string &source)

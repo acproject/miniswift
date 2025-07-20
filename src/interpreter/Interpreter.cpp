@@ -463,9 +463,26 @@ void Interpreter::visit(const IndexAccess& expr) {
         } else {
             result = Value(); // nil for missing keys
         }
+    } else if (object.type == ValueType::Class) {
+        // Handle subscript access on instances
+        // For now, throw an error as subscript system is not fully implemented
+        throw std::runtime_error("Subscript access on class instances not yet fully implemented.");
     } else {
-        throw std::runtime_error("Only arrays and dictionaries can be indexed.");
+        throw std::runtime_error("Object is not subscriptable.");
     }
+}
+
+void Interpreter::visit(const SubscriptAccess& expr) {
+    Value object = evaluate(*expr.object);
+    
+    // Evaluate all arguments
+    std::vector<Value> arguments;
+    for (const auto& arg : expr.indices) {
+        arguments.push_back(evaluate(*arg));
+    }
+    
+    // For now, throw an error as multi-parameter subscript system is not fully implemented
+    throw std::runtime_error("Multi-parameter subscript access not yet fully implemented.");
 }
 
 void Interpreter::printArray(const Array& arr) {
@@ -918,6 +935,19 @@ void Interpreter::visit(const DeinitStmt& stmt) {
     // Create destructor value and store in environment
     auto destructorValue = std::make_shared<DestructorValue>(destructorDef, environment);
     environment->define("deinit", Value(destructorValue), false, "Destructor");
+}
+
+// Execute subscript declaration: subscript(parameters) -> ReturnType { get { } set { } }
+void Interpreter::visit(const SubscriptStmt& stmt) {
+    // For now, we'll store subscript definitions for later use
+    // In a full implementation, this would register the subscript with the containing type
+    std::cout << "Subscript declaration processed with " << stmt.parameters.size() << " parameters" << std::endl;
+    
+    // TODO: Implement subscript registration with type system
+    // This would involve:
+    // 1. Creating a SubscriptDefinition from the statement
+    // 2. Registering it with the appropriate SubscriptManager
+    // 3. Handling static vs instance subscripts
 }
 
 // Execute member access: object.member

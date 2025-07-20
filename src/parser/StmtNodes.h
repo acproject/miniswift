@@ -23,6 +23,7 @@ struct StructStmt;
 struct ClassStmt;
 struct InitStmt;
 struct DeinitStmt;
+struct SubscriptStmt;
 
 // Visitor for Stmt
 class StmtVisitor {
@@ -42,6 +43,7 @@ public:
   virtual void visit(const ClassStmt &stmt) = 0;
   virtual void visit(const InitStmt &stmt) = 0;
   virtual void visit(const DeinitStmt &stmt) = 0;
+  virtual void visit(const SubscriptStmt &stmt) = 0;
 };
 
 // Base class for Stmt
@@ -252,8 +254,9 @@ struct EnumCase {
 
 // Enum declaration: enum Name: RawType { cases }
 struct EnumStmt : Stmt {
-  EnumStmt(Token name, Token rawType, std::vector<EnumCase> cases)
-      : name(name), rawType(rawType), cases(std::move(cases)) {}
+  EnumStmt(Token name, Token rawType, std::vector<EnumCase> cases,
+           std::vector<std::unique_ptr<SubscriptStmt>> subscripts = {})
+      : name(name), rawType(rawType), cases(std::move(cases)), subscripts(std::move(subscripts)) {}
 
   void accept(StmtVisitor &visitor) const override { visitor.visit(*this); }
 
@@ -264,12 +267,14 @@ struct EnumStmt : Stmt {
                                enumCase.rawValue ? enumCase.rawValue->clone()
                                                  : nullptr);
     }
+    // For simplicity, skip cloning subscripts in this basic implementation
     return std::make_unique<EnumStmt>(name, rawType, std::move(clonedCases));
   }
 
   const Token name;
   const Token rawType; // Can be empty for no raw type
   const std::vector<EnumCase> cases;
+  const std::vector<std::unique_ptr<SubscriptStmt>> subscripts; // Static subscripts
 };
 
 // Enum case access expression: EnumName.caseName or .caseName
@@ -392,14 +397,16 @@ struct StructStmt : Stmt {
       methods; // Methods defined in the struct
   std::vector<std::unique_ptr<InitStmt>> initializers; // Constructors
   std::unique_ptr<DeinitStmt> deinitializer;           // Destructor
+  std::vector<std::unique_ptr<SubscriptStmt>> subscripts; // Subscripts
 
   StructStmt(Token name, std::vector<StructMember> members,
              std::vector<std::unique_ptr<FunctionStmt>> methods = {},
              std::vector<std::unique_ptr<InitStmt>> initializers = {},
-             std::unique_ptr<DeinitStmt> deinitializer = nullptr)
+             std::unique_ptr<DeinitStmt> deinitializer = nullptr,
+             std::vector<std::unique_ptr<SubscriptStmt>> subscripts = {})
       : name(name), members(std::move(members)), methods(std::move(methods)),
         initializers(std::move(initializers)),
-        deinitializer(std::move(deinitializer)) {}
+        deinitializer(std::move(deinitializer)), subscripts(std::move(subscripts)) {}
 
   void accept(StmtVisitor &visitor) const override { visitor.visit(*this); }
 
@@ -420,14 +427,16 @@ struct ClassStmt : Stmt {
   std::vector<std::unique_ptr<FunctionStmt>> methods;
   std::vector<std::unique_ptr<InitStmt>> initializers; // Constructors
   std::unique_ptr<DeinitStmt> deinitializer;           // Destructor
+  std::vector<std::unique_ptr<SubscriptStmt>> subscripts; // Subscripts
 
   ClassStmt(Token name, Token superclass, std::vector<StructMember> members,
             std::vector<std::unique_ptr<FunctionStmt>> methods = {},
             std::vector<std::unique_ptr<InitStmt>> initializers = {},
-            std::unique_ptr<DeinitStmt> deinitializer = nullptr)
+            std::unique_ptr<DeinitStmt> deinitializer = nullptr,
+            std::vector<std::unique_ptr<SubscriptStmt>> subscripts = {})
       : name(name), superclass(superclass), members(std::move(members)),
         methods(std::move(methods)), initializers(std::move(initializers)),
-        deinitializer(std::move(deinitializer)) {}
+        deinitializer(std::move(deinitializer)), subscripts(std::move(subscripts)) {}
 
   void accept(StmtVisitor &visitor) const override { visitor.visit(*this); }
 
@@ -477,6 +486,34 @@ struct DeinitStmt : Stmt {
 
   std::unique_ptr<Stmt> clone() const override {
     return std::make_unique<DeinitStmt>(body->clone());
+  }
+};
+
+// Subscript declaration: subscript(parameters) -> ReturnType { get set }
+struct SubscriptStmt : Stmt {
+  std::vector<Parameter> parameters;
+  Token returnType;
+  std::vector<PropertyAccessor> accessors; // get/set accessors
+  bool isStatic; // true for static subscripts
+
+  SubscriptStmt(std::vector<Parameter> parameters, Token returnType,
+                std::vector<PropertyAccessor> accessors, bool isStatic = false)
+      : parameters(std::move(parameters)), returnType(returnType),
+        accessors(std::move(accessors)), isStatic(isStatic) {}
+
+  void accept(StmtVisitor &visitor) const override { visitor.visit(*this); }
+
+  std::unique_ptr<Stmt> clone() const override {
+    // Clone accessors
+    std::vector<PropertyAccessor> clonedAccessors;
+    for (const auto &accessor : accessors) {
+      clonedAccessors.emplace_back(
+          accessor.type,
+          accessor.body ? accessor.body->clone() : nullptr,
+          accessor.parameterName);
+    }
+    return std::make_unique<SubscriptStmt>(parameters, returnType,
+                                           std::move(clonedAccessors), isStatic);
   }
 };
 

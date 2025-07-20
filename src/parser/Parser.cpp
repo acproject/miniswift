@@ -47,6 +47,11 @@ std::vector<std::unique_ptr<Stmt>> Parser::declaration() {
     result.push_back(deinitDeclaration());
     return result;
   }
+  if (match({TokenType::Subscript})) {
+    std::vector<std::unique_ptr<Stmt>> result;
+    result.push_back(subscriptDeclaration());
+    return result;
+  }
   if (match({TokenType::Var, TokenType::Let})) {
     bool isConst = previous().type == TokenType::Let;
     std::vector<Token> names;
@@ -285,9 +290,35 @@ std::unique_ptr<Expr> Parser::primary() {
     
     std::unique_ptr<Expr> expr = std::make_unique<VarExpr>(identifier);
     
-    // Check for index access: identifier[index]
-    while (match({TokenType::LSquare})) {
-      expr = indexAccess(std::move(expr));
+    // Check for index/subscript access: identifier[index] or identifier[arg1, arg2, ...]
+    while (check(TokenType::LSquare)) {
+      // Check if this is a multi-parameter subscript by looking ahead
+      int savedCurrent = current;
+      bool isMultiParam = false;
+      
+      advance(); // consume '['
+      
+      // Look for comma to detect multi-parameter subscript
+      int depth = 1;
+      while (depth > 0 && !isAtEnd()) {
+        if (peek().type == TokenType::LSquare) depth++;
+        else if (peek().type == TokenType::RSquare) depth--;
+        else if (peek().type == TokenType::Comma && depth == 1) {
+          isMultiParam = true;
+          break;
+        }
+        advance();
+      }
+      
+      // Restore position and consume '[' for the access methods
+      current = savedCurrent;
+      advance(); // consume '[' for indexAccess/subscriptAccess
+      
+      if (isMultiParam) {
+        expr = subscriptAccess(std::move(expr));
+      } else {
+        expr = indexAccess(std::move(expr));
+      }
     }
     
     return expr;
@@ -434,6 +465,21 @@ std::unique_ptr<Expr> Parser::indexAccess(std::unique_ptr<Expr> object) {
   auto index = expression();
   consume(TokenType::RSquare, "Expect ']' after index.");
   return std::make_unique<IndexAccess>(std::move(object), std::move(index));
+}
+
+// Parse subscript access: object[arg1, arg2, ...]
+std::unique_ptr<Expr> Parser::subscriptAccess(std::unique_ptr<Expr> object) {
+  // We've already consumed the '['
+  std::vector<std::unique_ptr<Expr>> arguments;
+  
+  if (!check(TokenType::RSquare)) {
+    do {
+      arguments.push_back(expression());
+    } while (match({TokenType::Comma}));
+  }
+  
+  consume(TokenType::RSquare, "Expect ']' after subscript arguments.");
+  return std::make_unique<SubscriptAccess>(std::move(object), std::move(arguments));
 }
 
 // Helper method to check current token type without consuming
@@ -591,8 +637,34 @@ std::unique_ptr<Expr> Parser::call() {
   while (true) {
     if (match({TokenType::LParen})) {
       expr = finishCall(std::move(expr));
-    } else if (match({TokenType::LSquare})) {
-      expr = indexAccess(std::move(expr));
+    } else if (check(TokenType::LSquare)) {
+      // Check if this is a multi-parameter subscript by looking ahead
+      int savedCurrent = current;
+      bool isMultiParam = false;
+      
+      advance(); // consume '['
+      
+      // Look for comma to detect multi-parameter subscript
+      int depth = 1;
+      while (depth > 0 && !isAtEnd()) {
+        if (peek().type == TokenType::LSquare) depth++;
+        else if (peek().type == TokenType::RSquare) depth--;
+        else if (peek().type == TokenType::Comma && depth == 1) {
+          isMultiParam = true;
+          break;
+        }
+        advance();
+      }
+      
+      // Restore position and consume '[' for the access methods
+      current = savedCurrent;
+      advance(); // consume '[' for indexAccess/subscriptAccess
+      
+      if (isMultiParam) {
+        expr = subscriptAccess(std::move(expr));
+      } else {
+        expr = indexAccess(std::move(expr));
+      }
     } else if (match({TokenType::Dot})) {
       consume(TokenType::Identifier, "Expect member name after '.'.");
       Token memberName = previous();
@@ -731,40 +803,54 @@ std::unique_ptr<Stmt> Parser::enumDeclaration() {
   consume(TokenType::LBrace, "Expect '{' after enum name.");
   
   std::vector<EnumCase> cases;
+  std::vector<std::unique_ptr<SubscriptStmt>> subscripts;
+  
   while (!check(TokenType::RBrace) && !isAtEnd()) {
-    consume(TokenType::Case, "Expect 'case' in enum declaration.");
-    
-    do {
-      consume(TokenType::Identifier, "Expect case name.");
-      Token caseName = previous();
-      
-      std::vector<Token> associatedTypes;
-      std::unique_ptr<Expr> rawValue = nullptr;
-      
-      // Check for associated values: case name(Type1, Type2)
-      if (match({TokenType::LParen})) {
-        if (!check(TokenType::RParen)) {
-          do {
-            Token associatedType = parseType();
-            associatedTypes.push_back(associatedType);
-          } while (match({TokenType::Comma}));
+    if (match({TokenType::Case})) {
+      // Parse enum cases
+      do {
+        consume(TokenType::Identifier, "Expect case name.");
+        Token caseName = previous();
+        
+        std::vector<Token> associatedTypes;
+        std::unique_ptr<Expr> rawValue = nullptr;
+        
+        // Check for associated values: case name(Type1, Type2)
+        if (match({TokenType::LParen})) {
+          if (!check(TokenType::RParen)) {
+            do {
+              Token associatedType = parseType();
+              associatedTypes.push_back(associatedType);
+            } while (match({TokenType::Comma}));
+          }
+          consume(TokenType::RParen, "Expect ')' after associated types.");
         }
-        consume(TokenType::RParen, "Expect ')' after associated types.");
-      }
-      // Check for raw value: case name = value
-      else if (match({TokenType::Equal})) {
-        rawValue = expression();
-      }
+        // Check for raw value: case name = value
+        else if (match({TokenType::Equal})) {
+          rawValue = expression();
+        }
+        
+        cases.emplace_back(caseName, std::move(associatedTypes), std::move(rawValue));
+      } while (match({TokenType::Comma}));
       
-      cases.emplace_back(caseName, std::move(associatedTypes), std::move(rawValue));
-    } while (match({TokenType::Comma}));
-    
-    // Optional semicolon or newline
-    match({TokenType::Semicolon});
+      // Optional semicolon or newline
+      match({TokenType::Semicolon});
+    } else if (match({TokenType::Static})) {
+      // Parse static members (like static subscript)
+      if (match({TokenType::Subscript})) {
+        // Parse static subscript declaration
+        auto subscript = std::unique_ptr<SubscriptStmt>(static_cast<SubscriptStmt*>(subscriptDeclaration().release()));
+        subscripts.push_back(std::move(subscript));
+      } else {
+        throw std::runtime_error("Only static subscripts are currently supported in enums.");
+      }
+    } else {
+      throw std::runtime_error("Expect 'case' or 'static' in enum declaration.");
+    }
   }
   
   consume(TokenType::RBrace, "Expect '}' after enum cases.");
-  return std::make_unique<EnumStmt>(name, rawType, std::move(cases));
+  return std::make_unique<EnumStmt>(name, rawType, std::move(cases), std::move(subscripts));
 }
 
 // Parse struct declaration: struct Name { var member1: Type, let member2: Type = defaultValue }
@@ -780,6 +866,7 @@ std::unique_ptr<Stmt> Parser::structDeclaration() {
   std::vector<std::unique_ptr<FunctionStmt>> methods;
   std::vector<std::unique_ptr<InitStmt>> initializers;
   std::unique_ptr<DeinitStmt> deinitializer;
+  std::vector<std::unique_ptr<SubscriptStmt>> subscripts;
   
   while (!check(TokenType::RBrace) && !isAtEnd()) {
     if (match({TokenType::Func})) {
@@ -796,6 +883,10 @@ std::unique_ptr<Stmt> Parser::structDeclaration() {
         throw std::runtime_error("Multiple deinitializers not allowed.");
       }
       deinitializer = std::unique_ptr<DeinitStmt>(static_cast<DeinitStmt*>(deinitDeclaration().release()));
+    } else if (match({TokenType::Subscript})) {
+      // Parse subscript declaration
+      auto subscript = std::unique_ptr<SubscriptStmt>(static_cast<SubscriptStmt*>(subscriptDeclaration().release()));
+      subscripts.push_back(std::move(subscript));
     } else if (match({TokenType::Var, TokenType::Let})) {
       // Parse member declaration
       bool isVar = previous().type == TokenType::Var;
@@ -861,13 +952,13 @@ std::unique_ptr<Stmt> Parser::structDeclaration() {
       
       match({TokenType::Semicolon}); // Optional semicolon
     } else {
-      throw std::runtime_error("Expect 'var', 'let', 'func', 'init', or 'deinit' in struct body.");
+      throw std::runtime_error("Expect 'var', 'let', 'func', 'init', 'deinit', or 'subscript' in struct body.");
     }
   }
   
   consume(TokenType::RBrace, "Expect '}' after struct body.");
   return std::make_unique<StructStmt>(name, std::move(members), std::move(methods), 
-                                      std::move(initializers), std::move(deinitializer));
+                                      std::move(initializers), std::move(deinitializer), std::move(subscripts));
 }
 
 // Parse class declaration: class Name: Superclass { var member1: Type, func method() {} }
@@ -887,6 +978,7 @@ std::unique_ptr<Stmt> Parser::classDeclaration() {
   std::vector<std::unique_ptr<FunctionStmt>> methods;
   std::vector<std::unique_ptr<InitStmt>> initializers;
   std::unique_ptr<DeinitStmt> deinitializer;
+  std::vector<std::unique_ptr<SubscriptStmt>> subscripts;
   
   while (!check(TokenType::RBrace) && !isAtEnd()) {
     if (match({TokenType::Func})) {
@@ -903,6 +995,10 @@ std::unique_ptr<Stmt> Parser::classDeclaration() {
         throw std::runtime_error("Multiple deinitializers not allowed.");
       }
       deinitializer = std::unique_ptr<DeinitStmt>(static_cast<DeinitStmt*>(deinitDeclaration().release()));
+    } else if (match({TokenType::Subscript})) {
+      // Parse subscript declaration
+      auto subscript = std::unique_ptr<SubscriptStmt>(static_cast<SubscriptStmt*>(subscriptDeclaration().release()));
+      subscripts.push_back(std::move(subscript));
     } else if (match({TokenType::Var, TokenType::Let})) {
       // Parse member declaration
       bool isVar = previous().type == TokenType::Var;
@@ -922,13 +1018,13 @@ std::unique_ptr<Stmt> Parser::classDeclaration() {
       
       match({TokenType::Semicolon}); // Optional semicolon
     } else {
-      throw std::runtime_error("Expect 'var', 'let', 'func', 'init', or 'deinit' in class body.");
+      throw std::runtime_error("Expect 'var', 'let', 'func', 'init', 'deinit', or 'subscript' in class body.");
     }
   }
   
   consume(TokenType::RBrace, "Expect '}' after class body.");
   return std::make_unique<ClassStmt>(name, superclass, std::move(members), std::move(methods),
-                                     std::move(initializers), std::move(deinitializer));
+                                     std::move(initializers), std::move(deinitializer), std::move(subscripts));
 }
 
 // Parse member access: object.member
@@ -999,6 +1095,57 @@ std::unique_ptr<Stmt> Parser::deinitDeclaration() {
   auto body = blockStatement();
   
   return std::make_unique<DeinitStmt>(std::move(body));
+}
+
+// Parse subscript declaration: subscript(parameters) -> ReturnType { get { } set { } }
+std::unique_ptr<Stmt> Parser::subscriptDeclaration() {
+  bool isStatic = false;
+  // Check if this is a static subscript (would be handled by caller)
+  
+  consume(TokenType::LParen, "Expect '(' after 'subscript'.");
+  
+  std::vector<Parameter> parameters;
+  if (!check(TokenType::RParen)) {
+    do {
+      consume(TokenType::Identifier, "Expect parameter name.");
+      Token paramName = previous();
+      consume(TokenType::Colon, "Expect ':' after parameter name.");
+      Token paramType = parseType();
+      parameters.emplace_back(paramName, paramType);
+    } while (match({TokenType::Comma}));
+  }
+  
+  consume(TokenType::RParen, "Expect ')' after parameters.");
+  consume(TokenType::Arrow, "Expect '->' after subscript parameters.");
+  Token returnType = parseType();
+  
+  consume(TokenType::LBrace, "Expect '{' before subscript body.");
+  
+  std::vector<PropertyAccessor> accessors;
+  
+  while (!check(TokenType::RBrace) && !isAtEnd()) {
+    if (match({TokenType::Get})) {
+      consume(TokenType::LBrace, "Expect '{' after 'get'.");
+      auto body = blockStatement();
+      accessors.emplace_back(AccessorType::GET, std::move(body));
+    } else if (match({TokenType::Set})) {
+      std::string paramName = "newValue";
+      if (match({TokenType::LParen})) {
+        consume(TokenType::Identifier, "Expect parameter name.");
+        paramName = previous().lexeme;
+        consume(TokenType::RParen, "Expect ')' after parameter name.");
+      }
+      consume(TokenType::LBrace, "Expect '{' after 'set'.");
+      auto body = blockStatement();
+      accessors.emplace_back(AccessorType::SET, std::move(body), paramName);
+    } else {
+      throw std::runtime_error("Expect 'get' or 'set' in subscript accessor.");
+    }
+  }
+  
+  consume(TokenType::RBrace, "Expect '}' after subscript body.");
+  
+  return std::make_unique<SubscriptStmt>(std::move(parameters), returnType, std::move(accessors), isStatic);
 }
 
 } // namespace miniswift

@@ -947,6 +947,36 @@ void Interpreter::visit(const IfStmt& stmt) {
     }
 }
 
+// Execute if-let statement: if let variable = expression { thenBranch } else { elseBranch }
+void Interpreter::visit(const IfLetStmt& stmt) {
+    Value expressionValue = evaluate(*stmt.expression);
+    
+    // Check if the value is not nil (optional binding succeeds)
+    if (expressionValue.type != ValueType::Nil) {
+        // Create new environment for the if-let scope
+        auto previous = environment;
+        environment = std::make_shared<Environment>(environment);
+        
+        try {
+            // Bind the unwrapped value to the variable
+            environment->define(stmt.variable.lexeme, expressionValue, false, "Any");
+            
+            // Execute the then branch
+            stmt.thenBranch->accept(*this);
+        } catch (...) {
+            // Restore previous environment even if exception occurs
+            environment = previous;
+            throw;
+        }
+        
+        // Restore previous environment
+        environment = previous;
+    } else if (stmt.elseBranch) {
+        // Optional binding failed, execute else branch
+        stmt.elseBranch->accept(*this);
+    }
+}
+
 // Execute while statement: while condition { body }
 void Interpreter::visit(const WhileStmt& stmt) {
     while (true) {

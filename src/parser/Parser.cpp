@@ -721,23 +721,51 @@ std::unique_ptr<Stmt> Parser::blockStatement() {
 
 // Parse if statement: if condition { thenBranch } else { elseBranch }
 std::unique_ptr<Stmt> Parser::ifStatement() {
-  auto condition = expression();
-  
-  consume(TokenType::LBrace, "Expect '{' after if condition.");
-  auto thenBranch = blockStatement();
-  
-  std::unique_ptr<Stmt> elseBranch = nullptr;
-  if (match({TokenType::Else})) {
-    if (match({TokenType::If})) {
-      // else if
-      elseBranch = ifStatement();
-    } else {
-      consume(TokenType::LBrace, "Expect '{' after else.");
-      elseBranch = blockStatement();
+  // Check if this is an "if let" statement
+  if (check(TokenType::Let)) {
+    // Parse "if let variable = expression"
+    consume(TokenType::Let, "Expect 'let' in if-let statement.");
+    consume(TokenType::Identifier, "Expect variable name after 'let'.");
+    Token variable = previous();
+    
+    consume(TokenType::Equal, "Expect '=' after variable in if-let statement.");
+    auto expression = this->expression();
+    
+    consume(TokenType::LBrace, "Expect '{' after if-let condition.");
+    auto thenBranch = blockStatement();
+    
+    std::unique_ptr<Stmt> elseBranch = nullptr;
+    if (match({TokenType::Else})) {
+      if (match({TokenType::If})) {
+        // else if
+        elseBranch = ifStatement();
+      } else {
+        consume(TokenType::LBrace, "Expect '{' after else.");
+        elseBranch = blockStatement();
+      }
     }
+    
+    return std::make_unique<IfLetStmt>(variable, std::move(expression), std::move(thenBranch), std::move(elseBranch));
+  } else {
+    // Regular if statement
+    auto condition = expression();
+    
+    consume(TokenType::LBrace, "Expect '{' after if condition.");
+    auto thenBranch = blockStatement();
+    
+    std::unique_ptr<Stmt> elseBranch = nullptr;
+    if (match({TokenType::Else})) {
+      if (match({TokenType::If})) {
+        // else if
+        elseBranch = ifStatement();
+      } else {
+        consume(TokenType::LBrace, "Expect '{' after else.");
+        elseBranch = blockStatement();
+      }
+    }
+    
+    return std::make_unique<IfStmt>(std::move(condition), std::move(thenBranch), std::move(elseBranch));
   }
-  
-  return std::make_unique<IfStmt>(std::move(condition), std::move(thenBranch), std::move(elseBranch));
 }
 
 // Parse while statement: while condition { body }

@@ -16,6 +16,7 @@ struct PrintStmt; // For testing
 struct VarStmt;
 struct BlockStmt;
 struct IfStmt;
+struct IfLetStmt;
 struct WhileStmt;
 struct ForStmt;
 struct ForInStmt;
@@ -38,6 +39,7 @@ public:
   virtual void visit(const VarStmt &stmt) = 0;
   virtual void visit(const BlockStmt &stmt) = 0;
   virtual void visit(const IfStmt &stmt) = 0;
+  virtual void visit(const IfLetStmt &stmt) = 0;
   virtual void visit(const WhileStmt &stmt) = 0;
   virtual void visit(const ForStmt &stmt) = 0;
   virtual void visit(const ForInStmt &stmt) = 0;
@@ -143,6 +145,27 @@ struct IfStmt : Stmt {
   }
 
   const std::unique_ptr<Expr> condition;
+  const std::unique_ptr<Stmt> thenBranch;
+  const std::unique_ptr<Stmt> elseBranch; // Can be null
+};
+
+// If-let statement: if let variable = expression { thenBranch } else { elseBranch }
+struct IfLetStmt : Stmt {
+  IfLetStmt(Token variable, std::unique_ptr<Expr> expression, 
+            std::unique_ptr<Stmt> thenBranch, std::unique_ptr<Stmt> elseBranch)
+      : variable(variable), expression(std::move(expression)), 
+        thenBranch(std::move(thenBranch)), elseBranch(std::move(elseBranch)) {}
+
+  void accept(StmtVisitor &visitor) const override { visitor.visit(*this); }
+
+  std::unique_ptr<Stmt> clone() const override {
+    return std::make_unique<IfLetStmt>(variable, expression->clone(), 
+                                       thenBranch->clone(),
+                                       elseBranch ? elseBranch->clone() : nullptr);
+  }
+
+  const Token variable;                   // Variable to bind to
+  const std::unique_ptr<Expr> expression; // Expression to unwrap
   const std::unique_ptr<Stmt> thenBranch;
   const std::unique_ptr<Stmt> elseBranch; // Can be null
 };

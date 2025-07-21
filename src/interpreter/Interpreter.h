@@ -25,6 +25,7 @@ public:
     void visit(const VarStmt& stmt) override;
     void visit(const BlockStmt& stmt) override;
     void visit(const IfStmt& stmt) override;
+    void visit(const IfLetStmt& stmt) override;
     void visit(const WhileStmt& stmt) override;
     void visit(const ForStmt& stmt) override;
     void visit(const ForInStmt& stmt) override;

@@ -44,6 +44,7 @@ enum class TokenType {
   Final,
   Static,
   Subscript,
+  Protocol,
 
   // Access Control Keywords
   Open,

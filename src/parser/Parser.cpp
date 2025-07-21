@@ -56,6 +56,14 @@ std::vector<std::unique_ptr<Stmt>> Parser::declaration() {
     result.push_back(std::move(classStmt));
     return result;
   }
+  if (match({TokenType::Protocol})) {
+    std::vector<std::unique_ptr<Stmt>> result;
+    auto protocolStmt = protocolDeclaration();
+    // Set access level for protocol
+    static_cast<ProtocolStmt*>(protocolStmt.get())->accessLevel = accessLevel;
+    result.push_back(std::move(protocolStmt));
+    return result;
+  }
   if (match({TokenType::Init})) {
     std::vector<std::unique_ptr<Stmt>> result;
     result.push_back(initDeclaration());
@@ -990,6 +998,15 @@ std::unique_ptr<Stmt> Parser::structDeclaration() {
   
   std::cout << "Parsing struct: " << name.lexeme << std::endl;
   
+  // Parse protocol conformance
+  std::vector<Token> conformedProtocols;
+  if (match({TokenType::Colon})) {
+    do {
+      consume(TokenType::Identifier, "Expect protocol name.");
+      conformedProtocols.push_back(previous());
+    } while (match({TokenType::Comma}));
+  }
+  
   consume(TokenType::LBrace, "Expect '{' after struct name.");
   
   std::vector<StructMember> members;
@@ -1102,18 +1119,34 @@ std::unique_ptr<Stmt> Parser::structDeclaration() {
   
   consume(TokenType::RBrace, "Expect '}' after struct body.");
   return std::make_unique<StructStmt>(name, std::move(members), std::move(methods), 
-                                      std::move(initializers), std::move(deinitializer), std::move(subscripts));
+                                      std::move(initializers), std::move(deinitializer), std::move(subscripts), std::move(conformedProtocols));
 }
 
-// Parse class declaration: class Name: Superclass { var member1: Type, func method() {} }
+// Parse class declaration: class Name: Superclass, Protocol1, Protocol2 { var member1: Type, func method() {} }
 std::unique_ptr<Stmt> Parser::classDeclaration() {
   consume(TokenType::Identifier, "Expect class name.");
   Token name = previous();
   
   Token superclass = Token(TokenType::Nil, "", name.line);
+  std::vector<Token> conformedProtocols;
+  
   if (match({TokenType::Colon})) {
-    consume(TokenType::Identifier, "Expect superclass name.");
-    superclass = previous();
+    // First identifier could be superclass or protocol
+    consume(TokenType::Identifier, "Expect superclass or protocol name.");
+    Token firstInheritance = previous();
+    
+    if (match({TokenType::Comma})) {
+      // First was superclass, rest are protocols
+      superclass = firstInheritance;
+      do {
+        consume(TokenType::Identifier, "Expect protocol name.");
+        conformedProtocols.push_back(previous());
+      } while (match({TokenType::Comma}));
+    } else {
+      // Only one inheritance - could be superclass or protocol
+      // For now, assume it's a superclass (can be enhanced later with type checking)
+      superclass = firstInheritance;
+    }
   }
   
   consume(TokenType::LBrace, "Expect '{' after class name.");
@@ -1182,7 +1215,7 @@ std::unique_ptr<Stmt> Parser::classDeclaration() {
   
   consume(TokenType::RBrace, "Expect '}' after class body.");
   return std::make_unique<ClassStmt>(name, superclass, std::move(members), std::move(methods),
-                                     std::move(initializers), std::move(deinitializer), std::move(subscripts));
+                                     std::move(initializers), std::move(deinitializer), std::move(subscripts), std::move(conformedProtocols));
 }
 
 // Parse member access: object.member
@@ -1356,6 +1389,180 @@ bool Parser::isAccessLevelToken(TokenType type) {
   return type == TokenType::Open || type == TokenType::Public || 
          type == TokenType::Package || type == TokenType::Internal ||
          type == TokenType::Fileprivate || type == TokenType::Private;
+}
+
+// Parse protocol declaration: protocol Name: ParentProtocol { requirements }
+std::unique_ptr<Stmt> Parser::protocolDeclaration() {
+  consume(TokenType::Identifier, "Expect protocol name.");
+  Token name = previous();
+  
+  std::cout << "Parsing protocol: " << name.lexeme << std::endl;
+  
+  // Parse protocol inheritance
+  std::vector<Token> inheritedProtocols;
+  if (match({TokenType::Colon})) {
+    do {
+      consume(TokenType::Identifier, "Expect protocol name.");
+      inheritedProtocols.push_back(previous());
+    } while (match({TokenType::Comma}));
+  }
+  
+  consume(TokenType::LBrace, "Expect '{' after protocol name.");
+  
+  std::vector<ProtocolRequirement> requirements;
+  
+  while (!check(TokenType::RBrace) && !isAtEnd()) {
+    // Parse optional access level modifier for protocol requirements
+    AccessLevel requirementAccessLevel = AccessLevel::INTERNAL;
+    AccessLevel requirementSetterAccessLevel = AccessLevel::INTERNAL;
+    
+    if (isAccessLevelToken(peek().type)) {
+      auto accessPair = parseAccessLevelWithSetter();
+      requirementAccessLevel = accessPair.first;
+      requirementSetterAccessLevel = accessPair.second;
+    }
+    
+    if (match({TokenType::Func})) {
+      // Parse method requirement
+      consume(TokenType::Identifier, "Expect method name.");
+      Token methodName = previous();
+      
+      consume(TokenType::LParen, "Expect '(' after method name.");
+      
+      std::vector<Parameter> parameters;
+      if (!check(TokenType::RParen)) {
+        do {
+          consume(TokenType::Identifier, "Expect parameter name.");
+          Token paramName = previous();
+          consume(TokenType::Colon, "Expect ':' after parameter name.");
+          Token paramType = parseType();
+          parameters.emplace_back(paramName, paramType);
+        } while (match({TokenType::Comma}));
+      }
+      
+      consume(TokenType::RParen, "Expect ')' after parameters.");
+      
+      Token returnType = Token(TokenType::Unknown, "Void", name.line);
+      if (match({TokenType::Arrow})) {
+        returnType = parseType();
+      }
+      
+      auto methodReq = std::make_unique<ProtocolMethodRequirement>(
+          methodName, std::move(parameters), returnType, false, false);
+      
+      ProtocolRequirement requirement(std::move(methodReq));
+      requirements.push_back(std::move(requirement));
+      
+    } else if (match({TokenType::Var, TokenType::Let})) {
+      // Parse property requirement
+      bool isVar = previous().type == TokenType::Var;
+      
+      consume(TokenType::Identifier, "Expect property name.");
+      Token propertyName = previous();
+      
+      consume(TokenType::Colon, "Expect ':' after property name.");
+      Token propertyType = parseType();
+      
+      consume(TokenType::LBrace, "Expect '{' after property type.");
+      
+      bool hasGetter = false;
+      bool hasSetter = false;
+      
+      while (!check(TokenType::RBrace) && !isAtEnd()) {
+        if (match({TokenType::Get})) {
+          hasGetter = true;
+        } else if (match({TokenType::Set})) {
+          hasSetter = true;
+        } else {
+          throw std::runtime_error("Expect 'get' or 'set' in property requirement.");
+        }
+      }
+      
+      consume(TokenType::RBrace, "Expect '}' after property accessors.");
+      
+      auto propReq = std::make_unique<ProtocolPropertyRequirement>(
+          propertyName, propertyType, isVar, false, hasGetter, hasSetter);
+      
+      ProtocolRequirement requirement(std::move(propReq));
+      requirements.push_back(std::move(requirement));
+      
+    } else if (match({TokenType::Init})) {
+      // Parse initializer requirement
+      bool isFailable = false;
+      if (match({TokenType::Unknown}) && previous().lexeme == "?") {
+        isFailable = true;
+      }
+      
+      consume(TokenType::LParen, "Expect '(' after 'init'.");
+      
+      std::vector<Parameter> parameters;
+      if (!check(TokenType::RParen)) {
+        do {
+          consume(TokenType::Identifier, "Expect parameter name.");
+          Token paramName = previous();
+          consume(TokenType::Colon, "Expect ':' after parameter name.");
+          Token paramType = parseType();
+          parameters.emplace_back(paramName, paramType);
+        } while (match({TokenType::Comma}));
+      }
+      
+      consume(TokenType::RParen, "Expect ')' after parameters.");
+      
+      auto initReq = std::make_unique<ProtocolInitRequirement>(
+          std::move(parameters), isFailable);
+      
+      ProtocolRequirement requirement(std::move(initReq));
+      requirements.push_back(std::move(requirement));
+      
+    } else if (match({TokenType::Subscript})) {
+      // Parse subscript requirement
+      consume(TokenType::LParen, "Expect '(' after 'subscript'.");
+      
+      std::vector<Parameter> parameters;
+      if (!check(TokenType::RParen)) {
+        do {
+          consume(TokenType::Identifier, "Expect parameter name.");
+          Token paramName = previous();
+          consume(TokenType::Colon, "Expect ':' after parameter name.");
+          Token paramType = parseType();
+          parameters.emplace_back(paramName, paramType);
+        } while (match({TokenType::Comma}));
+      }
+      
+      consume(TokenType::RParen, "Expect ')' after parameters.");
+      consume(TokenType::Arrow, "Expect '->' after subscript parameters.");
+      Token returnType = parseType();
+      
+      consume(TokenType::LBrace, "Expect '{' after subscript return type.");
+      
+      bool hasGetter = false;
+      bool hasSetter = false;
+      
+      while (!check(TokenType::RBrace) && !isAtEnd()) {
+        if (match({TokenType::Get})) {
+          hasGetter = true;
+        } else if (match({TokenType::Set})) {
+          hasSetter = true;
+        } else {
+          throw std::runtime_error("Expect 'get' or 'set' in subscript requirement.");
+        }
+      }
+      
+      consume(TokenType::RBrace, "Expect '}' after subscript accessors.");
+      
+      auto subscriptReq = std::make_unique<ProtocolSubscriptRequirement>(
+          std::move(parameters), returnType, false, hasGetter, hasSetter);
+      
+      ProtocolRequirement requirement(std::move(subscriptReq));
+      requirements.push_back(std::move(requirement));
+      
+    } else {
+      throw std::runtime_error("Expect 'var', 'let', 'func', 'init', or 'subscript' in protocol body.");
+    }
+  }
+  
+  consume(TokenType::RBrace, "Expect '}' after protocol body.");
+  return std::make_unique<ProtocolStmt>(name, std::move(inheritedProtocols), std::move(requirements));
 }
 
 } // namespace miniswift

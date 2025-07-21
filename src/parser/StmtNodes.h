@@ -25,6 +25,7 @@ struct ClassStmt;
 struct InitStmt;
 struct DeinitStmt;
 struct SubscriptStmt;
+struct ProtocolStmt;
 
 // Visitor for Stmt
 class StmtVisitor {
@@ -45,6 +46,7 @@ public:
   virtual void visit(const InitStmt &stmt) = 0;
   virtual void visit(const DeinitStmt &stmt) = 0;
   virtual void visit(const SubscriptStmt &stmt) = 0;
+  virtual void visit(const ProtocolStmt &stmt) = 0;
 };
 
 // Base class for Stmt
@@ -400,10 +402,11 @@ struct StructMember {
   }
 };
 
-// Struct declaration: struct Name { members }
+// Struct declaration: struct Name: Protocol1, Protocol2 { members }
 struct StructStmt : Stmt {
   Token name;
   AccessLevel accessLevel; // Access level for the struct
+  std::vector<Token> conformedProtocols; // Protocols this struct conforms to
   std::vector<StructMember> members;
   std::vector<std::unique_ptr<FunctionStmt>>
       methods; // Methods defined in the struct
@@ -416,8 +419,10 @@ struct StructStmt : Stmt {
              std::vector<std::unique_ptr<InitStmt>> initializers = {},
              std::unique_ptr<DeinitStmt> deinitializer = nullptr,
              std::vector<std::unique_ptr<SubscriptStmt>> subscripts = {},
+             std::vector<Token> conformedProtocols = {},
              AccessLevel accessLevel = AccessLevel::INTERNAL)
-      : name(name), accessLevel(accessLevel), members(std::move(members)), methods(std::move(methods)),
+      : name(name), accessLevel(accessLevel), conformedProtocols(std::move(conformedProtocols)),
+        members(std::move(members)), methods(std::move(methods)),
         initializers(std::move(initializers)),
         deinitializer(std::move(deinitializer)), subscripts(std::move(subscripts)) {}
 
@@ -432,11 +437,12 @@ struct StructStmt : Stmt {
   }
 };
 
-// Class declaration: class Name { members }
+// Class declaration: class Name: Superclass, Protocol1, Protocol2 { members }
 struct ClassStmt : Stmt {
   Token name;
   Token superclass; // Optional superclass
   AccessLevel accessLevel; // Access level for the class
+  std::vector<Token> conformedProtocols; // Protocols this class conforms to
   std::vector<StructMember> members;
   std::vector<std::unique_ptr<FunctionStmt>> methods;
   std::vector<std::unique_ptr<InitStmt>> initializers; // Constructors
@@ -448,8 +454,10 @@ struct ClassStmt : Stmt {
             std::vector<std::unique_ptr<InitStmt>> initializers = {},
             std::unique_ptr<DeinitStmt> deinitializer = nullptr,
             std::vector<std::unique_ptr<SubscriptStmt>> subscripts = {},
+            std::vector<Token> conformedProtocols = {},
             AccessLevel accessLevel = AccessLevel::INTERNAL)
-      : name(name), superclass(superclass), accessLevel(accessLevel), members(std::move(members)),
+      : name(name), superclass(superclass), accessLevel(accessLevel), 
+        conformedProtocols(std::move(conformedProtocols)), members(std::move(members)),
         methods(std::move(methods)), initializers(std::move(initializers)),
         deinitializer(std::move(deinitializer)), subscripts(std::move(subscripts)) {}
 
@@ -537,6 +545,116 @@ struct SubscriptStmt : Stmt {
     return std::make_unique<SubscriptStmt>(parameters, returnType,
                                            std::move(clonedAccessors), isStatic,
                                            accessLevel, setterAccessLevel);
+  }
+};
+
+// Protocol requirement types
+enum class ProtocolRequirementType {
+  PROPERTY,    // var/let property requirement
+  METHOD,      // func method requirement
+  INITIALIZER, // init requirement
+  SUBSCRIPT    // subscript requirement
+};
+
+// Protocol property requirement
+struct ProtocolPropertyRequirement {
+  Token name;
+  Token type;
+  bool isVar;        // true for var, false for let
+  bool isStatic;     // true for static properties
+  bool hasGetter;    // { get }
+  bool hasSetter;    // { get set }
+  
+  ProtocolPropertyRequirement(Token name, Token type, bool isVar = true, 
+                             bool isStatic = false, bool hasGetter = true, 
+                             bool hasSetter = false)
+      : name(name), type(type), isVar(isVar), isStatic(isStatic),
+        hasGetter(hasGetter), hasSetter(hasSetter) {}
+};
+
+// Protocol method requirement
+struct ProtocolMethodRequirement {
+  Token name;
+  std::vector<Parameter> parameters;
+  Token returnType;
+  bool isStatic;     // true for static methods
+  bool isMutating;   // true for mutating methods
+  
+  ProtocolMethodRequirement(Token name, std::vector<Parameter> parameters,
+                           Token returnType, bool isStatic = false,
+                           bool isMutating = false)
+      : name(name), parameters(std::move(parameters)), returnType(returnType),
+        isStatic(isStatic), isMutating(isMutating) {}
+};
+
+// Protocol initializer requirement
+struct ProtocolInitRequirement {
+  std::vector<Parameter> parameters;
+  bool isFailable;   // true for init?
+  
+  ProtocolInitRequirement(std::vector<Parameter> parameters, bool isFailable = false)
+      : parameters(std::move(parameters)), isFailable(isFailable) {}
+};
+
+// Protocol subscript requirement
+struct ProtocolSubscriptRequirement {
+  std::vector<Parameter> parameters;
+  Token returnType;
+  bool isStatic;     // true for static subscripts
+  bool hasGetter;    // { get }
+  bool hasSetter;    // { get set }
+  
+  ProtocolSubscriptRequirement(std::vector<Parameter> parameters, Token returnType,
+                              bool isStatic = false, bool hasGetter = true,
+                              bool hasSetter = false)
+      : parameters(std::move(parameters)), returnType(returnType),
+        isStatic(isStatic), hasGetter(hasGetter), hasSetter(hasSetter) {}
+};
+
+// Protocol requirement (union of all requirement types)
+struct ProtocolRequirement {
+  ProtocolRequirementType type;
+  
+  // Union-like storage for different requirement types
+  std::unique_ptr<ProtocolPropertyRequirement> propertyReq;
+  std::unique_ptr<ProtocolMethodRequirement> methodReq;
+  std::unique_ptr<ProtocolInitRequirement> initReq;
+  std::unique_ptr<ProtocolSubscriptRequirement> subscriptReq;
+  
+  // Constructors for different requirement types
+  explicit ProtocolRequirement(std::unique_ptr<ProtocolPropertyRequirement> req)
+      : type(ProtocolRequirementType::PROPERTY), propertyReq(std::move(req)) {}
+      
+  explicit ProtocolRequirement(std::unique_ptr<ProtocolMethodRequirement> req)
+      : type(ProtocolRequirementType::METHOD), methodReq(std::move(req)) {}
+      
+  explicit ProtocolRequirement(std::unique_ptr<ProtocolInitRequirement> req)
+      : type(ProtocolRequirementType::INITIALIZER), initReq(std::move(req)) {}
+      
+  explicit ProtocolRequirement(std::unique_ptr<ProtocolSubscriptRequirement> req)
+      : type(ProtocolRequirementType::SUBSCRIPT), subscriptReq(std::move(req)) {}
+};
+
+// Protocol declaration: protocol Name: SuperProtocol { requirements }
+struct ProtocolStmt : Stmt {
+  Token name;
+  std::vector<Token> inheritedProtocols;  // Protocols this protocol inherits from
+  std::vector<ProtocolRequirement> requirements;
+  AccessLevel accessLevel;
+  
+  ProtocolStmt(Token name, std::vector<Token> inheritedProtocols,
+               std::vector<ProtocolRequirement> requirements,
+               AccessLevel accessLevel = AccessLevel::INTERNAL)
+      : name(name), inheritedProtocols(std::move(inheritedProtocols)),
+        requirements(std::move(requirements)), accessLevel(accessLevel) {}
+        
+  void accept(StmtVisitor &visitor) const override { visitor.visit(*this); }
+  
+  std::unique_ptr<Stmt> clone() const override {
+    // For simplicity, create a basic clone without deep copying requirements
+    return std::make_unique<ProtocolStmt>(name, inheritedProtocols,
+                                          std::vector<ProtocolRequirement>(),
+                                          accessLevel);
   }
 };
 

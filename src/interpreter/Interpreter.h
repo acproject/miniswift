@@ -35,6 +35,7 @@ public:
     void visit(const InitStmt& stmt) override;
     void visit(const DeinitStmt& stmt) override;
     void visit(const SubscriptStmt& stmt) override;
+    void visit(const ProtocolStmt& stmt) override;
 
     void visit(const Binary& expr) override;
     void visit(const Grouping& expr) override;

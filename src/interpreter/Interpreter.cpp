@@ -1713,4 +1713,33 @@ void Interpreter::visit(const OptionalChaining& expr) {
     }
 }
 
+// Execute protocol declaration: protocol Name { requirements }
+void Interpreter::visit(const ProtocolStmt& stmt) {
+    std::cout << "Protocol declaration: " << stmt.name.lexeme << std::endl;
+    
+    // For now, we'll just register the protocol name in the environment
+    // In a full implementation, this would involve:
+    // 1. Creating a protocol registry
+    // 2. Storing protocol requirements for conformance checking
+    // 3. Implementing protocol dispatch mechanisms
+    
+    // Create a simple protocol representation
+    std::unordered_map<std::string, Value> protocolInfo;
+    protocolInfo["name"] = Value(stmt.name.lexeme);
+    protocolInfo["requirements_count"] = Value(static_cast<double>(stmt.requirements.size()));
+    
+    // Store inherited protocols
+    std::vector<Value> inheritedProtocolsList;
+    for (const auto& inherited : stmt.inheritedProtocols) {
+        inheritedProtocolsList.push_back(Value(inherited.lexeme));
+    }
+    protocolInfo["inherited_protocols"] = Value(inheritedProtocolsList);
+    
+    // Store protocol in global environment
+    globals->define(stmt.name.lexeme, Value(protocolInfo));
+    
+    std::cout << "Protocol '" << stmt.name.lexeme << "' registered with " 
+              << stmt.requirements.size() << " requirements" << std::endl;
+}
+
 } // namespace miniswift

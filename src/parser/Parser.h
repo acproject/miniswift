@@ -33,6 +33,10 @@ private:
     std::unique_ptr<Stmt> whileStatement();
     std::unique_ptr<Stmt> forStatement();
     std::unique_ptr<Stmt> returnStatement();
+    std::unique_ptr<Stmt> throwStatement();
+    std::unique_ptr<Stmt> doCatchStatement();
+    std::unique_ptr<Stmt> deferStatement();
+    std::unique_ptr<Stmt> guardStatement();
     std::unique_ptr<Expr> expression();
     std::unique_ptr<Expr> assignment();
     std::unique_ptr<Expr> logicalOr();
@@ -43,6 +47,7 @@ private:
     std::unique_ptr<Expr> term();
     std::unique_ptr<Expr> factor();
     std::unique_ptr<Expr> unary();
+    std::unique_ptr<Expr> tryExpression();
     std::unique_ptr<Expr> call();
     std::unique_ptr<Expr> finishCall(std::unique_ptr<Expr> callee);
     std::unique_ptr<Expr> primary();
@@ -53,6 +58,8 @@ private:
     std::unique_ptr<Expr> memberAccess(std::unique_ptr<Expr> object);
     std::unique_ptr<Expr> structInit();
     std::unique_ptr<Expr> closure();
+    std::unique_ptr<Expr> resultTypeExpression();
+    std::unique_ptr<Expr> errorLiteral();
 
     // Generic parsing methods
     GenericParameterClause parseGenericParameterClause();

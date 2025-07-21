@@ -30,6 +30,11 @@ struct DeinitStmt;
 struct SubscriptStmt;
 struct ProtocolStmt;
 struct ExtensionStmt;
+// Error handling statements
+struct ThrowStmt;
+struct DoCatchStmt;
+struct DeferStmt;
+struct GuardStmt;
 
 // Visitor for Stmt
 class StmtVisitor {
@@ -54,6 +59,11 @@ public:
   virtual void visit(const SubscriptStmt &stmt) = 0;
   virtual void visit(const ProtocolStmt &stmt) = 0;
   virtual void visit(const ExtensionStmt &stmt) = 0;
+  // Error handling statements
+  virtual void visit(const ThrowStmt &stmt) = 0;
+  virtual void visit(const DoCatchStmt &stmt) = 0;
+  virtual void visit(const DeferStmt &stmt) = 0;
+  virtual void visit(const GuardStmt &stmt) = 0;
 };
 
 // Base class for Stmt

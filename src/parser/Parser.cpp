@@ -162,6 +162,18 @@ std::unique_ptr<Stmt> Parser::statement() {
   if (match({TokenType::Return})) {
     return returnStatement();
   }
+  if (match({TokenType::Throw})) {
+    return throwStatement();
+  }
+  if (match({TokenType::Do})) {
+    return doCatchStatement();
+  }
+  if (match({TokenType::Defer})) {
+    return deferStatement();
+  }
+  if (match({TokenType::Guard})) {
+    return guardStatement();
+  }
   return expressionStatement();
 }
 
@@ -289,6 +301,12 @@ std::unique_ptr<Expr> Parser::unary() {
     auto right = unary();
     return std::make_unique<Unary>(op, std::move(right));
   }
+  
+  // Handle try expressions: try, try?, try!
+  if (match({TokenType::Try})) {
+    return tryExpression();
+  }
+  
   return call();
 }
 
@@ -380,6 +398,23 @@ std::unique_ptr<Expr> Parser::primary() {
     Token identifier = previous();
     
     std::unique_ptr<Expr> expr;
+    
+    // Check for Result type: Result<Success, Error>
+    if (identifier.type == TokenType::Identifier && identifier.lexeme == "Result" && check(TokenType::LAngle)) {
+      return resultTypeExpression();
+    }
+    
+    // Check for Error literal: ErrorType("message")
+    if (identifier.type == TokenType::Identifier && check(TokenType::LParen)) {
+      // Look ahead to see if this looks like an error literal
+      int savedCurrent = current;
+      advance(); // consume '('
+      if (check(TokenType::StringLiteral)) {
+        current = savedCurrent; // restore position
+        return errorLiteral();
+      }
+      current = savedCurrent; // restore position
+    }
     
     // Check for generic type instantiation: Identifier<Type1, Type2>
     if (identifier.type == TokenType::Identifier && check(TokenType::LAngle)) {
@@ -2138,6 +2173,133 @@ std::unique_ptr<Stmt> Parser::extensionDeclaration() {
                                         AccessLevel::INTERNAL, std::move(computedProperties), 
                                         std::move(methods), std::move(initializers), 
                                         std::move(subscripts));
+}
+
+// Error handling statement parsing methods
+std::unique_ptr<Stmt> Parser::throwStatement() {
+  auto errorExpr = expression();
+  match({TokenType::Semicolon}); // Optional semicolon
+  return std::make_unique<ThrowStmt>(std::move(errorExpr));
+}
+
+std::unique_ptr<Stmt> Parser::doCatchStatement() {
+  // Parse do block
+  auto doBlock = blockStatement();
+  
+  // Parse catch clauses
+  std::vector<CatchClause> catchClauses;
+  
+  while (match({TokenType::Catch})) {
+    std::optional<Token> errorType;
+    std::optional<Token> errorVariable;
+    
+    // Check for error type pattern: catch ErrorType.case
+    if (check(TokenType::Identifier)) {
+      Token firstToken = advance();
+      
+      if (match({TokenType::Dot})) {
+        // Pattern: catch ErrorType.case
+        consume(TokenType::Identifier, "Expect error case after '.'.");
+        Token caseToken = previous();
+        errorType = Token(TokenType::Identifier, firstToken.lexeme + "." + caseToken.lexeme, firstToken.line);
+      } else if (match({TokenType::Identifier})) {
+        // Pattern: catch let variable as ErrorType
+        if (previous().lexeme == "let") {
+          errorVariable = advance();
+          if (match({TokenType::As})) {
+            consume(TokenType::Identifier, "Expect error type after 'as'.");
+            errorType = previous();
+          }
+        } else {
+          // Just error type: catch ErrorType
+          errorType = firstToken;
+        }
+      } else {
+        // Just error type: catch ErrorType
+        errorType = firstToken;
+      }
+    }
+    
+    auto catchBlock = blockStatement();
+    
+    // Create CatchClause with all required parameters
+    Token pattern = errorType.value_or(Token(TokenType::Identifier, "", 0));
+    std::string errorTypeStr = errorType ? errorType->lexeme : "";
+    Token variable = errorVariable.value_or(Token(TokenType::Identifier, "", 0));
+    std::unique_ptr<Expr> condition = nullptr; // No where condition for now
+    
+    catchClauses.emplace_back(pattern, errorTypeStr, variable, std::move(condition), std::move(catchBlock));
+  }
+  
+  return std::make_unique<DoCatchStmt>(std::move(doBlock), std::move(catchClauses));
+}
+
+std::unique_ptr<Stmt> Parser::deferStatement() {
+  auto deferBlock = blockStatement();
+  return std::make_unique<DeferStmt>(std::move(deferBlock));
+}
+
+std::unique_ptr<Stmt> Parser::guardStatement() {
+  auto condition = expression();
+  consume(TokenType::Else, "Expect 'else' after guard condition.");
+  auto elseBlock = blockStatement();
+  return std::make_unique<GuardStmt>(std::move(condition), std::move(elseBlock));
+}
+
+// Error handling expression parsing methods
+std::unique_ptr<Expr> Parser::tryExpression() {
+  bool isOptional = false;
+  bool isForced = false;
+  
+  if (match({TokenType::Unknown})) {
+    if (previous().lexeme == "?") {
+      isOptional = true;
+    } else if (previous().lexeme == "!") {
+      isForced = true;
+    } else {
+      // Put the token back
+      current--;
+    }
+  }
+  
+  auto expression = unary();
+  return std::make_unique<TryExpr>(std::move(expression), isOptional, isForced);
+}
+
+std::unique_ptr<Expr> Parser::resultTypeExpression() {
+  consume(TokenType::LAngle, "Expect '<' after 'Result'.");
+  Token successType = parseType();
+  consume(TokenType::Comma, "Expect ',' between Result type parameters.");
+  Token errorType = parseType();
+  consume(TokenType::RAngle, "Expect '>' after Result type parameters.");
+  
+  // Create literal expressions for the types
+  auto successExpr = std::make_unique<Literal>(successType);
+  auto errorExpr = std::make_unique<Literal>(errorType);
+  
+  return std::make_unique<ResultTypeExpr>(std::move(successExpr), std::move(errorExpr));
+}
+
+std::unique_ptr<Expr> Parser::errorLiteral() {
+  consume(TokenType::Identifier, "Expect error type name.");
+  Token errorType = previous();
+  
+  consume(TokenType::LParen, "Expect '(' after error type.");
+  consume(TokenType::StringLiteral, "Expect error message string.");
+  Token message = previous();
+  
+  std::vector<std::unique_ptr<Expr>> arguments;
+  
+  if (match({TokenType::Comma})) {
+    do {
+      auto argValue = expression();
+      arguments.push_back(std::move(argValue));
+    } while (match({TokenType::Comma}));
+  }
+  
+  consume(TokenType::RParen, "Expect ')' after error literal.");
+  
+  return std::make_unique<ErrorLiteral>(errorType.lexeme, message.lexeme, std::move(arguments));
 }
 
 } // namespace miniswift

@@ -42,6 +42,7 @@ set(PARSER_SOURCES
     src/parser/Parser.cpp
     src/parser/AstPrinter.cpp
     src/parser/AccessControl.cpp
+    src/parser/ErrorNodes.cpp
 )
 
 set(INTERPRETER_SOURCES

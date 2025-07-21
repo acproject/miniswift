@@ -6,9 +6,6 @@
 
 namespace miniswift {
 
-// Define RuntimeError as an alias for std::runtime_error
-using RuntimeError = std::runtime_error;
-
 // PropertyValue 实现
 
 Value PropertyValue::getValue(Interpreter &interpreter) {
@@ -51,7 +48,7 @@ Value PropertyValue::getValue(Interpreter &interpreter) {
 void PropertyValue::setValue(Interpreter &interpreter, const Value &newValue) {
   // 检查是否是只读属性
   if (!definition_.isVar && isInitialized_) {
-    throw RuntimeError("Cannot assign to value: '" + definition_.name.lexeme +
+    throw std::runtime_error("Cannot assign to value: '" + definition_.name.lexeme +
                        "' is a 'let' constant");
   }
 
@@ -96,7 +93,7 @@ Value PropertyValue::executeAccessor(Interpreter &interpreter,
   const auto *accessor = findAccessor(type);
   if (!accessor) {
     if (type == AccessorType::SET) {
-      throw RuntimeError("Cannot assign to value: '" + definition_.name.lexeme +
+      throw std::runtime_error("Cannot assign to value: '" + definition_.name.lexeme +
                          "' is a read-only property");
     }
     return Value(); // 没有找到访问器，返回空值
@@ -211,7 +208,7 @@ Value InstancePropertyContainer::getProperty(Interpreter &interpreter,
                                              const std::string &name) {
   auto it = properties_.find(name);
   if (it == properties_.end()) {
-    throw RuntimeError("Undefined property '" + name + "'");
+    throw std::runtime_error("Undefined property '" + name + "'");
   }
 
   return it->second->getValue(interpreter);
@@ -222,7 +219,7 @@ void InstancePropertyContainer::setProperty(Interpreter &interpreter,
                                             const Value &value) {
   auto it = properties_.find(name);
   if (it == properties_.end()) {
-    throw RuntimeError("Undefined property '" + name + "'");
+    throw std::runtime_error("Undefined property '" + name + "'");
   }
 
   Value finalValue = value;

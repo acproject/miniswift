@@ -48,6 +48,13 @@ enum class TokenType {
   Extension,
   Inout,
   Mutating,
+  
+  // Error Handling Keywords
+  Throws,
+  Rethrows,
+  Do,
+  Result,
+  Error,
 
   // Access Control Keywords
   Open,

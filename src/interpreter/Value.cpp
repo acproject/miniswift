@@ -1,4 +1,5 @@
 #include "Value.h"
+#include "ErrorHandling.h"
 #include "OOP/Property.h"
 #include "OOP/Subscript.h"
 
@@ -136,6 +137,9 @@ bool ClassInstance::operator==(const ClassInstance& other) const {
 bool ClassInstance::operator!=(const ClassInstance& other) const {
     return !(*this == other);
 }
+
+// OptionalValue constructor implementation
+OptionalValue::OptionalValue(const Value& value) : hasValue(true), wrappedValue(std::make_shared<Value>(value)) {}
 
 // OptionalValue comparison operator implementation
 bool OptionalValue::operator==(const OptionalValue& other) const {

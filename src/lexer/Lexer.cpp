@@ -25,6 +25,7 @@ static void initializeKeywords() {
   keywords["default"] = TokenType::Default;
   keywords["guard"] = TokenType::Guard;
   keywords["defer"] = TokenType::Defer;
+  keywords["do"] = TokenType::Do;
   keywords["as"] = TokenType::As;
   keywords["try"] = TokenType::Try;
   keywords["catch"] = TokenType::Catch;

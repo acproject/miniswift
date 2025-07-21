@@ -3,9 +3,9 @@
 #include <sstream>
 #include "lexer/Lexer.h"
 #include "parser/Parser.h"
-#include "interpreter/OOP/MethodInterpreter.h"
+#include "interpreter/Interpreter.h"
 
-static miniswift::MethodInterpreter interpreter;
+static miniswift::Interpreter interpreter;
 bool hadError = false;
 
 void run(const std::string& source) {

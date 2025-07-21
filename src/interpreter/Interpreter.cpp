@@ -23,6 +23,9 @@ Interpreter::Interpreter() {
     
     // Initialize subscript management
     staticSubscriptManager = std::make_unique<StaticSubscriptManager>();
+    
+    // Initialize error handling management
+    errorPropagator = std::make_unique<ErrorPropagator>();
 }
 
 void Interpreter::interpret(const std::vector<std::unique_ptr<Stmt>>& statements) {
@@ -128,6 +131,22 @@ void Interpreter::visit(const PrintStmt& stmt) {
                 std::cout << ")" << std::endl;
             } else {
                 std::cout << "nil" << std::endl;
+            }
+            break;
+        }
+        case ValueType::Error: {
+            const auto& errorVal = val.asError();
+            std::cout << "Error(" << errorVal.getDescription() << ")";
+            break;
+        }
+        case ValueType::Result: {
+            auto resultPtr = val.asResult();
+            if (resultPtr->isSuccess) {
+                std::cout << "Result.success(";
+                printValue(resultPtr->getValue());
+                std::cout << ")";
+            } else {
+                std::cout << "Result.failure(" << resultPtr->getError().getDescription() << ")";
             }
             break;
         }
@@ -835,6 +854,65 @@ void Interpreter::printTuple(const Tuple& tuple) {
     std::cout << ")" << std::endl;
 }
 
+std::string Interpreter::valueToString(const Value& val) {
+    switch (val.type) {
+        case ValueType::Int:
+            return std::to_string(std::get<int>(val.value));
+        case ValueType::Double:
+            return std::to_string(std::get<double>(val.value));
+        case ValueType::Bool:
+            return std::get<bool>(val.value) ? "true" : "false";
+        case ValueType::String:
+            return std::get<std::string>(val.value);
+        case ValueType::Nil:
+            return "nil";
+        case ValueType::Array:
+            return "<array>";
+        case ValueType::Dictionary:
+            return "<dictionary>";
+        case ValueType::Tuple:
+            return "<tuple>";
+        case ValueType::Function:
+            return val.isClosure() ? "<closure>" : "<function>";
+        case ValueType::Enum: {
+            const auto& enumVal = val.asEnum();
+            return enumVal.enumName + "." + enumVal.caseName;
+        }
+        case ValueType::Struct: {
+            const auto& structVal = val.asStruct();
+            return "<" + structVal.structName + ">";
+        }
+        case ValueType::Class: {
+            const auto& classVal = val.asClass();
+            return "<" + classVal->className + ">";
+        }
+        case ValueType::Constructor:
+            return "<constructor>";
+        case ValueType::Destructor:
+            return "<destructor>";
+        case ValueType::Optional: {
+            const auto& optionalVal = val.asOptional();
+            if (optionalVal.hasValue && optionalVal.wrappedValue) {
+                return "Optional(" + valueToString(*optionalVal.wrappedValue) + ")";
+            } else {
+                return "nil";
+            }
+        }
+        case ValueType::Error:
+            return "<error>";
+        case ValueType::Result: {
+            auto resultPtr = val.asResult();
+            if (resultPtr->isSuccess) {
+                return "Result.success(" + valueToString(resultPtr->getValue()) + ")";
+            } else {
+                return "Result.failure(" + resultPtr->getError().getDescription() + ")";
+            }
+        }
+        default:
+            return "<unknown>";
+    }
+}
+
 void Interpreter::printValue(const Value& val) {
     switch (val.type) {
         case ValueType::Int:
@@ -912,6 +990,23 @@ void Interpreter::printValue(const Value& val) {
             break;
         case ValueType::Destructor:
             std::cout << "<destructor>";
+            break;
+        case ValueType::Optional: {
+            const auto& optionalVal = val.asOptional();
+            if (optionalVal.hasValue && optionalVal.wrappedValue) {
+                std::cout << "Optional(";
+                printValue(*optionalVal.wrappedValue);
+                std::cout << ")";
+            } else {
+                std::cout << "nil";
+            }
+            break;
+        }
+        case ValueType::Error:
+            std::cout << "<error>";
+            break;
+        case ValueType::Result:
+            std::cout << "<result>";
             break;
     }
 }
@@ -2049,6 +2144,192 @@ void Interpreter::visit(const GenericTypeInstantiationExpr& expr) {
     
     // Create a simple representation that can be used for constructor calls
     result = Value(expr.typeName.lexeme);
+}
+
+// Error handling statement implementations
+void Interpreter::visit(const ThrowStmt& stmt) {
+    Value errorValue = evaluate(*stmt.error);
+    
+    // Execute any deferred statements before throwing
+    executeDeferredStatements();
+    
+    // Create a simple runtime error from the value
+    auto error = std::make_unique<RuntimeError>(valueToString(errorValue));
+    throw ThrowException(std::move(error));
+}
+
+void Interpreter::visit(const DoCatchStmt& stmt) {
+    // Create error context for this do-catch block
+    ErrorContext context;
+    for (const auto& catchClause : stmt.catchClauses) {
+        if (!catchClause.errorType.empty()) {
+            context.catchableErrorTypes.push_back(catchClause.errorType);
+        }
+    }
+    
+    pushErrorContext(context);
+    
+    try {
+        // Execute the do block
+        stmt.doBody->accept(*this);
+    } catch (const ThrowException& e) {
+        // Check if any catch clause can handle this error
+        bool handled = false;
+        
+        for (const auto& catchClause : stmt.catchClauses) {
+            if (!catchClause.errorType.empty()) {
+                // Check if error type matches
+                if (e.error.getDescription() == catchClause.errorType) {
+                    // Bind error to variable if specified
+                    if (!catchClause.variable.lexeme.empty()) {
+                        environment->define(catchClause.variable.lexeme, 
+                                          Value(e.error.getDescription()), false, "Error");
+                    }
+                    
+                    // Execute catch block
+                    catchClause.body->accept(*this);
+                    handled = true;
+                    break;
+                }
+            } else {
+                // Catch-all clause
+                if (!catchClause.variable.lexeme.empty()) {
+                    environment->define(catchClause.variable.lexeme, 
+                                      Value(e.error.getDescription()), false, "Error");
+                }
+                
+                catchClause.body->accept(*this);
+                handled = true;
+                break;
+            }
+        }
+        
+        if (!handled) {
+            // Re-throw if no catch clause handled the error
+            popErrorContext();
+            throw;
+        }
+    }
+    
+    popErrorContext();
+}
+
+void Interpreter::visit(const DeferStmt& stmt) {
+    // Add the deferred statement to the defer stack
+    pushDeferredStatement(stmt.body->clone());
+}
+
+void Interpreter::visit(const GuardStmt& stmt) {
+    Value conditionValue = evaluate(*stmt.condition);
+    
+    if (!isTruthy(conditionValue)) {
+        // Execute the else block (which must contain a return, throw, break, or continue)
+        stmt.elseBody->accept(*this);
+    }
+    // If condition is true, continue execution normally
+}
+
+// Error handling expression implementations
+void Interpreter::visit(const TryExpr& expr) {
+    try {
+        Value value = evaluate(*expr.expression);
+        
+        if (expr.isForced) {
+            // try! - force unwrap, crash on error
+            result = value;
+        } else if (expr.isOptional) {
+            // try? - convert errors to nil
+            result = value;
+        } else {
+            // Normal try - propagate errors
+            result = value;
+        }
+    } catch (const ThrowException& e) {
+        if (expr.isForced) {
+            // Crash for try!
+            throw std::runtime_error("try! failed: " + e.error.getDescription());
+        } else if (expr.isOptional) {
+            // Convert to nil for try?
+            result = Value("nil");
+        } else {
+            // Re-throw for normal try
+            throw;
+        }
+    }
+}
+
+void Interpreter::visit(const ResultTypeExpr& expr) {
+    // For now, treat Result type as a type identifier
+    // In a full implementation, this would create a proper Result type
+    result = Value("Result<SuccessType, ErrorType>");
+}
+
+void Interpreter::visit(const ErrorLiteral& expr) {
+    // Create an error value as a string for now
+    std::string errorStr = expr.errorType + ": " + expr.message;
+    result = Value(errorStr);
+}
+
+// Error handling helper methods
+void Interpreter::pushErrorContext(const ErrorContext& context) {
+    errorContextStack.push(context);
+}
+
+void Interpreter::popErrorContext() {
+    if (!errorContextStack.empty()) {
+        errorContextStack.pop();
+    }
+}
+
+ErrorContext& Interpreter::getCurrentErrorContext() {
+    if (errorContextStack.empty()) {
+        static ErrorContext defaultContext;
+        return defaultContext;
+    }
+    return errorContextStack.top();
+}
+
+bool Interpreter::canCatchError(const ErrorValue& error) const {
+    if (errorContextStack.empty()) {
+        return false;
+    }
+    
+    const auto& context = errorContextStack.top();
+    return context.canCatch(error.getDescription());
+}
+
+void Interpreter::executeDeferredStatements() {
+    if (!deferStack.empty()) {
+        auto deferredStatements = std::move(deferStack.top());
+        deferStack.pop();
+        
+        // Execute deferred statements in reverse order (LIFO)
+        for (auto it = deferredStatements.rbegin(); it != deferredStatements.rend(); ++it) {
+            try {
+                (*it)->accept(*this);
+            } catch (...) {
+                // Ignore errors in deferred statements to prevent infinite loops
+            }
+        }
+    }
+}
+
+void Interpreter::pushDeferredStatement(std::unique_ptr<Stmt> stmt) {
+    if (deferStack.empty()) {
+        deferStack.push(std::vector<std::unique_ptr<Stmt>>());
+    }
+    deferStack.top().push_back(std::move(stmt));
+}
+
+ValueResult Interpreter::wrapInResult(const Value& value, bool isSuccess, const ErrorValue* error) {
+    if (isSuccess) {
+        return ValueResult::success(value);
+    } else if (error) {
+        return ValueResult::failure(*error);
+    } else {
+        auto defaultError = std::make_unique<RuntimeError>("Unknown error");
+        return ValueResult::failure(ErrorValue(std::move(defaultError)));
+    }
 }
 
 } // namespace miniswift

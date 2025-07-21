@@ -6,6 +6,7 @@
 #include <vector>
 #include <unordered_map>
 #include <memory>
+#include "ErrorHandling.h"
 
 namespace miniswift {
 
@@ -18,6 +19,8 @@ class InstancePropertyContainer;
 class ConstructorValue;
 class DestructorValue;
 class SubscriptManager;
+struct ErrorValue;
+template<typename T> struct Result;
 
 // Collection types (using shared_ptr to avoid recursive definition)
 using Array = std::shared_ptr<std::vector<Value>>;
@@ -162,13 +165,24 @@ using Function = Callable;
 
 
 
+// Forward declaration
+struct Value;
+
 // Optional value type
 struct OptionalValue {
     bool hasValue;
     std::shared_ptr<Value> wrappedValue;
     
     OptionalValue() : hasValue(false), wrappedValue(nullptr) {}
-    OptionalValue(const Value& value) : hasValue(true), wrappedValue(std::make_shared<Value>(value)) {}
+    OptionalValue(const Value& value);
+    OptionalValue(const OptionalValue& other) : hasValue(other.hasValue), wrappedValue(other.wrappedValue) {}
+    OptionalValue& operator=(const OptionalValue& other) {
+        if (this != &other) {
+            hasValue = other.hasValue;
+            wrappedValue = other.wrappedValue;
+        }
+        return *this;
+    }
     
     bool operator==(const OptionalValue& other) const;
     
@@ -192,12 +206,14 @@ enum class ValueType {
   Class,
   Constructor,
   Destructor,
-  Optional
+  Optional,
+  Error,
+  Result
 };
 
 struct Value {
     ValueType type;
-    std::variant<std::monostate, bool, int, double, std::string, Array, Dictionary, Tuple, std::shared_ptr<Function>, EnumValue, StructValue, std::shared_ptr<ClassValue>, std::shared_ptr<ConstructorValue>, std::shared_ptr<DestructorValue>, OptionalValue> value;
+    std::variant<std::monostate, bool, int, double, std::string, Array, Dictionary, Tuple, std::shared_ptr<Function>, EnumValue, StructValue, std::shared_ptr<ClassValue>, std::shared_ptr<ConstructorValue>, std::shared_ptr<DestructorValue>, OptionalValue, ErrorValue, std::shared_ptr<ValueResult>> value;
 
     Value() : type(ValueType::Nil), value(std::monostate{}) {}
     Value(bool v) : type(ValueType::Bool), value(v) {}
@@ -214,6 +230,22 @@ struct Value {
     Value(std::shared_ptr<ConstructorValue> v) : type(ValueType::Constructor), value(v) {}
     Value(std::shared_ptr<DestructorValue> v) : type(ValueType::Destructor), value(v) {}
     Value(OptionalValue v) : type(ValueType::Optional), value(v) {}
+    Value(ErrorValue v) : type(ValueType::Error), value(v) {}
+    Value(ValueResult v) : type(ValueType::Result), value(std::make_shared<ValueResult>(v)) {}
+    Value(std::shared_ptr<ValueResult> v) : type(ValueType::Result), value(v) {}
+
+    
+    // Copy constructor
+    Value(const Value& other) : type(other.type), value(other.value) {}
+    
+    // Copy assignment operator
+    Value& operator=(const Value& other) {
+        if (this != &other) {
+            type = other.type;
+            value = other.value;
+        }
+        return *this;
+    }
     
     // Convenience constructors for collections
     Value(std::vector<Value> v) : type(ValueType::Array), value(std::make_shared<std::vector<Value>>(std::move(v))) {}
@@ -230,6 +262,8 @@ struct Value {
     bool isConstructor() const { return type == ValueType::Constructor; }
     bool isDestructor() const { return type == ValueType::Destructor; }
     bool isOptional() const { return type == ValueType::Optional; }
+    bool isError() const { return type == ValueType::Error; }
+    bool isResult() const { return type == ValueType::Result; }
     bool isClosure() const { 
         if (type != ValueType::Function) return false;
         auto func = std::get<std::shared_ptr<Function>>(value);
@@ -279,6 +313,13 @@ struct Value {
     OptionalValue& asOptional() { return std::get<OptionalValue>(value); }
     const OptionalValue& asOptional() const { return std::get<OptionalValue>(value); }
     
+    ErrorValue& asError() { return std::get<ErrorValue>(value); }
+    const ErrorValue& asError() const { return std::get<ErrorValue>(value); }
+    std::shared_ptr<ValueResult>& asResult() { return std::get<std::shared_ptr<ValueResult>>(value); }
+    const std::shared_ptr<ValueResult>& asResult() const { return std::get<std::shared_ptr<ValueResult>>(value); }
+    
+
+    
     // Helper methods for optional values
     Value getOptionalValue() const {
         const auto& opt = asOptional();
@@ -323,6 +364,10 @@ struct Value {
                 return std::get<std::shared_ptr<DestructorValue>>(value) == std::get<std::shared_ptr<DestructorValue>>(other.value);
             case ValueType::Optional:
                 return std::get<OptionalValue>(value) == std::get<OptionalValue>(other.value);
+            case ValueType::Error:
+                return std::get<ErrorValue>(value) == std::get<ErrorValue>(other.value);
+            case ValueType::Result:
+                return *std::get<std::shared_ptr<ValueResult>>(value) == *std::get<std::shared_ptr<ValueResult>>(other.value);
             default:
                 return false;
         }

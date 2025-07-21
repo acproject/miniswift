@@ -4,12 +4,14 @@
 #include "../parser/AST.h"
 #include "Value.h"
 #include "Environment.h"
+#include "ErrorHandling.h"
 #include "OOP/Property.h"
 #include "OOP/Inheritance.h"
 #include "OOP/Subscript.h"
 #include "OOP/Optional.h"
 #include <memory>
 #include <unordered_map>
+#include <stack>
 
 namespace miniswift {
 
@@ -39,6 +41,11 @@ public:
     void visit(const SubscriptStmt& stmt) override;
     void visit(const ProtocolStmt& stmt) override;
     void visit(const ExtensionStmt& stmt) override;
+    // Error handling statements
+    void visit(const ThrowStmt& stmt) override;
+    void visit(const DoCatchStmt& stmt) override;
+    void visit(const DeferStmt& stmt) override;
+    void visit(const GuardStmt& stmt) override;
 
     void visit(const Binary& expr) override;
     void visit(const Grouping& expr) override;
@@ -61,6 +68,10 @@ public:
     void visit(const OptionalChaining& expr) override;
     void visit(const Range& expr) override;
     void visit(const GenericTypeInstantiationExpr& expr) override;
+    // Error handling expressions
+    void visit(const TryExpr& expr) override;
+    void visit(const ResultTypeExpr& expr) override;
+    void visit(const ErrorLiteral& expr) override;
 
 public:
     // Public methods for property system
@@ -88,17 +99,32 @@ private:
     // Subscript management
     std::unique_ptr<StaticSubscriptManager> staticSubscriptManager;
     
+    // Error handling management
+    std::stack<ErrorContext> errorContextStack;
+    std::unique_ptr<ErrorPropagator> errorPropagator;
+    std::stack<std::vector<std::unique_ptr<Stmt>>> deferStack;
+    
     bool isTruthy(const Value& value);
     void printArray(const Array& arr);
     void printDictionary(const Dictionary& dict);
     void printTuple(const Tuple& tuple);
     void printValue(const Value& val);
+    std::string valueToString(const Value& val);
     
     // Property system helpers
     PropertyManager* getStructPropertyManager(const std::string& structName);
     PropertyManager* getClassPropertyManager(const std::string& className);
     void registerStructProperties(const std::string& structName, const std::vector<StructMember>& members);
     void registerClassProperties(const std::string& className, const std::vector<StructMember>& members);
+    
+    // Error handling helpers
+    void pushErrorContext(const ErrorContext& context);
+    void popErrorContext();
+    ErrorContext& getCurrentErrorContext();
+    bool canCatchError(const ErrorValue& error) const;
+    void executeDeferredStatements();
+    void pushDeferredStatement(std::unique_ptr<Stmt> stmt);
+    Result<Value> wrapInResult(const Value& value, bool isSuccess = true, const ErrorValue* error = nullptr);
     
 
     

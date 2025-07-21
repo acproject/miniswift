@@ -7,8 +7,7 @@
 
 namespace miniswift {
 
-// Define RuntimeError as an alias for std::runtime_error
-using RuntimeError = std::runtime_error;
+
 
 // 注册结构体方法
 void MethodInterpreter::registerStructMethods(const std::string& structName, const std::vector<std::unique_ptr<FunctionStmt>>& methods) {
@@ -201,7 +200,7 @@ Value MethodInterpreter::getMemberValue(const Value& object, const std::string& 
     }
     
     // 如果既不是属性也不是方法，抛出异常
-    throw RuntimeError("Undefined property or method '" + memberName + "'");
+    throw std::runtime_error("Undefined property or method '" + memberName + "'");
 }
 
 // 调用结构体方法
@@ -209,12 +208,12 @@ Value MethodInterpreter::callStructMethod(const std::string& structName, const s
                                         const std::vector<Value>& arguments, const Value& selfValue) {
     auto manager = getStructMethodManager(structName);
     if (!manager) {
-        throw RuntimeError("Undefined struct '" + structName + "'");
+        throw std::runtime_error("Undefined struct '" + structName + "'");
     }
     
     auto methodInstance = manager->createMethodInstance(methodName, globals);
     if (!methodInstance) {
-        throw RuntimeError("Undefined method '" + methodName + "' in struct '" + structName + "'");
+        throw std::runtime_error("Undefined method '" + methodName + "' in struct '" + structName + "'");
     }
     
     return methodInstance->call(*this, arguments, &selfValue);
@@ -225,12 +224,12 @@ Value MethodInterpreter::callClassMethod(const std::string& className, const std
                                        const std::vector<Value>& arguments, const Value& selfValue) {
     auto manager = getClassMethodManager(className);
     if (!manager) {
-        throw RuntimeError("Undefined class '" + className + "'");
+        throw std::runtime_error("Undefined class '" + className + "'");
     }
     
     auto methodInstance = manager->createMethodInstance(methodName, globals);
     if (!methodInstance) {
-        throw RuntimeError("Undefined method '" + methodName + "' in class '" + className + "'");
+        throw std::runtime_error("Undefined method '" + methodName + "' in class '" + className + "'");
     }
     
     return methodInstance->call(*this, arguments, &selfValue);

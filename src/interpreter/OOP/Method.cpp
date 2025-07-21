@@ -8,15 +8,12 @@
 
 namespace miniswift {
 
-// Define RuntimeError as an alias for std::runtime_error
-using RuntimeError = std::runtime_error;
-
 // MethodValue 实现
 
 Value MethodValue::call(Interpreter& interpreter, const std::vector<Value>& arguments, const Value* selfValue) {
     // 检查参数数量
     if (arguments.size() != definition_.parameters.size()) {
-        throw RuntimeError("Expected " + std::to_string(definition_.parameters.size()) + 
+        throw std::runtime_error("Expected " + std::to_string(definition_.parameters.size()) + 
                           " arguments but got " + std::to_string(arguments.size()));
     }
     
@@ -29,7 +26,7 @@ Value MethodValue::call(Interpreter& interpreter, const std::vector<Value>& argu
     } else {
         // 实例方法需要 self
         if (!selfValue) {
-            throw RuntimeError("Instance method called without self value");
+            throw std::runtime_error("Instance method called without self value");
         }
         methodEnv = std::make_shared<MethodCallEnvironment>(environment_, *selfValue);
     }
@@ -108,7 +105,7 @@ Value InstanceMethodContainer::callMethod(Interpreter& interpreter, const std::s
                                         const std::vector<Value>& arguments, const Value& selfValue) {
     auto it = methods_.find(name);
     if (it == methods_.end()) {
-        throw RuntimeError("Undefined method '" + name + "'");
+        throw std::runtime_error("Undefined method '" + name + "'");
     }
     
     return it->second->call(interpreter, arguments, &selfValue);
@@ -117,7 +114,7 @@ Value InstanceMethodContainer::callMethod(Interpreter& interpreter, const std::s
 Value InstanceMethodContainer::getMethod(const std::string& name, const Value& selfValue) {
     auto it = methods_.find(name);
     if (it == methods_.end()) {
-        throw RuntimeError("Undefined method '" + name + "'");
+        throw std::runtime_error("Undefined method '" + name + "'");
     }
     
     // 创建一个绑定了 self 的 Callable

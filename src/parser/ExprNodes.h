@@ -27,6 +27,10 @@ struct SubscriptAccess;
 struct OptionalChaining;
 struct Range;
 struct GenericTypeInstantiationExpr;
+// Error handling expressions
+struct TryExpr;
+struct ResultTypeExpr;
+struct ErrorLiteral;
 
 // Visitor interface for expressions
 class ExprVisitor {
@@ -53,6 +57,10 @@ public:
   virtual void visit(const OptionalChaining &expr) = 0;
   virtual void visit(const Range &expr) = 0;
   virtual void visit(const GenericTypeInstantiationExpr &expr) = 0;
+  // Error handling expressions
+  virtual void visit(const TryExpr &expr) = 0;
+  virtual void visit(const ResultTypeExpr &expr) = 0;
+  virtual void visit(const ErrorLiteral &expr) = 0;
 };
 
 // Base class for all expression nodes

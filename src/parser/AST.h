@@ -4,5 +4,6 @@
 #include "ExprNodes.h"
 #include "StmtNodes.h"
 #include "GenericNodes.h"
+#include "ErrorNodes.h"
 
 #endif // MINISWIFT_AST_H

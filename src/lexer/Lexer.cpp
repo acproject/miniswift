@@ -45,6 +45,14 @@ static void initializeKeywords() {
   keywords["static"] = TokenType::Static;
   keywords["subscript"] = TokenType::Subscript;
   
+  // Access Control Keywords
+  keywords["open"] = TokenType::Open;
+  keywords["public"] = TokenType::Public;
+  keywords["package"] = TokenType::Package;
+  keywords["internal"] = TokenType::Internal;
+  keywords["fileprivate"] = TokenType::Fileprivate;
+  keywords["private"] = TokenType::Private;
+  
   // Basic types
   keywords["String"] = TokenType::String;
   keywords["Int"] = TokenType::Int;

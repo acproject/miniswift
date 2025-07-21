@@ -17,9 +17,22 @@ std::vector<std::unique_ptr<Stmt>> Parser::parse() {
 }
 
 std::vector<std::unique_ptr<Stmt>> Parser::declaration() {
+  // Parse optional access level modifier
+  AccessLevel accessLevel = AccessLevel::INTERNAL;
+  AccessLevel setterAccessLevel = AccessLevel::INTERNAL;
+  
+  if (isAccessLevelToken(peek().type)) {
+    auto accessPair = parseAccessLevelWithSetter();
+    accessLevel = accessPair.first;
+    setterAccessLevel = accessPair.second;
+  }
+  
   if (match({TokenType::Func})) {
     std::vector<std::unique_ptr<Stmt>> result;
-    result.push_back(functionDeclaration());
+    auto func = functionDeclaration();
+    // Set access level for function
+    static_cast<FunctionStmt*>(func.get())->accessLevel = accessLevel;
+    result.push_back(std::move(func));
     return result;
   }
   if (match({TokenType::Enum})) {
@@ -29,12 +42,18 @@ std::vector<std::unique_ptr<Stmt>> Parser::declaration() {
   }
   if (match({TokenType::Struct})) {
     std::vector<std::unique_ptr<Stmt>> result;
-    result.push_back(structDeclaration());
+    auto structStmt = structDeclaration();
+    // Set access level for struct
+    static_cast<StructStmt*>(structStmt.get())->accessLevel = accessLevel;
+    result.push_back(std::move(structStmt));
     return result;
   }
   if (match({TokenType::Class})) {
     std::vector<std::unique_ptr<Stmt>> result;
-    result.push_back(classDeclaration());
+    auto classStmt = classDeclaration();
+    // Set access level for class
+    static_cast<ClassStmt*>(classStmt.get())->accessLevel = accessLevel;
+    result.push_back(std::move(classStmt));
     return result;
   }
   if (match({TokenType::Init})) {
@@ -76,12 +95,12 @@ std::vector<std::unique_ptr<Stmt>> Parser::declaration() {
     if (names.size() == 1) {
       // For single variable declaration, use the original initializer
       statements.push_back(std::make_unique<VarStmt>(
-          names[0], std::move(initializer), isConst, type));
+          names[0], std::move(initializer), isConst, type, accessLevel, setterAccessLevel));
     } else {
       // For multiple variable declarations, clone the initializer
       for (const auto &name : names) {
         statements.push_back(std::make_unique<VarStmt>(
-            name, initializer ? initializer->clone() : nullptr, isConst, type));
+            name, initializer ? initializer->clone() : nullptr, isConst, type, accessLevel, setterAccessLevel));
       }
     }
 
@@ -980,13 +999,25 @@ std::unique_ptr<Stmt> Parser::structDeclaration() {
   std::vector<std::unique_ptr<SubscriptStmt>> subscripts;
   
   while (!check(TokenType::RBrace) && !isAtEnd()) {
+    // Parse optional access level modifier for struct members
+    AccessLevel memberAccessLevel = AccessLevel::INTERNAL;
+    AccessLevel memberSetterAccessLevel = AccessLevel::INTERNAL;
+    
+    if (isAccessLevelToken(peek().type)) {
+      auto accessPair = parseAccessLevelWithSetter();
+      memberAccessLevel = accessPair.first;
+      memberSetterAccessLevel = accessPair.second;
+    }
+    
     if (match({TokenType::Func})) {
       // Parse method declaration
       auto method = std::unique_ptr<FunctionStmt>(static_cast<FunctionStmt*>(functionDeclaration().release()));
+      method->accessLevel = memberAccessLevel;
       methods.push_back(std::move(method));
     } else if (match({TokenType::Init})) {
       // Parse initializer declaration
       auto init = std::unique_ptr<InitStmt>(static_cast<InitStmt*>(initDeclaration().release()));
+      init->accessLevel = memberAccessLevel;
       initializers.push_back(std::move(init));
     } else if (match({TokenType::Deinit})) {
       // Parse deinitializer declaration
@@ -997,6 +1028,8 @@ std::unique_ptr<Stmt> Parser::structDeclaration() {
     } else if (match({TokenType::Subscript})) {
       // Parse subscript declaration
       auto subscript = std::unique_ptr<SubscriptStmt>(static_cast<SubscriptStmt*>(subscriptDeclaration().release()));
+      subscript->accessLevel = memberAccessLevel;
+      subscript->setterAccessLevel = memberSetterAccessLevel;
       subscripts.push_back(std::move(subscript));
     } else if (match({TokenType::Var, TokenType::Let})) {
       // Parse member declaration
@@ -1057,7 +1090,7 @@ std::unique_ptr<Stmt> Parser::structDeclaration() {
         consume(TokenType::RBrace, "Expect '}' after property accessors.");
       }
       
-      StructMember member(memberName, memberType, std::move(defaultValue), isVar);
+      StructMember member(memberName, memberType, std::move(defaultValue), isVar, memberAccessLevel, memberSetterAccessLevel);
       member.accessors = std::move(accessors);
       members.push_back(std::move(member));
       
@@ -1092,13 +1125,25 @@ std::unique_ptr<Stmt> Parser::classDeclaration() {
   std::vector<std::unique_ptr<SubscriptStmt>> subscripts;
   
   while (!check(TokenType::RBrace) && !isAtEnd()) {
+    // Parse optional access level modifier for class members
+    AccessLevel memberAccessLevel = AccessLevel::INTERNAL;
+    AccessLevel memberSetterAccessLevel = AccessLevel::INTERNAL;
+    
+    if (isAccessLevelToken(peek().type)) {
+      auto accessPair = parseAccessLevelWithSetter();
+      memberAccessLevel = accessPair.first;
+      memberSetterAccessLevel = accessPair.second;
+    }
+    
     if (match({TokenType::Func})) {
       // Parse method declaration
       auto method = std::unique_ptr<FunctionStmt>(static_cast<FunctionStmt*>(functionDeclaration().release()));
+      method->accessLevel = memberAccessLevel;
       methods.push_back(std::move(method));
     } else if (match({TokenType::Init})) {
       // Parse initializer declaration
       auto init = std::unique_ptr<InitStmt>(static_cast<InitStmt*>(initDeclaration().release()));
+      init->accessLevel = memberAccessLevel;
       initializers.push_back(std::move(init));
     } else if (match({TokenType::Deinit})) {
       // Parse deinitializer declaration
@@ -1109,6 +1154,8 @@ std::unique_ptr<Stmt> Parser::classDeclaration() {
     } else if (match({TokenType::Subscript})) {
       // Parse subscript declaration
       auto subscript = std::unique_ptr<SubscriptStmt>(static_cast<SubscriptStmt*>(subscriptDeclaration().release()));
+      subscript->accessLevel = memberAccessLevel;
+      subscript->setterAccessLevel = memberSetterAccessLevel;
       subscripts.push_back(std::move(subscript));
     } else if (match({TokenType::Var, TokenType::Let})) {
       // Parse member declaration
@@ -1125,7 +1172,7 @@ std::unique_ptr<Stmt> Parser::classDeclaration() {
         defaultValue = expression();
       }
       
-      members.emplace_back(memberName, memberType, std::move(defaultValue), isVar);
+      members.emplace_back(memberName, memberType, std::move(defaultValue), isVar, memberAccessLevel, memberSetterAccessLevel);
       
       match({TokenType::Semicolon}); // Optional semicolon
     } else {
@@ -1268,6 +1315,47 @@ std::unique_ptr<Stmt> Parser::subscriptDeclaration() {
   consume(TokenType::RBrace, "Expect '}' after subscript body.");
   
   return std::make_unique<SubscriptStmt>(std::move(parameters), returnType, std::move(accessors), isStatic);
+}
+
+// Parse access level modifier
+AccessLevel Parser::parseAccessLevel() {
+  if (isAccessLevelToken(peek().type)) {
+    Token token = advance();
+    return tokenToAccessLevel(token.type);
+  }
+  return AccessLevel::INTERNAL; // Default access level
+}
+
+// Parse access level with optional setter access level (e.g., private(set))
+std::pair<AccessLevel, AccessLevel> Parser::parseAccessLevelWithSetter() {
+  AccessLevel mainAccess = AccessLevel::INTERNAL;
+  AccessLevel setterAccess = AccessLevel::INTERNAL;
+  
+  if (isAccessLevelToken(peek().type)) {
+    Token token = advance();
+    mainAccess = tokenToAccessLevel(token.type);
+    setterAccess = mainAccess; // Default setter access is same as main access
+    
+    // Check for setter-specific access level: private(set), fileprivate(set), etc.
+    if (match({TokenType::LParen})) {
+      if (match({TokenType::Set})) {
+        consume(TokenType::RParen, "Expect ')' after 'set'.");
+        // For private(set), fileprivate(set), etc., the setter has more restrictive access
+        setterAccess = mainAccess;
+      } else {
+        throw std::runtime_error("Only 'set' is allowed in access level parentheses.");
+      }
+    }
+  }
+  
+  return std::make_pair(mainAccess, setterAccess);
+}
+
+// Check if a token type represents an access level
+bool Parser::isAccessLevelToken(TokenType type) {
+  return type == TokenType::Open || type == TokenType::Public || 
+         type == TokenType::Package || type == TokenType::Internal ||
+         type == TokenType::Fileprivate || type == TokenType::Private;
 }
 
 } // namespace miniswift

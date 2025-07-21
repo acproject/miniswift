@@ -41,6 +41,7 @@ set(LEXER_SOURCES
 set(PARSER_SOURCES
     src/parser/Parser.cpp
     src/parser/AstPrinter.cpp
+    src/parser/AccessControl.cpp
 )
 
 set(INTERPRETER_SOURCES

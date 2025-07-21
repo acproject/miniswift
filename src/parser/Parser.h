@@ -3,6 +3,7 @@
 
 #include "../lexer/Token.h"
 #include "AST.h"
+#include "AccessControl.h"
 #include <vector>
 #include <memory>
 
@@ -49,6 +50,11 @@ private:
     std::unique_ptr<Expr> memberAccess(std::unique_ptr<Expr> object);
     std::unique_ptr<Expr> structInit();
     std::unique_ptr<Expr> closure();
+
+    // Access control parsing methods
+    AccessLevel parseAccessLevel();
+    std::pair<AccessLevel, AccessLevel> parseAccessLevelWithSetter();
+    bool isAccessLevelToken(TokenType type);
 
     bool match(const std::vector<TokenType>& types);
     bool check(TokenType type);

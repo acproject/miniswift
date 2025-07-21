@@ -45,6 +45,14 @@ enum class TokenType {
   Static,
   Subscript,
 
+  // Access Control Keywords
+  Open,
+  Public,
+  Package,
+  Internal,
+  Fileprivate,
+  Private,
+
   // Basic Types
   String,
   Int,

@@ -1,6 +1,7 @@
 #ifndef MINISWIFT_STMT_NODES_H
 #define MINISWIFT_STMT_NODES_H
 #include "ExprNodes.h"
+#include "AccessControl.h"
 
 namespace miniswift {
 
@@ -83,21 +84,25 @@ struct PrintStmt : Stmt {
 
 struct VarStmt : Stmt {
   VarStmt(Token name, std::unique_ptr<Expr> initializer, bool isConst,
-          Token type)
+          Token type, AccessLevel accessLevel = AccessLevel::INTERNAL,
+          AccessLevel setterAccessLevel = AccessLevel::INTERNAL)
       : name(name), initializer(std::move(initializer)), isConst(isConst),
-        type(type) {}
+        type(type), accessLevel(accessLevel), setterAccessLevel(setterAccessLevel) {}
 
   void accept(StmtVisitor &visitor) const override { visitor.visit(*this); }
 
   std::unique_ptr<Stmt> clone() const override {
     return std::make_unique<VarStmt>(
-        name, initializer ? initializer->clone() : nullptr, isConst, type);
+        name, initializer ? initializer->clone() : nullptr, isConst, type,
+        accessLevel, setterAccessLevel);
   }
 
   const Token name;
   const std::unique_ptr<Expr> initializer;
   const bool isConst;
   const Token type;
+  const AccessLevel accessLevel;
+  const AccessLevel setterAccessLevel;
 };
 
 // Block statement: { statements }
@@ -209,21 +214,22 @@ struct Closure : Expr {
 // Function declaration: func name(parameters) -> returnType { body }
 struct FunctionStmt : Stmt {
   FunctionStmt(Token name, std::vector<Parameter> parameters, Token returnType,
-               std::unique_ptr<Stmt> body)
+               std::unique_ptr<Stmt> body, AccessLevel accessLevel = AccessLevel::INTERNAL)
       : name(name), parameters(std::move(parameters)), returnType(returnType),
-        body(std::move(body)) {}
+        body(std::move(body)), accessLevel(accessLevel) {}
 
   void accept(StmtVisitor &visitor) const override { visitor.visit(*this); }
 
   std::unique_ptr<Stmt> clone() const override {
     return std::make_unique<FunctionStmt>(name, parameters, returnType,
-                                          body->clone());
+                                          body->clone(), accessLevel);
   }
 
   const Token name;
   const std::vector<Parameter> parameters;
   const Token returnType; // Can be empty for Void
   const std::unique_ptr<Stmt> body;
+  AccessLevel accessLevel;
 };
 
 // Return statement: return expression
@@ -364,14 +370,19 @@ struct StructMember {
   bool isVar;                         // true for var, false for let
   bool isStatic;                      // true for static properties
   bool isLazy;                        // true for lazy properties
+  AccessLevel accessLevel;            // Access level for the property
+  AccessLevel setterAccessLevel;      // Access level for the setter (can be more restrictive)
 
   // Property accessors (for computed properties and observers)
   std::vector<PropertyAccessor> accessors;
 
   StructMember(Token name, Token type,
-               std::unique_ptr<Expr> defaultValue = nullptr, bool isVar = true)
+               std::unique_ptr<Expr> defaultValue = nullptr, bool isVar = true,
+               AccessLevel accessLevel = AccessLevel::INTERNAL,
+               AccessLevel setterAccessLevel = AccessLevel::INTERNAL)
       : name(name), type(type), defaultValue(std::move(defaultValue)),
-        isVar(isVar), isStatic(false), isLazy(false) {}
+        isVar(isVar), isStatic(false), isLazy(false),
+        accessLevel(accessLevel), setterAccessLevel(setterAccessLevel) {}
 
   // Check if this is a computed property
   bool isComputedProperty() const {
@@ -392,6 +403,7 @@ struct StructMember {
 // Struct declaration: struct Name { members }
 struct StructStmt : Stmt {
   Token name;
+  AccessLevel accessLevel; // Access level for the struct
   std::vector<StructMember> members;
   std::vector<std::unique_ptr<FunctionStmt>>
       methods; // Methods defined in the struct
@@ -403,8 +415,9 @@ struct StructStmt : Stmt {
              std::vector<std::unique_ptr<FunctionStmt>> methods = {},
              std::vector<std::unique_ptr<InitStmt>> initializers = {},
              std::unique_ptr<DeinitStmt> deinitializer = nullptr,
-             std::vector<std::unique_ptr<SubscriptStmt>> subscripts = {})
-      : name(name), members(std::move(members)), methods(std::move(methods)),
+             std::vector<std::unique_ptr<SubscriptStmt>> subscripts = {},
+             AccessLevel accessLevel = AccessLevel::INTERNAL)
+      : name(name), accessLevel(accessLevel), members(std::move(members)), methods(std::move(methods)),
         initializers(std::move(initializers)),
         deinitializer(std::move(deinitializer)), subscripts(std::move(subscripts)) {}
 
@@ -423,6 +436,7 @@ struct StructStmt : Stmt {
 struct ClassStmt : Stmt {
   Token name;
   Token superclass; // Optional superclass
+  AccessLevel accessLevel; // Access level for the class
   std::vector<StructMember> members;
   std::vector<std::unique_ptr<FunctionStmt>> methods;
   std::vector<std::unique_ptr<InitStmt>> initializers; // Constructors
@@ -433,8 +447,9 @@ struct ClassStmt : Stmt {
             std::vector<std::unique_ptr<FunctionStmt>> methods = {},
             std::vector<std::unique_ptr<InitStmt>> initializers = {},
             std::unique_ptr<DeinitStmt> deinitializer = nullptr,
-            std::vector<std::unique_ptr<SubscriptStmt>> subscripts = {})
-      : name(name), superclass(superclass), members(std::move(members)),
+            std::vector<std::unique_ptr<SubscriptStmt>> subscripts = {},
+            AccessLevel accessLevel = AccessLevel::INTERNAL)
+      : name(name), superclass(superclass), accessLevel(accessLevel), members(std::move(members)),
         methods(std::move(methods)), initializers(std::move(initializers)),
         deinitializer(std::move(deinitializer)), subscripts(std::move(subscripts)) {}
 
@@ -462,17 +477,19 @@ struct InitStmt : Stmt {
   std::vector<Parameter> parameters;
   std::unique_ptr<Stmt> body;
   bool isRequired; // 是否为required构造器
+  AccessLevel accessLevel; // Access level for the initializer
 
   InitStmt(InitType type, std::vector<Parameter> parameters,
-           std::unique_ptr<Stmt> body, bool required = false)
+           std::unique_ptr<Stmt> body, bool required = false,
+           AccessLevel accessLevel = AccessLevel::INTERNAL)
       : initType(type), parameters(std::move(parameters)),
-        body(std::move(body)), isRequired(required) {}
+        body(std::move(body)), isRequired(required), accessLevel(accessLevel) {}
 
   void accept(StmtVisitor &visitor) const override { visitor.visit(*this); }
 
   std::unique_ptr<Stmt> clone() const override {
     return std::make_unique<InitStmt>(initType, parameters, body->clone(),
-                                      isRequired);
+                                      isRequired, accessLevel);
   }
 };
 
@@ -495,11 +512,16 @@ struct SubscriptStmt : Stmt {
   Token returnType;
   std::vector<PropertyAccessor> accessors; // get/set accessors
   bool isStatic; // true for static subscripts
+  AccessLevel accessLevel; // Access level for the subscript
+  AccessLevel setterAccessLevel; // Access level for the setter
 
   SubscriptStmt(std::vector<Parameter> parameters, Token returnType,
-                std::vector<PropertyAccessor> accessors, bool isStatic = false)
+                std::vector<PropertyAccessor> accessors, bool isStatic = false,
+                AccessLevel accessLevel = AccessLevel::INTERNAL,
+                AccessLevel setterAccessLevel = AccessLevel::INTERNAL)
       : parameters(std::move(parameters)), returnType(returnType),
-        accessors(std::move(accessors)), isStatic(isStatic) {}
+        accessors(std::move(accessors)), isStatic(isStatic),
+        accessLevel(accessLevel), setterAccessLevel(setterAccessLevel) {}
 
   void accept(StmtVisitor &visitor) const override { visitor.visit(*this); }
 
@@ -513,7 +535,8 @@ struct SubscriptStmt : Stmt {
           accessor.parameterName);
     }
     return std::make_unique<SubscriptStmt>(parameters, returnType,
-                                           std::move(clonedAccessors), isStatic);
+                                           std::move(clonedAccessors), isStatic,
+                                           accessLevel, setterAccessLevel);
   }
 };
 

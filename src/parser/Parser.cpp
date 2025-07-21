@@ -1054,20 +1054,14 @@ std::unique_ptr<Expr> Parser::call() {
         throw std::runtime_error("Expect member name or tuple index after '.'.");
       }
       
-      // Check if this is an enum access with arguments
-      if (match({TokenType::LParen})) {
-        // Enum member access with associated values: EnumType.caseName(arg1, arg2)
-        std::vector<std::unique_ptr<Expr>> arguments;
-        if (!check(TokenType::RParen)) {
-          do {
-            arguments.push_back(expression());
-          } while (match({TokenType::Comma}));
-        }
-        consume(TokenType::RParen, "Expect ')' after enum case arguments.");
-        expr = std::make_unique<EnumAccess>(std::move(expr), memberName, std::move(arguments));
-      } else {
-        // Regular member access: object.member or tuple.index
-        expr = std::make_unique<MemberAccess>(std::move(expr), memberName);
+      // Create member access first
+      expr = std::make_unique<MemberAccess>(std::move(expr), memberName);
+      
+      // Check if this is followed by a function call
+      if (check(TokenType::LParen)) {
+        // This is a method call: object.method(args)
+        advance(); // consume '('
+        expr = finishCall(std::move(expr));
       }
     } else if (match({TokenType::Bang})) {
       // Handle postfix bang operator for force unwrapping: expr!
@@ -1086,8 +1080,9 @@ std::unique_ptr<Expr> Parser::finishCall(std::unique_ptr<Expr> callee) {
   // Check if this might be a struct initialization by looking ahead
   // Struct init has pattern: StructName(memberName: value, ...)
   // Function call has pattern: functionName(arg1, arg2, ...)
+  // Only check for struct init if callee is a simple identifier (VarExpr)
   
-  if (!check(TokenType::RParen)) {
+  if (!check(TokenType::RParen) && dynamic_cast<VarExpr*>(callee.get())) {
     // Look ahead to see if the first argument has the pattern "identifier:"
     int savedCurrent = current;
     bool isStructInit = false;
@@ -1133,7 +1128,23 @@ std::unique_ptr<Expr> Parser::finishCall(std::unique_ptr<Expr> callee) {
   
   if (!check(TokenType::RParen)) {
     do {
-      arguments.push_back(expression());
+      // Check for parameter label: label: expression
+      if (check(TokenType::Identifier)) {
+        int savedCurrent = current;
+        advance(); // consume identifier
+        if (check(TokenType::Colon)) {
+          // This is a parameter label, skip it and parse the expression
+          advance(); // consume ':'
+          arguments.push_back(expression());
+        } else {
+          // Not a parameter label, restore position and parse as expression
+          current = savedCurrent;
+          arguments.push_back(expression());
+        }
+      } else {
+        // Not an identifier, parse as expression
+        arguments.push_back(expression());
+      }
     } while (match({TokenType::Comma}));
   }
   

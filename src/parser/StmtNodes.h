@@ -2,6 +2,7 @@
 #define MINISWIFT_STMT_NODES_H
 #include "ExprNodes.h"
 #include "AccessControl.h"
+#include "GenericNodes.h"
 
 namespace miniswift {
 
@@ -17,6 +18,7 @@ struct BlockStmt;
 struct IfStmt;
 struct WhileStmt;
 struct ForStmt;
+struct ForInStmt;
 struct FunctionStmt;
 struct ReturnStmt;
 struct EnumStmt;
@@ -38,6 +40,7 @@ public:
   virtual void visit(const IfStmt &stmt) = 0;
   virtual void visit(const WhileStmt &stmt) = 0;
   virtual void visit(const ForStmt &stmt) = 0;
+  virtual void visit(const ForInStmt &stmt) = 0;
   virtual void visit(const FunctionStmt &stmt) = 0;
   virtual void visit(const ReturnStmt &stmt) = 0;
   virtual void visit(const EnumStmt &stmt) = 0;
@@ -181,12 +184,31 @@ struct ForStmt : Stmt {
   const std::unique_ptr<Stmt> body;
 };
 
+// For-in statement: for variable in collection { body } or for (var1, var2) in collection { body }
+struct ForInStmt : Stmt {
+  ForInStmt(std::vector<Token> variables, std::unique_ptr<Expr> collection,
+            std::unique_ptr<Stmt> body)
+      : variables(std::move(variables)), collection(std::move(collection)),
+        body(std::move(body)) {}
+
+  void accept(StmtVisitor &visitor) const override { visitor.visit(*this); }
+
+  std::unique_ptr<Stmt> clone() const override {
+    return std::make_unique<ForInStmt>(variables, collection->clone(), body->clone());
+  }
+
+  const std::vector<Token> variables; // Loop variables (can be multiple for tuple destructuring)
+  const std::unique_ptr<Expr> collection; // Collection to iterate over
+  const std::unique_ptr<Stmt> body;
+};
+
 // Function parameter
 struct Parameter {
   Token name;
   Token type; // Can be empty for type inference
+  bool isInout; // true if parameter is inout
 
-  Parameter(Token n, Token t) : name(n), type(t) {}
+  Parameter(Token n, Token t, bool inout = false) : name(n), type(t), isInout(inout) {}
 };
 
 // Closure expression: { (parameters) -> ReturnType in body }
@@ -213,18 +235,23 @@ struct Closure : Expr {
   const std::vector<std::unique_ptr<Stmt>> body;
 };
 
-// Function declaration: func name(parameters) -> returnType { body }
+// Function declaration: func name<T>(parameters) -> returnType where T: Equatable { body }
 struct FunctionStmt : Stmt {
   FunctionStmt(Token name, std::vector<Parameter> parameters, Token returnType,
-               std::unique_ptr<Stmt> body, AccessLevel accessLevel = AccessLevel::INTERNAL)
+               std::unique_ptr<Stmt> body, AccessLevel accessLevel = AccessLevel::INTERNAL,
+               GenericParameterClause genericParams = GenericParameterClause({}),
+               WhereClause whereClause = WhereClause({}), bool isMutating = false)
       : name(name), parameters(std::move(parameters)), returnType(returnType),
-        body(std::move(body)), accessLevel(accessLevel) {}
+        body(std::move(body)), accessLevel(accessLevel),
+        genericParams(std::move(genericParams)), whereClause(std::move(whereClause)),
+        isMutating(isMutating) {}
 
   void accept(StmtVisitor &visitor) const override { visitor.visit(*this); }
 
   std::unique_ptr<Stmt> clone() const override {
     return std::make_unique<FunctionStmt>(name, parameters, returnType,
-                                          body->clone(), accessLevel);
+                                          body->clone(), accessLevel,
+                                          genericParams, whereClause, isMutating);
   }
 
   const Token name;
@@ -232,6 +259,12 @@ struct FunctionStmt : Stmt {
   const Token returnType; // Can be empty for Void
   const std::unique_ptr<Stmt> body;
   AccessLevel accessLevel;
+  GenericParameterClause genericParams; // Generic type parameters
+  WhereClause whereClause;              // Generic constraints
+  bool isMutating;                      // Whether this is a mutating function
+  
+  // Check if this is a generic function
+  bool isGeneric() const { return !genericParams.isEmpty(); }
 };
 
 // Return statement: return expression
@@ -402,11 +435,13 @@ struct StructMember {
   }
 };
 
-// Struct declaration: struct Name: Protocol1, Protocol2 { members }
+// Struct declaration: struct Name<T>: Protocol1, Protocol2 where T: Equatable { members }
 struct StructStmt : Stmt {
   Token name;
   AccessLevel accessLevel; // Access level for the struct
+  GenericParameterClause genericParams; // Generic type parameters
   std::vector<Token> conformedProtocols; // Protocols this struct conforms to
+  WhereClause whereClause; // Generic constraints
   std::vector<StructMember> members;
   std::vector<std::unique_ptr<FunctionStmt>>
       methods; // Methods defined in the struct
@@ -420,8 +455,11 @@ struct StructStmt : Stmt {
              std::unique_ptr<DeinitStmt> deinitializer = nullptr,
              std::vector<std::unique_ptr<SubscriptStmt>> subscripts = {},
              std::vector<Token> conformedProtocols = {},
-             AccessLevel accessLevel = AccessLevel::INTERNAL)
-      : name(name), accessLevel(accessLevel), conformedProtocols(std::move(conformedProtocols)),
+             AccessLevel accessLevel = AccessLevel::INTERNAL,
+             GenericParameterClause genericParams = GenericParameterClause({}),
+             WhereClause whereClause = WhereClause({}))
+      : name(name), accessLevel(accessLevel), genericParams(std::move(genericParams)),
+        conformedProtocols(std::move(conformedProtocols)), whereClause(std::move(whereClause)),
         members(std::move(members)), methods(std::move(methods)),
         initializers(std::move(initializers)),
         deinitializer(std::move(deinitializer)), subscripts(std::move(subscripts)) {}
@@ -435,14 +473,19 @@ struct StructStmt : Stmt {
         name, std::vector<StructMember>(),
         std::vector<std::unique_ptr<FunctionStmt>>());
   }
+  
+  // Check if this is a generic struct
+  bool isGeneric() const { return !genericParams.isEmpty(); }
 };
 
-// Class declaration: class Name: Superclass, Protocol1, Protocol2 { members }
+// Class declaration: class Name<T>: Superclass, Protocol1, Protocol2 where T: Equatable { members }
 struct ClassStmt : Stmt {
   Token name;
   Token superclass; // Optional superclass
   AccessLevel accessLevel; // Access level for the class
+  GenericParameterClause genericParams; // Generic type parameters
   std::vector<Token> conformedProtocols; // Protocols this class conforms to
+  WhereClause whereClause; // Generic constraints
   std::vector<StructMember> members;
   std::vector<std::unique_ptr<FunctionStmt>> methods;
   std::vector<std::unique_ptr<InitStmt>> initializers; // Constructors
@@ -455,9 +498,12 @@ struct ClassStmt : Stmt {
             std::unique_ptr<DeinitStmt> deinitializer = nullptr,
             std::vector<std::unique_ptr<SubscriptStmt>> subscripts = {},
             std::vector<Token> conformedProtocols = {},
-            AccessLevel accessLevel = AccessLevel::INTERNAL)
-      : name(name), superclass(superclass), accessLevel(accessLevel), 
-        conformedProtocols(std::move(conformedProtocols)), members(std::move(members)),
+            AccessLevel accessLevel = AccessLevel::INTERNAL,
+            GenericParameterClause genericParams = GenericParameterClause({}),
+            WhereClause whereClause = WhereClause({}))
+      : name(name), superclass(superclass), accessLevel(accessLevel),
+        genericParams(std::move(genericParams)), conformedProtocols(std::move(conformedProtocols)),
+        whereClause(std::move(whereClause)), members(std::move(members)),
         methods(std::move(methods)), initializers(std::move(initializers)),
         deinitializer(std::move(deinitializer)), subscripts(std::move(subscripts)) {}
 
@@ -470,6 +516,9 @@ struct ClassStmt : Stmt {
         name, superclass, std::vector<StructMember>(),
         std::vector<std::unique_ptr<FunctionStmt>>());
   }
+  
+  // Check if this is a generic class
+  bool isGeneric() const { return !genericParams.isEmpty(); }
 };
 
 // Constructor types

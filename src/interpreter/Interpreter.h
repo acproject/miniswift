@@ -27,6 +27,7 @@ public:
     void visit(const IfStmt& stmt) override;
     void visit(const WhileStmt& stmt) override;
     void visit(const ForStmt& stmt) override;
+    void visit(const ForInStmt& stmt) override;
     void visit(const FunctionStmt& stmt) override;
     void visit(const ReturnStmt& stmt) override;
     void visit(const EnumStmt& stmt) override;
@@ -55,6 +56,7 @@ public:
     void visit(const Super& expr) override;
     void visit(const StringInterpolation& expr) override;
     void visit(const OptionalChaining& expr) override;
+    void visit(const Range& expr) override;
 
 public:
     // Public methods for property system

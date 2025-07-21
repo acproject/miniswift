@@ -45,6 +45,8 @@ enum class TokenType {
   Static,
   Subscript,
   Protocol,
+  Inout,
+  Mutating,
 
   // Access Control Keywords
   Open,
@@ -108,6 +110,11 @@ enum class TokenType {
   InterpolationStart, // \(
   InterpolationEnd,   // )
 
+  // Generics
+  LAngle,    // <
+  RAngle,    // >
+  Where,     // where keyword for generic constraints
+  
   // Other
   EndOfFile,
   Unknown

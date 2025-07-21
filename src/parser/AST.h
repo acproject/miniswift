@@ -3,5 +3,6 @@
 
 #include "ExprNodes.h"
 #include "StmtNodes.h"
+#include "GenericNodes.h"
 
 #endif // MINISWIFT_AST_H

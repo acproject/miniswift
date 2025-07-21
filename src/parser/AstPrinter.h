@@ -14,6 +14,20 @@ public:
     void visit(const Literal& expr) override;
     void visit(const Unary& expr) override;
     void visit(const VarExpr& expr) override;
+    void visit(const Assign& expr) override;
+    void visit(const ArrayLiteral& expr) override;
+    void visit(const DictionaryLiteral& expr) override;
+    void visit(const IndexAccess& expr) override;
+    void visit(const SubscriptAccess& expr) override;
+    void visit(const Call& expr) override;
+    void visit(const Closure& expr) override;
+    void visit(const EnumAccess& expr) override;
+    void visit(const MemberAccess& expr) override;
+    void visit(const StructInit& expr) override;
+    void visit(const Super& expr) override;
+    void visit(const StringInterpolation& expr) override;
+    void visit(const OptionalChaining& expr) override;
+    void visit(const Range& expr) override;
 
 private:
     void parenthesize(const std::string& name, const std::vector<const Expr*>& exprs);

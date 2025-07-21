@@ -27,13 +27,26 @@ std::vector<std::unique_ptr<Stmt>> Parser::declaration() {
     setterAccessLevel = accessPair.second;
   }
   
+  // Check for mutating keyword before func
+  bool isMutating = false;
+  if (match({TokenType::Mutating})) {
+    isMutating = true;
+  }
+  
   if (match({TokenType::Func})) {
     std::vector<std::unique_ptr<Stmt>> result;
     auto func = functionDeclaration();
-    // Set access level for function
-    static_cast<FunctionStmt*>(func.get())->accessLevel = accessLevel;
+    // Set access level and mutating flag for function
+    auto funcStmt = static_cast<FunctionStmt*>(func.get());
+    funcStmt->accessLevel = accessLevel;
+    funcStmt->isMutating = isMutating;
     result.push_back(std::move(func));
     return result;
+  }
+  
+  // If we found mutating but no func, that's an error
+  if (isMutating) {
+    throw std::runtime_error("Expect 'func' after 'mutating'.");
   }
   if (match({TokenType::Enum})) {
     std::vector<std::unique_ptr<Stmt>> result;
@@ -216,13 +229,29 @@ std::unique_ptr<Expr> Parser::equality() {
 }
 
 std::unique_ptr<Expr> Parser::comparison() {
-  auto expr = term();
-  while (match({TokenType::Greater, TokenType::GreaterEqual, TokenType::Less,
+  auto expr = range();
+  while (match({TokenType::RAngle, TokenType::GreaterEqual, TokenType::LAngle,
                 TokenType::LessEqual})) {
     Token op = previous();
-    auto right = term();
+    auto right = range();
     expr = std::make_unique<Binary>(std::move(expr), op, std::move(right));
   }
+  return expr;
+}
+
+std::unique_ptr<Expr> Parser::range() {
+  auto expr = term();
+  
+  if (match({TokenType::LessEllipsis, TokenType::Ellipsis})) {
+    Token op = previous();
+    auto right = term();
+    
+    Range::RangeType rangeType = (op.type == TokenType::LessEllipsis) ? 
+                                 Range::RangeType::HalfOpen : Range::RangeType::Closed;
+    
+    return std::make_unique<Range>(std::move(expr), std::move(right), rangeType);
+  }
+  
   return expr;
 }
 
@@ -384,6 +413,21 @@ std::unique_ptr<Expr> Parser::primary() {
     return std::make_unique<Grouping>(std::move(expr));
   }
 
+  // Handle range operators: start..<end or start...end
+  if (check(TokenType::LessEllipsis) || check(TokenType::Ellipsis)) {
+    // This is a range starting from an implicit 0
+    auto start = std::make_unique<Literal>(Token(TokenType::FloatingLiteral, "0.0", peek().line));
+    
+    TokenType rangeOp = advance().type;
+    auto end = unary();
+    
+    Range::RangeType rangeType = (rangeOp == TokenType::LessEllipsis) ? 
+                                 Range::RangeType::HalfOpen : Range::RangeType::Closed;
+    
+    return std::make_unique<Range>(std::move(start), std::move(end), rangeType);
+  }
+
+  std::cout << "DEBUG: primary() - unexpected token: " << peek().lexeme << " (type: " << static_cast<int>(peek().type) << ")" << std::endl;
   throw std::runtime_error("Expect expression.");
 }
 
@@ -419,18 +463,49 @@ void Parser::consume(TokenType type, const std::string &message) {
 
 // Parse type annotations including collection types
 Token Parser::parseType() {
+  if (match({TokenType::LParen})) {
+    // Tuple type: (Type1, Type2, ...)
+    std::string tupleType = "(";
+    
+    if (!check(TokenType::RParen)) {
+      do {
+        Token elementType = parseType();
+        tupleType += elementType.lexeme;
+        if (match({TokenType::Comma})) {
+          tupleType += ", ";
+        }
+      } while (previous().type == TokenType::Comma);
+    }
+    
+    consume(TokenType::RParen, "Expect ')' after tuple type.");
+    tupleType += ")";
+    
+    Token tupleToken = Token(TokenType::Identifier, tupleType, peek().line);
+    
+    // Check for optional type suffix (?)
+    if (match({TokenType::Unknown}) && previous().lexeme == "?") {
+      return Token(TokenType::Identifier, tupleToken.lexeme + "?", tupleToken.line);
+    }
+    
+    return tupleToken;
+  }
+  
   if (match({TokenType::LSquare})) {
     // Could be array type [ElementType] or dictionary type [KeyType: ValueType]
     Token firstType(TokenType::Identifier, "", 0);
     if (check(TokenType::LSquare)) {
       // Nested array type
       firstType = parseType();
+    } else if (check(TokenType::LParen)) {
+      // Tuple type as array element: [(Type1, Type2)]
+      firstType = parseType();
     } else {
       // Accept basic types or identifiers
        if (match({TokenType::String, TokenType::Int, TokenType::Bool, TokenType::Double, TokenType::Identifier})) {
          firstType = previous();
        } else {
-         throw std::runtime_error("Expect type name.");
+         std::cout << "DEBUG: parseType failed, current token: " << peek().lexeme << " (type: " << static_cast<int>(peek().type) << ")" << std::endl;
+    throw std::runtime_error("Expect type name.");
        }
     }
     
@@ -480,6 +555,33 @@ Token Parser::parseType() {
    if (match({TokenType::String, TokenType::Int, TokenType::Bool, TokenType::Double, TokenType::Identifier})) {
      Token baseType = previous();
      
+     // Check for generic type syntax: Type<T, U>
+     if (match({TokenType::LAngle})) {
+       std::string genericType = baseType.lexeme + "<";
+       
+       if (!check(TokenType::RAngle)) {
+         do {
+           Token typeArg = parseType();
+           genericType += typeArg.lexeme;
+           if (match({TokenType::Comma})) {
+             genericType += ", ";
+           }
+         } while (previous().type == TokenType::Comma);
+       }
+       
+       consume(TokenType::RAngle, "Expect '>' after generic type arguments.");
+       genericType += ">";
+       
+       Token genericToken = Token(TokenType::Identifier, genericType, baseType.line);
+       
+       // Check for optional type suffix (?)
+       if (match({TokenType::Unknown}) && previous().lexeme == "?") {
+         return Token(TokenType::Identifier, genericToken.lexeme + "?", genericToken.line);
+       }
+       
+       return genericToken;
+     }
+     
      // Check for optional type suffix (?)
      if (match({TokenType::Unknown}) && previous().lexeme == "?") {
        // Create a synthetic token for optional type
@@ -489,6 +591,7 @@ Token Parser::parseType() {
      return baseType;
    }
    
+   std::cout << "DEBUG: parseType failed at end, current token: " << peek().lexeme << " (type: " << static_cast<int>(peek().type) << ")" << std::endl;
    throw std::runtime_error("Expect type name.");
 }
 
@@ -623,57 +726,114 @@ std::unique_ptr<Stmt> Parser::whileStatement() {
   return std::make_unique<WhileStmt>(std::move(condition), std::move(body));
 }
 
-// Parse for statement: for initializer; condition; increment { body }
+// Parse for statement: for variable in collection { body } or for (var1, var2) in collection { body }
 std::unique_ptr<Stmt> Parser::forStatement() {
-  consume(TokenType::LParen, "Expect '(' after 'for'.");
+  // Check if this is a for-in loop or C-style for loop
+  // Look ahead to determine if this is a C-style for loop (has semicolons) or for-in loop
+  bool isCStyleFor = false;
+  if (check(TokenType::LParen)) {
+    // Look ahead to see if we have semicolons (C-style) or 'in' keyword (for-in)
+    int savedCurrent = current;
+    advance(); // consume '('
+    
+    // Skip tokens until we find either ';' (C-style) or 'in' (for-in) or ')'
+    int parenDepth = 1;
+    while (parenDepth > 0 && !isAtEnd()) {
+      if (peek().type == TokenType::LParen) parenDepth++;
+      else if (peek().type == TokenType::RParen) parenDepth--;
+      else if (peek().type == TokenType::Semicolon && parenDepth == 1) {
+        isCStyleFor = true;
+        break;
+      }
+      advance();
+    }
+    
+    // Restore position
+    current = savedCurrent;
+  }
   
-  // Initializer
-  std::unique_ptr<Stmt> initializer = nullptr;
-  if (match({TokenType::Semicolon})) {
-    initializer = nullptr;
-  } else if (match({TokenType::Var, TokenType::Let})) {
-    // Variable declaration
-    bool isConst = previous().type == TokenType::Let;
-    consume(TokenType::Identifier, "Expect variable name.");
-    Token name = previous();
+  if (check(TokenType::LParen) && isCStyleFor) {
+    // C-style for loop: for (initializer; condition; increment) { body }
+    consume(TokenType::LParen, "Expect '(' after 'for'.");
     
-    Token type = Token(TokenType::Nil, "", 0);
-    std::unique_ptr<Expr> init = nullptr;
-    
-    if (match({TokenType::Colon})) {
-      type = parseType();
+    // Initializer
+    std::unique_ptr<Stmt> initializer = nullptr;
+    if (match({TokenType::Semicolon})) {
+      initializer = nullptr;
+    } else if (match({TokenType::Var, TokenType::Let})) {
+      // Variable declaration
+      bool isConst = previous().type == TokenType::Let;
+      consume(TokenType::Identifier, "Expect variable name.");
+      Token name = previous();
+      
+      Token type = Token(TokenType::Nil, "", 0);
+      std::unique_ptr<Expr> init = nullptr;
+      
+      if (match({TokenType::Colon})) {
+        type = parseType();
+      }
+      
+      if (match({TokenType::Equal})) {
+        init = expression();
+      }
+      
+      initializer = std::make_unique<VarStmt>(name, std::move(init), isConst, type);
+      consume(TokenType::Semicolon, "Expect ';' after for loop initializer.");
+    } else {
+      initializer = expressionStatement();
     }
     
-    if (match({TokenType::Equal})) {
-      init = expression();
+    // Condition
+    std::unique_ptr<Expr> condition = nullptr;
+    if (!check(TokenType::Semicolon)) {
+      condition = expression();
     }
+    consume(TokenType::Semicolon, "Expect ';' after for loop condition.");
     
-    initializer = std::make_unique<VarStmt>(name, std::move(init), isConst, type);
-    consume(TokenType::Semicolon, "Expect ';' after for loop initializer.");
+    // Increment
+    std::unique_ptr<Expr> increment = nullptr;
+    if (!check(TokenType::RParen)) {
+      increment = expression();
+    }
+    consume(TokenType::RParen, "Expect ')' after for clauses.");
+    
+    // Body
+    consume(TokenType::LBrace, "Expect '{' after for clauses.");
+    auto body = blockStatement();
+    
+    return std::make_unique<ForStmt>(std::move(initializer), std::move(condition), 
+                                     std::move(increment), std::move(body));
   } else {
-    initializer = expressionStatement();
+    // For-in loop: for variable in collection { body } or for (var1, var2) in collection { body }
+    std::vector<Token> variables;
+    
+    // Check for tuple destructuring: (var1, var2)
+    if (match({TokenType::LParen})) {
+      do {
+        consume(TokenType::Identifier, "Expect variable name in tuple.");
+        variables.push_back(previous());
+      } while (match({TokenType::Comma}));
+      consume(TokenType::RParen, "Expect ')' after tuple variables.");
+    } else {
+      // Single variable
+      consume(TokenType::Identifier, "Expect variable name.");
+      variables.push_back(previous());
+    }
+    
+    consume(TokenType::In, "Expect 'in' after for loop variable(s).");
+    auto collection = expression();
+    
+    // Parse body - can be a block statement or a single statement
+    std::unique_ptr<Stmt> body;
+    if (match({TokenType::LBrace})) {
+      body = blockStatement();
+    } else {
+      // Single statement
+      body = statement();
+    }
+    
+    return std::make_unique<ForInStmt>(std::move(variables), std::move(collection), std::move(body));
   }
-  
-  // Condition
-  std::unique_ptr<Expr> condition = nullptr;
-  if (!check(TokenType::Semicolon)) {
-    condition = expression();
-  }
-  consume(TokenType::Semicolon, "Expect ';' after for loop condition.");
-  
-  // Increment
-  std::unique_ptr<Expr> increment = nullptr;
-  if (!check(TokenType::RParen)) {
-    increment = expression();
-  }
-  consume(TokenType::RParen, "Expect ')' after for clauses.");
-  
-  // Body
-  consume(TokenType::LBrace, "Expect '{' after for clauses.");
-  auto body = blockStatement();
-  
-  return std::make_unique<ForStmt>(std::move(initializer), std::move(condition), 
-                                   std::move(increment), std::move(body));
 }
 
 // Parse function declaration: func name(parameters) -> ReturnType { body }
@@ -681,16 +841,41 @@ std::unique_ptr<Stmt> Parser::functionDeclaration() {
   consume(TokenType::Identifier, "Expect function name.");
   Token name = previous();
   
+  // Parse optional generic parameter clause
+  GenericParameterClause genericParams = parseGenericParameterClause();
+  
   consume(TokenType::LParen, "Expect '(' after function name.");
   
   std::vector<Parameter> parameters;
   if (!check(TokenType::RParen)) {
     do {
-      consume(TokenType::Identifier, "Expect parameter name.");
-      Token paramName = previous();
+      // Parse parameter name (can be identifier or keyword like 'in')
+      Token paramName = Token(TokenType::Identifier, "", peek().line);
+      if (check(TokenType::Identifier) || check(TokenType::In)) {
+        advance(); // consume the token
+        paramName = previous();
+        
+        // Check for external parameter name syntax: externalName internalName: Type
+        if (check(TokenType::Identifier)) {
+          // This is external parameter name, consume the internal parameter name
+          Token externalName = paramName;
+          consume(TokenType::Identifier, "Expect internal parameter name.");
+          paramName = previous(); // Use internal name as the actual parameter name
+        }
+      } else {
+        throw std::runtime_error("Expect parameter name.");
+      }
+      
       consume(TokenType::Colon, "Expect ':' after parameter name.");
+      
+      // Check for inout keyword before type
+      bool isInout = false;
+      if (match({TokenType::Inout})) {
+        isInout = true;
+      }
+      
       Token paramType = parseType();
-      parameters.emplace_back(paramName, paramType);
+      parameters.emplace_back(paramName, paramType, isInout);
     } while (match({TokenType::Comma}));
   }
   
@@ -701,10 +886,14 @@ std::unique_ptr<Stmt> Parser::functionDeclaration() {
     returnType = parseType();
   }
   
+  // Parse optional where clause
+  WhereClause whereClause = parseWhereClause();
+  
   consume(TokenType::LBrace, "Expect '{' before function body.");
   auto body = blockStatement();
   
-  return std::make_unique<FunctionStmt>(name, std::move(parameters), returnType, std::move(body));
+  return std::make_unique<FunctionStmt>(name, std::move(parameters), returnType, std::move(body), 
+                                        AccessLevel::INTERNAL, std::move(genericParams), std::move(whereClause));
 }
 
 // Parse return statement: return expression?
@@ -900,11 +1089,17 @@ std::unique_ptr<Expr> Parser::closure() {
   if (match({TokenType::LParen})) {
     if (!check(TokenType::RParen)) {
       do {
-        consume(TokenType::Identifier, "Expect parameter name.");
-        Token paramName = previous();
-        consume(TokenType::Colon, "Expect ':' after parameter name.");
-        Token paramType = parseType();
-        parameters.emplace_back(paramName, paramType);
+        // Check for inout keyword
+      bool isInout = false;
+      if (match({TokenType::Inout})) {
+        isInout = true;
+      }
+      
+      consume(TokenType::Identifier, "Expect parameter name.");
+      Token paramName = previous();
+      consume(TokenType::Colon, "Expect ':' after parameter name.");
+      Token paramType = parseType();
+      parameters.emplace_back(paramName, paramType, isInout);
       } while (match({TokenType::Comma}));
     }
     consume(TokenType::RParen, "Expect ')' after parameters.");
@@ -991,12 +1186,15 @@ std::unique_ptr<Stmt> Parser::enumDeclaration() {
   return std::make_unique<EnumStmt>(name, rawType, std::move(cases), std::move(subscripts));
 }
 
-// Parse struct declaration: struct Name { var member1: Type, let member2: Type = defaultValue }
+// Parse struct declaration: struct Name<T> { var member1: Type, let member2: Type = defaultValue }
 std::unique_ptr<Stmt> Parser::structDeclaration() {
   consume(TokenType::Identifier, "Expect struct name.");
   Token name = previous();
   
   std::cout << "Parsing struct: " << name.lexeme << std::endl;
+  
+  // Parse optional generic parameter clause
+  GenericParameterClause genericParams = parseGenericParameterClause();
   
   // Parse protocol conformance
   std::vector<Token> conformedProtocols;
@@ -1006,6 +1204,9 @@ std::unique_ptr<Stmt> Parser::structDeclaration() {
       conformedProtocols.push_back(previous());
     } while (match({TokenType::Comma}));
   }
+  
+  // Parse optional where clause
+  WhereClause whereClause = parseWhereClause();
   
   consume(TokenType::LBrace, "Expect '{' after struct name.");
   
@@ -1026,11 +1227,20 @@ std::unique_ptr<Stmt> Parser::structDeclaration() {
       memberSetterAccessLevel = accessPair.second;
     }
     
+    // Check for mutating keyword before func
+    bool isMutating = false;
+    if (match({TokenType::Mutating})) {
+      isMutating = true;
+    }
+    
     if (match({TokenType::Func})) {
       // Parse method declaration
       auto method = std::unique_ptr<FunctionStmt>(static_cast<FunctionStmt*>(functionDeclaration().release()));
       method->accessLevel = memberAccessLevel;
+      method->isMutating = isMutating;
       methods.push_back(std::move(method));
+    } else if (isMutating) {
+      throw std::runtime_error("Expect 'func' after 'mutating'.");
     } else if (match({TokenType::Init})) {
       // Parse initializer declaration
       auto init = std::unique_ptr<InitStmt>(static_cast<InitStmt*>(initDeclaration().release()));
@@ -1119,13 +1329,18 @@ std::unique_ptr<Stmt> Parser::structDeclaration() {
   
   consume(TokenType::RBrace, "Expect '}' after struct body.");
   return std::make_unique<StructStmt>(name, std::move(members), std::move(methods), 
-                                      std::move(initializers), std::move(deinitializer), std::move(subscripts), std::move(conformedProtocols));
+                                      std::move(initializers), std::move(deinitializer), std::move(subscripts), 
+                                      std::move(conformedProtocols), AccessLevel::INTERNAL, 
+                                      std::move(genericParams), std::move(whereClause));
 }
 
-// Parse class declaration: class Name: Superclass, Protocol1, Protocol2 { var member1: Type, func method() {} }
+// Parse class declaration: class Name<T>: Superclass, Protocol1, Protocol2 { var member1: Type, func method() {} }
 std::unique_ptr<Stmt> Parser::classDeclaration() {
   consume(TokenType::Identifier, "Expect class name.");
   Token name = previous();
+  
+  // Parse optional generic parameter clause
+  GenericParameterClause genericParams = parseGenericParameterClause();
   
   Token superclass = Token(TokenType::Nil, "", name.line);
   std::vector<Token> conformedProtocols;
@@ -1148,6 +1363,9 @@ std::unique_ptr<Stmt> Parser::classDeclaration() {
       superclass = firstInheritance;
     }
   }
+  
+  // Parse optional where clause
+  WhereClause whereClause = parseWhereClause();
   
   consume(TokenType::LBrace, "Expect '{' after class name.");
   
@@ -1215,7 +1433,9 @@ std::unique_ptr<Stmt> Parser::classDeclaration() {
   
   consume(TokenType::RBrace, "Expect '}' after class body.");
   return std::make_unique<ClassStmt>(name, superclass, std::move(members), std::move(methods),
-                                     std::move(initializers), std::move(deinitializer), std::move(subscripts), std::move(conformedProtocols));
+                                     std::move(initializers), std::move(deinitializer), std::move(subscripts), 
+                                     std::move(conformedProtocols), AccessLevel::INTERNAL, 
+                                     std::move(genericParams), std::move(whereClause));
 }
 
 // Parse member access: object.member
@@ -1262,11 +1482,17 @@ std::unique_ptr<Stmt> Parser::initDeclaration() {
   std::vector<Parameter> parameters;
   if (!check(TokenType::RParen)) {
     do {
+      // Check for inout keyword
+      bool isInout = false;
+      if (match({TokenType::Inout})) {
+        isInout = true;
+      }
+      
       consume(TokenType::Identifier, "Expect parameter name.");
       Token paramName = previous();
       consume(TokenType::Colon, "Expect ':' after parameter name.");
       Token paramType = parseType();
-      parameters.emplace_back(paramName, paramType);
+      parameters.emplace_back(paramName, paramType, isInout);
     } while (match({TokenType::Comma}));
   }
   
@@ -1298,11 +1524,17 @@ std::unique_ptr<Stmt> Parser::subscriptDeclaration() {
   std::vector<Parameter> parameters;
   if (!check(TokenType::RParen)) {
     do {
+      // Check for inout keyword
+      bool isInout = false;
+      if (match({TokenType::Inout})) {
+        isInout = true;
+      }
+      
       consume(TokenType::Identifier, "Expect parameter name.");
       Token paramName = previous();
       consume(TokenType::Colon, "Expect ':' after parameter name.");
       Token paramType = parseType();
-      parameters.emplace_back(paramName, paramType);
+      parameters.emplace_back(paramName, paramType, isInout);
     } while (match({TokenType::Comma}));
   }
   
@@ -1432,11 +1664,17 @@ std::unique_ptr<Stmt> Parser::protocolDeclaration() {
       std::vector<Parameter> parameters;
       if (!check(TokenType::RParen)) {
         do {
+          // Check for inout keyword
+          bool isInout = false;
+          if (match({TokenType::Inout})) {
+            isInout = true;
+          }
+          
           consume(TokenType::Identifier, "Expect parameter name.");
           Token paramName = previous();
           consume(TokenType::Colon, "Expect ':' after parameter name.");
           Token paramType = parseType();
-          parameters.emplace_back(paramName, paramType);
+          parameters.emplace_back(paramName, paramType, isInout);
         } while (match({TokenType::Comma}));
       }
       
@@ -1498,11 +1736,17 @@ std::unique_ptr<Stmt> Parser::protocolDeclaration() {
       std::vector<Parameter> parameters;
       if (!check(TokenType::RParen)) {
         do {
+          // Check for inout keyword
+          bool isInout = false;
+          if (match({TokenType::Inout})) {
+            isInout = true;
+          }
+          
           consume(TokenType::Identifier, "Expect parameter name.");
           Token paramName = previous();
           consume(TokenType::Colon, "Expect ':' after parameter name.");
           Token paramType = parseType();
-          parameters.emplace_back(paramName, paramType);
+          parameters.emplace_back(paramName, paramType, isInout);
         } while (match({TokenType::Comma}));
       }
       
@@ -1521,11 +1765,17 @@ std::unique_ptr<Stmt> Parser::protocolDeclaration() {
       std::vector<Parameter> parameters;
       if (!check(TokenType::RParen)) {
         do {
+          // Check for inout keyword
+          bool isInout = false;
+          if (match({TokenType::Inout})) {
+            isInout = true;
+          }
+          
           consume(TokenType::Identifier, "Expect parameter name.");
           Token paramName = previous();
           consume(TokenType::Colon, "Expect ':' after parameter name.");
           Token paramType = parseType();
-          parameters.emplace_back(paramName, paramType);
+          parameters.emplace_back(paramName, paramType, isInout);
         } while (match({TokenType::Comma}));
       }
       
@@ -1563,6 +1813,132 @@ std::unique_ptr<Stmt> Parser::protocolDeclaration() {
   
   consume(TokenType::RBrace, "Expect '}' after protocol body.");
   return std::make_unique<ProtocolStmt>(name, std::move(inheritedProtocols), std::move(requirements));
+}
+
+// Parse generic parameter clause: <T, U: Equatable, V: Collection>
+GenericParameterClause Parser::parseGenericParameterClause() {
+  std::vector<TypeParameter> parameters;
+  
+  if (!check(TokenType::LAngle)) {
+    return GenericParameterClause(std::move(parameters));
+  }
+  
+  consume(TokenType::LAngle, "Expect '<' to start generic parameter clause.");
+  
+  if (!check(TokenType::RAngle)) {
+    do {
+      auto typeParam = parseTypeParameter();
+      parameters.push_back(std::move(typeParam));
+    } while (match({TokenType::Comma}));
+  }
+  
+  consume(TokenType::RAngle, "Expect '>' to end generic parameter clause.");
+  return GenericParameterClause(std::move(parameters));
+}
+
+// Parse type parameter: T or T: Equatable
+TypeParameter Parser::parseTypeParameter() {
+  consume(TokenType::Identifier, "Expect type parameter name.");
+  Token name = previous();
+  
+  std::vector<TypeConstraint> constraints;
+  
+  if (match({TokenType::Colon})) {
+    do {
+      // Parse constraint type directly since we already have the type name
+      consume(TokenType::Identifier, "Expect constraint type name.");
+      Token constraintType = previous();
+      TypeConstraint constraint(name, ConstraintType::PROTOCOL_CONSTRAINT, constraintType);
+      constraints.push_back(std::move(constraint));
+    } while (match({TokenType::Amp})); // Multiple constraints separated by &
+  }
+  
+  return TypeParameter(name, std::move(constraints));
+}
+
+// Parse where clause: where T: Equatable, U.Element == String
+WhereClause Parser::parseWhereClause() {
+  std::vector<TypeConstraint> constraints;
+  
+  if (!match({TokenType::Where})) {
+    return WhereClause(std::move(constraints));
+  }
+  
+  do {
+    auto constraint = parseTypeConstraint();
+    constraints.push_back(std::move(constraint));
+  } while (match({TokenType::Comma}));
+  
+  return WhereClause(std::move(constraints));
+}
+
+// Parse type constraint: T: Equatable or T.Element == String
+// Note: This method is called in two contexts:
+// 1. From parseTypeParameter after consuming T and colon: current token is constraint type (Equatable)
+// 2. From parseWhereClause: current token is type name (T)
+TypeConstraint Parser::parseTypeConstraint() {
+  consume(TokenType::Identifier, "Expect type name in constraint.");
+  Token typeName = previous();
+  
+  if (match({TokenType::Colon})) {
+    // Class or protocol constraint: T: SomeClass or T: SomeProtocol
+    consume(TokenType::Identifier, "Expect constraint type name.");
+    Token constraintType = previous();
+    return TypeConstraint(typeName, ConstraintType::PROTOCOL_CONSTRAINT, constraintType);
+  } else if (match({TokenType::Dot})) {
+    // Associated type constraint: T.Element == String
+    consume(TokenType::Identifier, "Expect associated type name.");
+    Token associatedType = previous();
+    consume(TokenType::EqualEqual, "Expect '==' in same-type constraint.");
+    consume(TokenType::Identifier, "Expect type name in same-type constraint.");
+    Token sameType = previous();
+    
+    // Create a compound type name for associated type
+    Token compoundType = Token(TokenType::Identifier, typeName.lexeme + "." + associatedType.lexeme, typeName.line);
+    return TypeConstraint(compoundType, ConstraintType::SAME_TYPE_CONSTRAINT, sameType);
+  } else {
+    throw std::runtime_error("Expect ':' or '.' in type constraint.");
+  }
+}
+
+// Parse generic type: Array<String> or Dictionary<String, Int>
+GenericType Parser::parseGenericType() {
+  consume(TokenType::Identifier, "Expect generic type name.");
+  Token typeName = previous();
+  
+  std::vector<Token> typeArguments;
+  
+  if (match({TokenType::LAngle})) {
+    if (!check(TokenType::RAngle)) {
+      do {
+        Token typeArg = parseType();
+        typeArguments.push_back(typeArg);
+      } while (match({TokenType::Comma}));
+    }
+    consume(TokenType::RAngle, "Expect '>' after generic type arguments.");
+  }
+  
+  return GenericType(typeName, std::move(typeArguments));
+}
+
+// Parse generic type instantiation: MyStruct<Int, String>
+GenericTypeInstantiation Parser::parseGenericTypeInstantiation() {
+  consume(TokenType::Identifier, "Expect generic type name.");
+  Token typeName = previous();
+  
+  std::vector<Token> typeArguments;
+  
+  consume(TokenType::LAngle, "Expect '<' after generic type name.");
+  
+  if (!check(TokenType::RAngle)) {
+    do {
+      Token typeArg = parseType();
+      typeArguments.push_back(typeArg);
+    } while (match({TokenType::Comma}));
+  }
+  
+  consume(TokenType::RAngle, "Expect '>' after generic type arguments.");
+  return GenericTypeInstantiation(typeName, std::move(typeArguments));
 }
 
 } // namespace miniswift

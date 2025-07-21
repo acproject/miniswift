@@ -471,7 +471,7 @@ void Interpreter::visit(const Binary& expr) {
             }
             return;
         }
-        case TokenType::Greater: {
+        case TokenType::RAngle: {
             double leftVal = (left.type == ValueType::Int) ? std::get<int>(left.value) : std::get<double>(left.value);
             double rightVal = (right.type == ValueType::Int) ? std::get<int>(right.value) : std::get<double>(right.value);
             result = Value(leftVal > rightVal);
@@ -483,7 +483,7 @@ void Interpreter::visit(const Binary& expr) {
             result = Value(leftVal >= rightVal);
             return;
         }
-        case TokenType::Less: {
+        case TokenType::LAngle: {
             double leftVal = (left.type == ValueType::Int) ? std::get<int>(left.value) : std::get<double>(left.value);
             double rightVal = (right.type == ValueType::Int) ? std::get<int>(right.value) : std::get<double>(right.value);
             result = Value(leftVal < rightVal);
@@ -961,6 +961,62 @@ void Interpreter::visit(const ForStmt& stmt) {
             if (stmt.increment) {
                 evaluate(*stmt.increment);
             }
+        }
+    } catch (...) {
+        // Restore previous environment even if exception occurs
+        environment = previous;
+        throw;
+    }
+    
+    // Restore previous environment
+    environment = previous;
+}
+
+// Execute for-in statement: for variable in collection { body } or for (var1, var2) in collection { body }
+void Interpreter::visit(const ForInStmt& stmt) {
+    // Create new environment for for-in loop scope
+    auto previous = environment;
+    environment = std::make_shared<Environment>(environment);
+    
+    try {
+        // Evaluate the collection
+        Value collection = evaluate(*stmt.collection);
+        
+        if (collection.type == ValueType::Array) {
+            const auto& arr = *collection.asArray();
+            
+            if (stmt.variables.size() == 1) {
+                // Simple iteration: for item in array
+                for (const auto& item : arr) {
+                    environment->define(stmt.variables[0].lexeme, item, false, "Any");
+                    stmt.body->accept(*this);
+                }
+            } else if (stmt.variables.size() == 2) {
+                // Tuple destructuring: for (index, value) in array.enumerated()
+                // For now, assume this is enumerated() call and provide index and value
+                for (size_t i = 0; i < arr.size(); ++i) {
+                    environment->define(stmt.variables[0].lexeme, Value(static_cast<int>(i)), false, "Int");
+                    environment->define(stmt.variables[1].lexeme, arr[i], false, "Any");
+                    stmt.body->accept(*this);
+                }
+            } else {
+                throw std::runtime_error("Invalid number of variables for array iteration");
+            }
+        } else if (collection.type == ValueType::Dictionary) {
+            const auto& dict = *collection.asDictionary();
+            
+            if (stmt.variables.size() == 2) {
+                // Dictionary iteration: for (key, value) in dictionary
+                for (const auto& pair : dict) {
+                    environment->define(stmt.variables[0].lexeme, Value(pair.first), false, "String");
+                    environment->define(stmt.variables[1].lexeme, pair.second, false, "Any");
+                    stmt.body->accept(*this);
+                }
+            } else {
+                throw std::runtime_error("Dictionary iteration requires exactly 2 variables");
+            }
+        } else {
+            throw std::runtime_error("Can only iterate over arrays and dictionaries");
         }
     } catch (...) {
         // Restore previous environment even if exception occurs
@@ -1740,6 +1796,20 @@ void Interpreter::visit(const ProtocolStmt& stmt) {
     
     std::cout << "Protocol '" << stmt.name.lexeme << "' registered with " 
               << stmt.requirements.size() << " requirements" << std::endl;
+}
+
+// Execute range expression: start..<end or start...end
+void Interpreter::visit(const Range& expr) {
+    Value startValue = evaluate(*expr.start);
+    Value endValue = evaluate(*expr.end);
+    
+    // For now, create a simple range representation as a map
+    std::unordered_map<std::string, Value> rangeMap;
+    rangeMap["start"] = startValue;
+    rangeMap["end"] = endValue;
+    rangeMap["type"] = Value(expr.rangeType == Range::RangeType::HalfOpen ? "half_open" : "closed");
+    
+    result = Value(rangeMap);
 }
 
 } // namespace miniswift

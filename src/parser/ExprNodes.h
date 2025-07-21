@@ -24,6 +24,7 @@ struct Super;
 struct StringInterpolation;
 struct SubscriptAccess;
 struct OptionalChaining;
+struct Range;
 
 // Visitor interface for expressions
 class ExprVisitor {
@@ -47,6 +48,7 @@ public:
   virtual void visit(const Super &expr) = 0;
   virtual void visit(const StringInterpolation &expr) = 0;
   virtual void visit(const OptionalChaining &expr) = 0;
+  virtual void visit(const Range &expr) = 0;
 };
 
 // Base class for all expression nodes
@@ -301,6 +303,27 @@ struct OptionalChaining : Expr {
   const std::unique_ptr<Expr> object;     // The optional object being chained
   const ChainType chainType;              // Type of chaining (property, method, subscript)
   const std::unique_ptr<Expr> accessor;   // The property/method/subscript being accessed
+};
+
+// Range expression: start..<end or start...end
+struct Range : Expr {
+  enum class RangeType {
+    HalfOpen,  // start..<end
+    Closed     // start...end
+  };
+  
+  Range(std::unique_ptr<Expr> start, std::unique_ptr<Expr> end, RangeType rangeType)
+      : start(std::move(start)), end(std::move(end)), rangeType(rangeType) {}
+
+  void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
+
+  std::unique_ptr<Expr> clone() const override {
+    return std::make_unique<Range>(start->clone(), end->clone(), rangeType);
+  }
+
+  const std::unique_ptr<Expr> start;
+  const std::unique_ptr<Expr> end;
+  const RangeType rangeType;
 };
 
 }; // namespace miniswift

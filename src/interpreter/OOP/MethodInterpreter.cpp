@@ -272,4 +272,10 @@ void MethodInterpreter::visit(const ClassStmt& stmt) {
     registerClassMethods(stmt.name.lexeme, stmt.methods);
 }
 
+// 重写 Range 表达式的 visit 方法
+void MethodInterpreter::visit(const Range& expr) {
+    // 直接调用父类的实现
+    Interpreter::visit(expr);
+}
+
 } // namespace miniswift

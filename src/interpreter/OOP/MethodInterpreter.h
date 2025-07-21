@@ -32,6 +32,9 @@ public:
     // 重写 visit 方法以注册类方法
     void visit(const ClassStmt& stmt) override;
     
+    // 重写 Range 表达式的 visit 方法
+    void visit(const Range& expr) override;
+    
     // 调用结构体方法
     Value callStructMethod(const std::string& structName, const std::string& methodName, 
                           const std::vector<Value>& arguments, const Value& selfValue);

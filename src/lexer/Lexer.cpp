@@ -45,6 +45,9 @@ static void initializeKeywords() {
   keywords["final"] = TokenType::Final;
   keywords["static"] = TokenType::Static;
   keywords["subscript"] = TokenType::Subscript;
+  keywords["where"] = TokenType::Where;
+  keywords["inout"] = TokenType::Inout;
+  keywords["mutating"] = TokenType::Mutating;
   
   // Access Control Keywords
   keywords["open"] = TokenType::Open;
@@ -176,11 +179,11 @@ Token Lexer::scanToken() {
   case '<':
     if (match('='))
       return {TokenType::LessEqual, "<=", line};
-    return {TokenType::Less, "<", line};
+    return {TokenType::LAngle, "<", line};
   case '>':
     if (match('='))
       return {TokenType::GreaterEqual, ">=", line};
-    return {TokenType::Greater, ">", line};
+    return {TokenType::RAngle, ">", line};
   case '/':
     if (match('/')) {
       while (peek() != '\n' && current < source.length())

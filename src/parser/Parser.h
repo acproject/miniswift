@@ -38,6 +38,7 @@ private:
     std::unique_ptr<Expr> logicalAnd();
     std::unique_ptr<Expr> equality();
     std::unique_ptr<Expr> comparison();
+    std::unique_ptr<Expr> range();
     std::unique_ptr<Expr> term();
     std::unique_ptr<Expr> factor();
     std::unique_ptr<Expr> unary();
@@ -51,6 +52,14 @@ private:
     std::unique_ptr<Expr> memberAccess(std::unique_ptr<Expr> object);
     std::unique_ptr<Expr> structInit();
     std::unique_ptr<Expr> closure();
+
+    // Generic parsing methods
+    GenericParameterClause parseGenericParameterClause();
+    TypeParameter parseTypeParameter();
+    WhereClause parseWhereClause();
+    TypeConstraint parseTypeConstraint();
+    GenericType parseGenericType();
+    GenericTypeInstantiation parseGenericTypeInstantiation();
 
     // Access control parsing methods
     AccessLevel parseAccessLevel();

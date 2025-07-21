@@ -276,7 +276,7 @@ std::unique_ptr<Expr> Parser::factor() {
 }
 
 std::unique_ptr<Expr> Parser::unary() {
-  if (match({TokenType::Bang, TokenType::Minus})) {
+  if (match({TokenType::Bang, TokenType::Minus, TokenType::Amp})) {
     Token op = previous();
     auto right = unary();
     return std::make_unique<Unary>(op, std::move(right));
@@ -452,7 +452,13 @@ std::unique_ptr<Expr> Parser::primary() {
   }
 
   std::cout << "DEBUG: primary() - unexpected token: " << peek().lexeme << " (type: " << static_cast<int>(peek().type) << ")" << std::endl;
-  throw std::runtime_error("Expect expression.");
+  
+  // Include line number in error message
+  std::string errorMsg = "Expect expression.";
+  if (!isAtEnd()) {
+    errorMsg += " (Line " + std::to_string(peek().line) + ")";
+  }
+  throw std::runtime_error(errorMsg);
 }
 
 bool Parser::match(const std::vector<TokenType> &types) {
@@ -482,7 +488,13 @@ void Parser::consume(TokenType type, const std::string &message) {
     advance();
     return;
   }
-  throw std::runtime_error(message);
+  
+  // Include line number in error message
+  std::string errorMsg = message;
+  if (!isAtEnd()) {
+    errorMsg += " (Line " + std::to_string(peek().line) + ")";
+  }
+  throw std::runtime_error(errorMsg);
 }
 
 // Parse type annotations including collection types
@@ -529,7 +541,13 @@ Token Parser::parseType() {
          firstType = previous();
        } else {
          std::cout << "DEBUG: parseType failed, current token: " << peek().lexeme << " (type: " << static_cast<int>(peek().type) << ")" << std::endl;
-    throw std::runtime_error("Expect type name.");
+         
+         // Include line number in error message
+         std::string errorMsg = "Expect type name.";
+         if (!isAtEnd()) {
+           errorMsg += " (Line " + std::to_string(peek().line) + ")";
+         }
+         throw std::runtime_error(errorMsg);
        }
     }
     
@@ -545,7 +563,12 @@ Token Parser::parseType() {
          if (match({TokenType::String, TokenType::Int, TokenType::Bool, TokenType::Double, TokenType::Identifier})) {
            valueType = previous();
          } else {
-           throw std::runtime_error("Expect value type name.");
+           // Include line number in error message
+           std::string errorMsg = "Expect value type name.";
+           if (!isAtEnd()) {
+             errorMsg += " (Line " + std::to_string(peek().line) + ")";
+           }
+           throw std::runtime_error(errorMsg);
          }
       }
       consume(TokenType::RSquare, "Expect ']' after dictionary type.");

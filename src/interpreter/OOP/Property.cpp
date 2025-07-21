@@ -16,6 +16,16 @@ Value PropertyValue::getValue(Interpreter &interpreter) {
   switch (definition_.propertyType) {
   case PropertyType::STORED:
     // 存储属性直接返回存储的值
+    if (!isInitialized_) {
+      // 如果有默认值，使用默认值初始化
+      if (definition_.defaultValue) {
+        storedValue_ = interpreter.evaluate(*definition_.defaultValue);
+        isInitialized_ = true;
+      } else {
+        // 没有默认值，返回 nil
+        return Value();
+      }
+    }
     return storedValue_;
 
   case PropertyType::COMPUTED:
@@ -215,7 +225,15 @@ void InstancePropertyContainer::setProperty(Interpreter &interpreter,
     throw RuntimeError("Undefined property '" + name + "'");
   }
 
-  it->second->setValue(interpreter, value);
+  Value finalValue = value;
+  
+  // Check if the property type is optional and wrap the value if needed
+  const auto& propDef = it->second->getDefinition();
+  if (propDef.type.lexeme.back() == '?' && value.type != ValueType::Optional) {
+    finalValue = OptionalManager::createOptional(value);
+  }
+
+  it->second->setValue(interpreter, finalValue);
 }
 
 bool InstancePropertyContainer::hasProperty(const std::string &name) const {

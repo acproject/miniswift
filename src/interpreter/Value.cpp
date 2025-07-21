@@ -137,4 +137,56 @@ bool ClassInstance::operator!=(const ClassInstance& other) const {
     return !(*this == other);
 }
 
+// OptionalValue comparison operator implementation
+bool OptionalValue::operator==(const OptionalValue& other) const {
+    return compareOptionalValues(*this, other);
+}
+
+// Helper function to compare OptionalValue objects
+bool compareOptionalValues(const OptionalValue& lhs, const OptionalValue& rhs) {
+    if (lhs.hasValue != rhs.hasValue) return false;
+    if (!lhs.hasValue) return true; // Both are nil
+    if (!lhs.wrappedValue || !rhs.wrappedValue) return false;
+    
+    // Compare the actual values
+    const Value& leftVal = *lhs.wrappedValue;
+    const Value& rightVal = *rhs.wrappedValue;
+    
+    if (leftVal.type != rightVal.type) return false;
+    
+    switch (leftVal.type) {
+        case ValueType::Nil:
+            return true;
+        case ValueType::Bool:
+            return std::get<bool>(leftVal.value) == std::get<bool>(rightVal.value);
+        case ValueType::Int:
+            return std::get<int>(leftVal.value) == std::get<int>(rightVal.value);
+        case ValueType::Double:
+            return std::get<double>(leftVal.value) == std::get<double>(rightVal.value);
+        case ValueType::String:
+            return std::get<std::string>(leftVal.value) == std::get<std::string>(rightVal.value);
+        case ValueType::Array:
+            return std::get<Array>(leftVal.value) == std::get<Array>(rightVal.value);
+        case ValueType::Dictionary:
+            return std::get<Dictionary>(leftVal.value) == std::get<Dictionary>(rightVal.value);
+        case ValueType::Function:
+            return std::get<std::shared_ptr<Function>>(leftVal.value) == std::get<std::shared_ptr<Function>>(rightVal.value);
+        case ValueType::Enum:
+            return std::get<EnumValue>(leftVal.value) == std::get<EnumValue>(rightVal.value);
+        case ValueType::Struct:
+            return std::get<StructValue>(leftVal.value) == std::get<StructValue>(rightVal.value);
+        case ValueType::Class:
+            return std::get<std::shared_ptr<ClassValue>>(leftVal.value) == std::get<std::shared_ptr<ClassValue>>(rightVal.value);
+        case ValueType::Constructor:
+            return std::get<std::shared_ptr<ConstructorValue>>(leftVal.value) == std::get<std::shared_ptr<ConstructorValue>>(rightVal.value);
+        case ValueType::Destructor:
+            return std::get<std::shared_ptr<DestructorValue>>(leftVal.value) == std::get<std::shared_ptr<DestructorValue>>(rightVal.value);
+        case ValueType::Optional:
+            // Recursive comparison for nested optionals
+            return compareOptionalValues(std::get<OptionalValue>(leftVal.value), std::get<OptionalValue>(rightVal.value));
+        default:
+            return false;
+    }
+}
+
 } // namespace miniswift

@@ -117,6 +117,17 @@ void Interpreter::visit(const PrintStmt& stmt) {
         case ValueType::Destructor:
             std::cout << "<destructor>" << std::endl;
             break;
+        case ValueType::Optional: {
+            const auto& optionalVal = val.asOptional();
+            if (optionalVal.hasValue && optionalVal.wrappedValue) {
+                std::cout << "Optional(";
+                printValue(*optionalVal.wrappedValue);
+                std::cout << ")" << std::endl;
+            } else {
+                std::cout << "nil" << std::endl;
+            }
+            break;
+        }
     }
 }
 
@@ -124,6 +135,11 @@ void Interpreter::visit(const VarStmt& stmt) {
     Value value; // Default-initialized (nil)
     if (stmt.initializer) {
         value = evaluate(*stmt.initializer);
+        
+        // Check if the variable type is optional and wrap the value if needed
+        if (stmt.type.lexeme.back() == '?' && value.type != ValueType::Optional) {
+            value = OptionalManager::createOptional(value);
+        }
     }
     environment->define(stmt.name.lexeme, value, stmt.isConst, stmt.type.lexeme);
 }
@@ -1357,18 +1373,18 @@ void Interpreter::visit(const StructInit& expr) {
     auto* structPropManager = getStructPropertyManager(expr.structName.lexeme);
     auto* classPropManager = getClassPropertyManager(expr.structName.lexeme);
     
-    // Debug: Check property manager status
-    std::cout << "StructInit for: " << expr.structName.lexeme << std::endl;
+
     
     if (classPropManager) {
         // Create class instance
-        std::cout << "Creating class instance, properties count: " << classPropManager->getAllProperties().size() << std::endl;
+
         
         auto propContainer = std::make_unique<InstancePropertyContainer>(*classPropManager, environment);
         
         // Initialize provided members
         for (const auto& member : expr.members) {
             Value memberValue = evaluate(*member.second);
+
             propContainer->setProperty(*this, member.first.lexeme, memberValue);
         }
         
@@ -1389,13 +1405,14 @@ void Interpreter::visit(const StructInit& expr) {
         result = Value(classInstance);
     } else if (structPropManager) {
         // Create struct with property support
-        std::cout << "Creating struct, properties count: " << structPropManager->getAllProperties().size() << std::endl;
+
         
         auto propContainer = std::make_shared<InstancePropertyContainer>(*structPropManager, environment);
         
         // Initialize provided members
         for (const auto& member : expr.members) {
             Value memberValue = evaluate(*member.second);
+
             propContainer->setProperty(*this, member.first.lexeme, memberValue);
         }
         
@@ -1416,7 +1433,7 @@ void Interpreter::visit(const StructInit& expr) {
         result = Value(structValue);
     } else {
         // Fallback: try to create class instance without property manager
-        std::cout << "No property manager found, creating basic class instance" << std::endl;
+
         auto classInstance = std::make_shared<ClassInstance>(expr.structName.lexeme);
         
         // Initialize members with provided values
@@ -1540,7 +1557,11 @@ void Interpreter::registerClassProperties(const std::string& className, const st
 
 
 Value Interpreter::getMemberValue(const Value& object, const std::string& memberName) {
-    std::cout << "Base Interpreter::getMemberValue called for member: " << memberName << std::endl;
+    // If the object is an optional, we cannot access its members directly
+    if (object.isOptional()) {
+        throw std::runtime_error("Cannot access member '" + memberName + "' on optional value. Use optional chaining (?.) instead.");
+    }
+    
     if (object.isStruct()) {
         const auto& structValue = object.asStruct();
         
@@ -1548,8 +1569,6 @@ Value Interpreter::getMemberValue(const Value& object, const std::string& member
         if (structValue.properties && structValue.properties->hasProperty(memberName)) {
             return structValue.properties->getProperty(*this, memberName);
         }
-        
-
         
         // Fallback to legacy member access
         auto it = structValue.members->find(memberName);
@@ -1565,8 +1584,6 @@ Value Interpreter::getMemberValue(const Value& object, const std::string& member
         if (classValue->properties && classValue->properties->hasProperty(memberName)) {
             return classValue->properties->getProperty(*this, memberName);
         }
-        
-
         
         // Fallback to legacy member access
         auto it = classValue->members->find(memberName);
@@ -1630,6 +1647,69 @@ void Interpreter::visit(const Super& expr) {
         result = superHandler->getSuperProperty(currentClass, expr.method.lexeme, environment);
     } catch (const std::runtime_error& e) {
         throw std::runtime_error("Failed to access super property '" + expr.method.lexeme + "': " + e.what());
+    }
+}
+
+// Execute optional chaining expression: object?.property, object?.method(), object?[index]
+void Interpreter::visit(const OptionalChaining& expr) {
+    Value object = evaluate(*expr.object);
+    
+    // If object is nil or an optional with no value, return nil
+    if (OptionalManager::isNil(object)) {
+        result = OptionalManager::createNil();
+        return;
+    }
+    
+    // Unwrap optional if needed
+    Value unwrappedObject = OptionalManager::safeUnwrap(object);
+    if (OptionalManager::isNil(unwrappedObject)) {
+        result = OptionalManager::createNil();
+        return;
+    }
+    
+    try {
+        Value chainResult;
+        
+        switch (expr.chainType) {
+            case OptionalChaining::ChainType::Property: {
+                if (auto varExpr = dynamic_cast<const VarExpr*>(expr.accessor.get())) {
+                    chainResult = OptionalManager::chainProperty(unwrappedObject, varExpr->name.lexeme, *this);
+                } else {
+                    throw std::runtime_error("Invalid property accessor in optional chaining");
+                }
+                break;
+            }
+            
+            case OptionalChaining::ChainType::Method: {
+                if (auto callExpr = dynamic_cast<const Call*>(expr.accessor.get())) {
+                    chainResult = OptionalManager::chainMethod(unwrappedObject, callExpr, *this);
+                } else {
+                    throw std::runtime_error("Invalid method accessor in optional chaining");
+                }
+                break;
+            }
+            
+            case OptionalChaining::ChainType::Subscript: {
+                if (auto indexExpr = dynamic_cast<const IndexAccess*>(expr.accessor.get())) {
+                    Value index = evaluate(*indexExpr->index);
+                    chainResult = OptionalManager::chainSubscript(unwrappedObject, index, *this);
+                } else {
+                    throw std::runtime_error("Invalid subscript accessor in optional chaining");
+                }
+                break;
+            }
+        }
+        
+        // If chainResult is nil, return it directly; otherwise wrap in optional
+        if (OptionalManager::isNil(chainResult)) {
+            result = chainResult;
+        } else {
+            result = OptionalManager::createOptional(chainResult);
+        }
+        
+    } catch (const std::runtime_error& e) {
+        // If any error occurs during chaining, return nil
+        result = OptionalManager::createNil();
     }
 }
 

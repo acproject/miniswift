@@ -44,6 +44,12 @@ static void initializeKeywords() {
   keywords["final"] = TokenType::Final;
   keywords["static"] = TokenType::Static;
   keywords["subscript"] = TokenType::Subscript;
+  
+  // Basic types
+  keywords["String"] = TokenType::String;
+  keywords["Int"] = TokenType::Int;
+  keywords["Bool"] = TokenType::Bool;
+  keywords["Double"] = TokenType::Double;
 }
 
 Lexer::Lexer(const std::string &source)
@@ -188,6 +194,8 @@ Token Lexer::scanToken() {
       return {TokenType::QuestionQuestion, "??", line};
     if (match('.'))
       return {TokenType::QuestionDot, "?.", line};
+    if (match('['))
+      return {TokenType::QuestionLSquare, "?[", line};
     return {TokenType::Unknown, "?", line};
   case '@':
     return {TokenType::At, "@", line};

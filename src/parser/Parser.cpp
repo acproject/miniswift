@@ -312,7 +312,7 @@ std::unique_ptr<Expr> Parser::primary() {
     return arrayLiteral();
   }
 
-  if (match({TokenType::Identifier})) {
+  if (match({TokenType::Identifier, TokenType::String, TokenType::Int, TokenType::Bool, TokenType::Double})) {
     Token identifier = previous();
     
     std::unique_ptr<Expr> expr = std::make_unique<VarExpr>(identifier);
@@ -399,8 +399,12 @@ Token Parser::parseType() {
       // Nested array type
       firstType = parseType();
     } else {
-      consume(TokenType::Identifier, "Expect type name.");
-      firstType = previous();
+      // Accept basic types or identifiers
+       if (match({TokenType::String, TokenType::Int, TokenType::Bool, TokenType::Double, TokenType::Identifier})) {
+         firstType = previous();
+       } else {
+         throw std::runtime_error("Expect type name.");
+       }
     }
     
     // Check if this is a dictionary type (has colon)
@@ -411,22 +415,54 @@ Token Parser::parseType() {
         // Nested type for value
         valueType = parseType();
       } else {
-        consume(TokenType::Identifier, "Expect value type name.");
-        valueType = previous();
+        // Accept basic types or identifiers
+         if (match({TokenType::String, TokenType::Int, TokenType::Bool, TokenType::Double, TokenType::Identifier})) {
+           valueType = previous();
+         } else {
+           throw std::runtime_error("Expect value type name.");
+         }
       }
       consume(TokenType::RSquare, "Expect ']' after dictionary type.");
       // Create a synthetic token for dictionary type
-      return Token(TokenType::Identifier, "[" + firstType.lexeme + ":" + valueType.lexeme + "]", firstType.line);
+      Token dictType = Token(TokenType::Identifier, "[" + firstType.lexeme + ":" + valueType.lexeme + "]", firstType.line);
+      
+      // Check for optional type suffix (?) after dictionary type
+      if (match({TokenType::Unknown}) && previous().lexeme == "?") {
+        // Create a synthetic token for optional dictionary type
+        return Token(TokenType::Identifier, dictType.lexeme + "?", dictType.line);
+      }
+      
+      return dictType;
     } else {
       // Array type: [ElementType]
       consume(TokenType::RSquare, "Expect ']' after array element type.");
       // Create a synthetic token for array type
-      return Token(TokenType::Identifier, "[" + firstType.lexeme + "]", firstType.line);
+      Token arrayType = Token(TokenType::Identifier, "[" + firstType.lexeme + "]", firstType.line);
+      
+      // Check for optional type suffix (?) after array type
+      if (match({TokenType::Unknown}) && previous().lexeme == "?") {
+        // Create a synthetic token for optional array type
+        return Token(TokenType::Identifier, arrayType.lexeme + "?", arrayType.line);
+      }
+      
+      return arrayType;
     }
   }
   
-  consume(TokenType::Identifier, "Expect type name.");
-  return previous();
+  // Accept basic types or identifiers
+   if (match({TokenType::String, TokenType::Int, TokenType::Bool, TokenType::Double, TokenType::Identifier})) {
+     Token baseType = previous();
+     
+     // Check for optional type suffix (?)
+     if (match({TokenType::Unknown}) && previous().lexeme == "?") {
+       // Create a synthetic token for optional type
+       return Token(TokenType::Identifier, baseType.lexeme + "?", baseType.line);
+     }
+     
+     return baseType;
+   }
+   
+   throw std::runtime_error("Expect type name.");
 }
 
 // Parse array literal: [1, 2, 3] or dictionary literal: ["key": value]
@@ -692,6 +728,50 @@ std::unique_ptr<Expr> Parser::call() {
       } else {
         expr = indexAccess(std::move(expr));
       }
+    } else if (match({TokenType::QuestionDot})) {
+      // Optional chaining: object?.property, object?.method(), object?[index]
+      if (check(TokenType::Identifier)) {
+        consume(TokenType::Identifier, "Expect property name after '?.'.");
+        Token propertyName = previous();
+        
+        // Check if this is a method call: object?.method()
+        if (match({TokenType::LParen})) {
+          // Parse method call arguments
+          std::vector<std::unique_ptr<Expr>> arguments;
+          if (!check(TokenType::RParen)) {
+            do {
+              arguments.push_back(expression());
+            } while (match({TokenType::Comma}));
+          }
+          consume(TokenType::RParen, "Expect ')' after method arguments.");
+          
+          // Create a Call expression as accessor
+          auto callExpr = std::make_unique<Call>(std::make_unique<VarExpr>(propertyName), std::move(arguments));
+          expr = std::make_unique<OptionalChaining>(std::move(expr), OptionalChaining::ChainType::Method, std::move(callExpr));
+        } else {
+          // Property access: object?.property
+          auto propertyExpr = std::make_unique<VarExpr>(propertyName);
+          expr = std::make_unique<OptionalChaining>(std::move(expr), OptionalChaining::ChainType::Property, std::move(propertyExpr));
+        }
+      } else if (match({TokenType::LSquare})) {
+        // Optional subscript: object?[index]
+        auto index = expression();
+        consume(TokenType::RSquare, "Expect ']' after optional subscript index.");
+        
+        // Create an IndexAccess expression as accessor
+        auto indexExpr = std::make_unique<IndexAccess>(std::make_unique<VarExpr>(Token(TokenType::Identifier, "__placeholder__", 0)), std::move(index));
+        expr = std::make_unique<OptionalChaining>(std::move(expr), OptionalChaining::ChainType::Subscript, std::move(indexExpr));
+      } else {
+        throw std::runtime_error("Expect property name or '[' after '?.'.");
+      }
+    } else if (match({TokenType::QuestionLSquare})) {
+      // Optional subscript: object?[index]
+      auto index = expression();
+      consume(TokenType::RSquare, "Expect ']' after optional subscript index.");
+      
+      // Create an IndexAccess expression as accessor
+      auto indexExpr = std::make_unique<IndexAccess>(std::make_unique<VarExpr>(Token(TokenType::Identifier, "__placeholder__", 0)), std::move(index));
+      expr = std::make_unique<OptionalChaining>(std::move(expr), OptionalChaining::ChainType::Subscript, std::move(indexExpr));
     } else if (match({TokenType::Dot})) {
       consume(TokenType::Identifier, "Expect member name after '.'.");
       Token memberName = previous();

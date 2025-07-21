@@ -7,6 +7,7 @@
 #include "OOP/Property.h"
 #include "OOP/Inheritance.h"
 #include "OOP/Subscript.h"
+#include "OOP/Optional.h"
 #include <memory>
 #include <unordered_map>
 
@@ -52,6 +53,7 @@ public:
     void visit(const StructInit& expr) override;
     void visit(const Super& expr) override;
     void visit(const StringInterpolation& expr) override;
+    void visit(const OptionalChaining& expr) override;
 
 public:
     // Public methods for property system
@@ -92,9 +94,12 @@ private:
     
 
     
+public:
     // Enhanced member access with property support
     virtual Value getMemberValue(const Value& object, const std::string& memberName);
     void setMemberValue(Value& object, const std::string& memberName, const Value& value);
+
+private:
 
     Value result;
 };

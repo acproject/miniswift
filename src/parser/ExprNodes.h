@@ -23,6 +23,7 @@ struct StructInit;
 struct Super;
 struct StringInterpolation;
 struct SubscriptAccess;
+struct OptionalChaining;
 
 // Visitor interface for expressions
 class ExprVisitor {
@@ -45,6 +46,7 @@ public:
   virtual void visit(const StructInit &expr) = 0;
   virtual void visit(const Super &expr) = 0;
   virtual void visit(const StringInterpolation &expr) = 0;
+  virtual void visit(const OptionalChaining &expr) = 0;
 };
 
 // Base class for all expression nodes
@@ -277,6 +279,28 @@ struct SubscriptAccess : Expr {
 
   const std::unique_ptr<Expr> object;
   const std::vector<std::unique_ptr<Expr>> indices;
+};
+
+// Optional chaining expression: object?.property or object?.method() or object?[index]
+struct OptionalChaining : Expr {
+  enum class ChainType {
+    Property,    // object?.property
+    Method,      // object?.method()
+    Subscript    // object?[index]
+  };
+  
+  OptionalChaining(std::unique_ptr<Expr> object, ChainType chainType, std::unique_ptr<Expr> accessor)
+      : object(std::move(object)), chainType(chainType), accessor(std::move(accessor)) {}
+
+  void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
+
+  std::unique_ptr<Expr> clone() const override {
+    return std::make_unique<OptionalChaining>(object->clone(), chainType, accessor->clone());
+  }
+
+  const std::unique_ptr<Expr> object;     // The optional object being chained
+  const ChainType chainType;              // Type of chaining (property, method, subscript)
+  const std::unique_ptr<Expr> accessor;   // The property/method/subscript being accessed
 };
 
 }; // namespace miniswift

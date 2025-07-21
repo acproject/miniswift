@@ -141,25 +141,43 @@ struct Callable {
 // Keep Function as alias for backward compatibility
 using Function = Callable;
 
+
+
+// Optional value type
+struct OptionalValue {
+    bool hasValue;
+    std::shared_ptr<Value> wrappedValue;
+    
+    OptionalValue() : hasValue(false), wrappedValue(nullptr) {}
+    OptionalValue(const Value& value) : hasValue(true), wrappedValue(std::make_shared<Value>(value)) {}
+    
+    bool operator==(const OptionalValue& other) const;
+    
+    bool operator!=(const OptionalValue& other) const {
+        return !(*this == other);
+    }
+};
+
 enum class ValueType {
-    Nil,
-    Bool,
-    Int,
-    Double,
-    String,
-    Array,
-    Dictionary,
-    Function,
-    Enum,
-    Struct,
-    Class,
-    Constructor,
-    Destructor
+  Nil,
+  Bool,
+  Int,
+  Double,
+  String,
+  Array,
+  Dictionary,
+  Function,
+  Enum,
+  Struct,
+  Class,
+  Constructor,
+  Destructor,
+  Optional
 };
 
 struct Value {
     ValueType type;
-    std::variant<std::monostate, bool, int, double, std::string, Array, Dictionary, std::shared_ptr<Function>, EnumValue, StructValue, std::shared_ptr<ClassValue>, std::shared_ptr<ConstructorValue>, std::shared_ptr<DestructorValue>> value;
+    std::variant<std::monostate, bool, int, double, std::string, Array, Dictionary, std::shared_ptr<Function>, EnumValue, StructValue, std::shared_ptr<ClassValue>, std::shared_ptr<ConstructorValue>, std::shared_ptr<DestructorValue>, OptionalValue> value;
 
     Value() : type(ValueType::Nil), value(std::monostate{}) {}
     Value(bool v) : type(ValueType::Bool), value(v) {}
@@ -174,6 +192,7 @@ struct Value {
     Value(std::shared_ptr<ClassValue> v) : type(ValueType::Class), value(v) {}
     Value(std::shared_ptr<ConstructorValue> v) : type(ValueType::Constructor), value(v) {}
     Value(std::shared_ptr<DestructorValue> v) : type(ValueType::Destructor), value(v) {}
+    Value(OptionalValue v) : type(ValueType::Optional), value(v) {}
     
     // Convenience constructors for collections
     Value(std::vector<Value> v) : type(ValueType::Array), value(std::make_shared<std::vector<Value>>(std::move(v))) {}
@@ -188,6 +207,7 @@ struct Value {
     bool isClass() const { return type == ValueType::Class; }
     bool isConstructor() const { return type == ValueType::Constructor; }
     bool isDestructor() const { return type == ValueType::Destructor; }
+    bool isOptional() const { return type == ValueType::Optional; }
     bool isClosure() const { 
         if (type != ValueType::Function) return false;
         auto func = std::get<std::shared_ptr<Function>>(value);
@@ -228,16 +248,63 @@ struct Value {
     std::shared_ptr<DestructorValue>& asDestructor() { return std::get<std::shared_ptr<DestructorValue>>(value); }
     const std::shared_ptr<DestructorValue>& asDestructor() const { return std::get<std::shared_ptr<DestructorValue>>(value); }
     
+    OptionalValue& asOptional() { return std::get<OptionalValue>(value); }
+    const OptionalValue& asOptional() const { return std::get<OptionalValue>(value); }
+    
+    // Helper methods for optional values
+    Value getOptionalValue() const {
+        const auto& opt = asOptional();
+        if (opt.hasValue && opt.wrappedValue) {
+            return *opt.wrappedValue;
+        }
+        return Value(); // Return nil
+    }
+    
     // Comparison operators
     bool operator==(const Value& other) const {
         if (type != other.type) return false;
-        return value == other.value;
+        
+        switch (type) {
+            case ValueType::Nil:
+                return true;
+            case ValueType::Bool:
+                return std::get<bool>(value) == std::get<bool>(other.value);
+            case ValueType::Int:
+                return std::get<int>(value) == std::get<int>(other.value);
+            case ValueType::Double:
+                return std::get<double>(value) == std::get<double>(other.value);
+            case ValueType::String:
+                return std::get<std::string>(value) == std::get<std::string>(other.value);
+            case ValueType::Array:
+                return std::get<Array>(value) == std::get<Array>(other.value);
+            case ValueType::Dictionary:
+                return std::get<Dictionary>(value) == std::get<Dictionary>(other.value);
+            case ValueType::Function:
+                return std::get<std::shared_ptr<Function>>(value) == std::get<std::shared_ptr<Function>>(other.value);
+            case ValueType::Enum:
+                return std::get<EnumValue>(value) == std::get<EnumValue>(other.value);
+            case ValueType::Struct:
+                return std::get<StructValue>(value) == std::get<StructValue>(other.value);
+            case ValueType::Class:
+                return std::get<std::shared_ptr<ClassValue>>(value) == std::get<std::shared_ptr<ClassValue>>(other.value);
+            case ValueType::Constructor:
+                return std::get<std::shared_ptr<ConstructorValue>>(value) == std::get<std::shared_ptr<ConstructorValue>>(other.value);
+            case ValueType::Destructor:
+                return std::get<std::shared_ptr<DestructorValue>>(value) == std::get<std::shared_ptr<DestructorValue>>(other.value);
+            case ValueType::Optional:
+                return std::get<OptionalValue>(value) == std::get<OptionalValue>(other.value);
+            default:
+                return false;
+        }
     }
     
     bool operator!=(const Value& other) const {
         return !(*this == other);
     }
 };
+
+// Forward declaration for helper function
+bool compareOptionalValues(const OptionalValue& lhs, const OptionalValue& rhs);
 
 } // namespace miniswift
 

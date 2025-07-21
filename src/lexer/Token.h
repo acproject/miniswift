@@ -45,6 +45,12 @@ enum class TokenType {
   Static,
   Subscript,
 
+  // Basic Types
+  String,
+  Int,
+  Bool,
+  Double,
+
   // Operators
   Plus,
   Minus,
@@ -65,6 +71,7 @@ enum class TokenType {
   LessEllipsis,
   QuestionQuestion,
   QuestionDot,
+  QuestionLSquare, // ?[
   Arrow, // ->
 
   // Punctuation

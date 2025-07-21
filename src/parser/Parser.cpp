@@ -397,7 +397,7 @@ std::unique_ptr<Expr> Parser::primary() {
     return arrayLiteral();
   }
 
-  if (match({TokenType::Identifier, TokenType::String, TokenType::Int, TokenType::Bool, TokenType::Double})) {
+  if (match({TokenType::Identifier, TokenType::String, TokenType::Int, TokenType::Bool, TokenType::Double, TokenType::Int8, TokenType::Int16, TokenType::Int32, TokenType::Int64, TokenType::UInt, TokenType::UInt8, TokenType::UInt16, TokenType::UInt64, TokenType::Float, TokenType::Character, TokenType::Any, TokenType::Void, TokenType::Set})) {
     Token identifier = previous();
     
     std::unique_ptr<Expr> expr;
@@ -605,7 +605,7 @@ Token Parser::parseType() {
       firstType = parseType();
     } else {
       // Accept basic types or identifiers
-       if (match({TokenType::String, TokenType::Int, TokenType::Bool, TokenType::Double, TokenType::Identifier})) {
+       if (match({TokenType::String, TokenType::Int, TokenType::Bool, TokenType::Double, TokenType::Int8, TokenType::Int16, TokenType::Int32, TokenType::Int64, TokenType::UInt, TokenType::UInt8, TokenType::UInt16, TokenType::UInt64, TokenType::Float, TokenType::Character, TokenType::Any, TokenType::Void, TokenType::Set, TokenType::Identifier})) {
          firstType = previous();
        } else {
          std::cout << "DEBUG: parseType failed, current token: " << peek().lexeme << " (type: " << static_cast<int>(peek().type) << ")" << std::endl;
@@ -628,7 +628,7 @@ Token Parser::parseType() {
         valueType = parseType();
       } else {
         // Accept basic types or identifiers
-         if (match({TokenType::String, TokenType::Int, TokenType::Bool, TokenType::Double, TokenType::Identifier})) {
+         if (match({TokenType::String, TokenType::Int, TokenType::Bool, TokenType::Double, TokenType::Int8, TokenType::Int16, TokenType::Int32, TokenType::Int64, TokenType::UInt, TokenType::UInt8, TokenType::UInt16, TokenType::UInt64, TokenType::Float, TokenType::Character, TokenType::Any, TokenType::Void, TokenType::Set, TokenType::Identifier})) {
            valueType = previous();
          } else {
            // Include line number in error message
@@ -667,7 +667,7 @@ Token Parser::parseType() {
   }
   
   // Accept basic types or identifiers
-   if (match({TokenType::String, TokenType::Int, TokenType::Bool, TokenType::Double, TokenType::Identifier})) {
+   if (match({TokenType::String, TokenType::Int, TokenType::Bool, TokenType::Double, TokenType::Int8, TokenType::Int16, TokenType::Int32, TokenType::Int64, TokenType::UInt, TokenType::UInt8, TokenType::UInt16, TokenType::UInt64, TokenType::Float, TokenType::Character, TokenType::Any, TokenType::Void, TokenType::Set, TokenType::Identifier})) {
      Token baseType = previous();
      
      // Check for generic type syntax: Type<T, U>

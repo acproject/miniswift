@@ -150,6 +150,51 @@ void Interpreter::visit(const PrintStmt& stmt) {
             }
             break;
         }
+        
+        // Extended Integer Types
+        case ValueType::Int8:
+            std::cout << static_cast<int>(std::get<int8_t>(val.value)) << std::endl;
+            break;
+        case ValueType::Int16:
+            std::cout << std::get<int16_t>(val.value) << std::endl;
+            break;
+        case ValueType::Int32:
+            std::cout << std::get<int>(val.value) << std::endl;
+            break;
+        case ValueType::Int64:
+            std::cout << std::get<int64_t>(val.value) << std::endl;
+            break;
+        case ValueType::UInt:
+            std::cout << std::get<uint32_t>(val.value) << std::endl;
+            break;
+        case ValueType::UInt8:
+            std::cout << static_cast<unsigned int>(std::get<uint8_t>(val.value)) << std::endl;
+            break;
+        case ValueType::UInt16:
+            std::cout << std::get<uint16_t>(val.value) << std::endl;
+            break;
+        case ValueType::UInt64:
+            std::cout << std::get<uint64_t>(val.value) << std::endl;
+            break;
+        
+        // Additional Basic Types
+        case ValueType::Float:
+            std::cout << std::get<float>(val.value) << std::endl;
+            break;
+        case ValueType::Character:
+            std::cout << "'" << std::get<char>(val.value) << "'" << std::endl;
+            break;
+        
+        // Special Types
+        case ValueType::Set:
+            std::cout << "<set>" << std::endl;
+            break;
+        case ValueType::Any:
+            std::cout << "<any>" << std::endl;
+            break;
+        case ValueType::Void:
+            std::cout << "()" << std::endl;
+            break;
     }
 }
 
@@ -442,9 +487,34 @@ void Interpreter::visit(const Binary& expr) {
     Value left = evaluate(*expr.left);
     Value right = evaluate(*expr.right);
 
+    // Helper function to check if a value is numeric
+    auto isNumeric = [](const Value& val) {
+        return val.type == ValueType::Int || val.type == ValueType::Double || val.type == ValueType::Float ||
+               val.type == ValueType::Int8 || val.type == ValueType::Int16 || val.type == ValueType::Int32 || val.type == ValueType::Int64 ||
+               val.type == ValueType::UInt || val.type == ValueType::UInt8 || val.type == ValueType::UInt16 || val.type == ValueType::UInt64;
+    };
+    
+    // Helper function to convert value to double for arithmetic
+    auto toDouble = [](const Value& val) -> double {
+        switch (val.type) {
+            case ValueType::Int: return static_cast<double>(std::get<int>(val.value));
+            case ValueType::Double: return std::get<double>(val.value);
+            case ValueType::Float: return static_cast<double>(std::get<float>(val.value));
+            case ValueType::Int8: return static_cast<double>(std::get<int8_t>(val.value));
+            case ValueType::Int16: return static_cast<double>(std::get<int16_t>(val.value));
+            case ValueType::Int32: return static_cast<double>(std::get<int>(val.value));
+            case ValueType::Int64: return static_cast<double>(std::get<int64_t>(val.value));
+            case ValueType::UInt: return static_cast<double>(std::get<uint32_t>(val.value));
+            case ValueType::UInt8: return static_cast<double>(std::get<uint8_t>(val.value));
+            case ValueType::UInt16: return static_cast<double>(std::get<uint16_t>(val.value));
+            case ValueType::UInt64: return static_cast<double>(std::get<uint64_t>(val.value));
+            default: return 0.0;
+        }
+    };
+    
     // Type checking for non-logical operators
     if (expr.op.type != TokenType::BangEqual && expr.op.type != TokenType::EqualEqual) {
-        if ((left.type == ValueType::Int || left.type == ValueType::Double) && (right.type == ValueType::Int || right.type == ValueType::Double)) {
+        if (isNumeric(left) && isNumeric(right)) {
             // Numeric operations
         } else if (left.type == ValueType::String && right.type == ValueType::String && expr.op.type == TokenType::Plus) {
             // String concatenation
@@ -455,8 +525,8 @@ void Interpreter::visit(const Binary& expr) {
 
     switch (expr.op.type) {
         case TokenType::Minus: {
-            double leftVal = (left.type == ValueType::Int) ? std::get<int>(left.value) : std::get<double>(left.value);
-            double rightVal = (right.type == ValueType::Int) ? std::get<int>(right.value) : std::get<double>(right.value);
+            double leftVal = toDouble(left);
+            double rightVal = toDouble(right);
             if (left.type == ValueType::Int && right.type == ValueType::Int) {
                 result = Value(static_cast<int>(leftVal - rightVal));
             } else {
@@ -468,8 +538,8 @@ void Interpreter::visit(const Binary& expr) {
             if (left.type == ValueType::String) {
                 result = Value(std::get<std::string>(left.value) + std::get<std::string>(right.value));
             } else {
-                double leftVal = (left.type == ValueType::Int) ? std::get<int>(left.value) : std::get<double>(left.value);
-                double rightVal = (right.type == ValueType::Int) ? std::get<int>(right.value) : std::get<double>(right.value);
+                double leftVal = toDouble(left);
+                double rightVal = toDouble(right);
                 if (left.type == ValueType::Int && right.type == ValueType::Int) {
                     result = Value(static_cast<int>(leftVal + rightVal));
                 } else {
@@ -478,14 +548,14 @@ void Interpreter::visit(const Binary& expr) {
             }
             return;
         case TokenType::Slash: {
-            double leftVal = (left.type == ValueType::Int) ? std::get<int>(left.value) : std::get<double>(left.value);
-            double rightVal = (right.type == ValueType::Int) ? std::get<int>(right.value) : std::get<double>(right.value);
+            double leftVal = toDouble(left);
+            double rightVal = toDouble(right);
             result = Value(leftVal / rightVal);
             return;
         }
         case TokenType::Star: {
-            double leftVal = (left.type == ValueType::Int) ? std::get<int>(left.value) : std::get<double>(left.value);
-            double rightVal = (right.type == ValueType::Int) ? std::get<int>(right.value) : std::get<double>(right.value);
+            double leftVal = toDouble(left);
+            double rightVal = toDouble(right);
             if (left.type == ValueType::Int && right.type == ValueType::Int) {
                 result = Value(static_cast<int>(leftVal * rightVal));
             } else {
@@ -494,26 +564,26 @@ void Interpreter::visit(const Binary& expr) {
             return;
         }
         case TokenType::RAngle: {
-            double leftVal = (left.type == ValueType::Int) ? std::get<int>(left.value) : std::get<double>(left.value);
-            double rightVal = (right.type == ValueType::Int) ? std::get<int>(right.value) : std::get<double>(right.value);
+            double leftVal = toDouble(left);
+            double rightVal = toDouble(right);
             result = Value(leftVal > rightVal);
             return;
         }
         case TokenType::GreaterEqual: {
-            double leftVal = (left.type == ValueType::Int) ? std::get<int>(left.value) : std::get<double>(left.value);
-            double rightVal = (right.type == ValueType::Int) ? std::get<int>(right.value) : std::get<double>(right.value);
+            double leftVal = toDouble(left);
+            double rightVal = toDouble(right);
             result = Value(leftVal >= rightVal);
             return;
         }
         case TokenType::LAngle: {
-            double leftVal = (left.type == ValueType::Int) ? std::get<int>(left.value) : std::get<double>(left.value);
-            double rightVal = (right.type == ValueType::Int) ? std::get<int>(right.value) : std::get<double>(right.value);
+            double leftVal = toDouble(left);
+            double rightVal = toDouble(right);
             result = Value(leftVal < rightVal);
             return;
         }
         case TokenType::LessEqual: {
-            double leftVal = (left.type == ValueType::Int) ? std::get<int>(left.value) : std::get<double>(left.value);
-            double rightVal = (right.type == ValueType::Int) ? std::get<int>(right.value) : std::get<double>(right.value);
+            double leftVal = toDouble(left);
+            double rightVal = toDouble(right);
             result = Value(leftVal <= rightVal);
             return;
         }
@@ -586,6 +656,52 @@ void Interpreter::visit(const StringInterpolation& expr) {
                 case ValueType::Nil:
                     result_str += "nil";
                     break;
+                
+                // Extended Integer Types
+                case ValueType::Int8:
+                    result_str += std::to_string(static_cast<int>(std::get<int8_t>(value.value)));
+                    break;
+                case ValueType::Int16:
+                    result_str += std::to_string(std::get<int16_t>(value.value));
+                    break;
+                case ValueType::Int32:
+                    result_str += std::to_string(std::get<int>(value.value));
+                    break;
+                case ValueType::Int64:
+                    result_str += std::to_string(std::get<int64_t>(value.value));
+                    break;
+                case ValueType::UInt:
+                    result_str += std::to_string(std::get<uint32_t>(value.value));
+                    break;
+                case ValueType::UInt8:
+                    result_str += std::to_string(static_cast<unsigned int>(std::get<uint8_t>(value.value)));
+                    break;
+                case ValueType::UInt16:
+                    result_str += std::to_string(std::get<uint16_t>(value.value));
+                    break;
+                case ValueType::UInt64:
+                    result_str += std::to_string(std::get<uint64_t>(value.value));
+                    break;
+                
+                // Additional Basic Types
+                case ValueType::Float:
+                    result_str += std::to_string(std::get<float>(value.value));
+                    break;
+                case ValueType::Character:
+                    result_str += std::get<char>(value.value);
+                    break;
+                
+                // Special Types
+                case ValueType::Set:
+                    result_str += "<set>";
+                    break;
+                case ValueType::Any:
+                    result_str += "<any>";
+                    break;
+                case ValueType::Void:
+                    result_str += "()";
+                    break;
+                
                 default:
                     result_str += "<object>";
                     break;
@@ -608,6 +724,16 @@ void Interpreter::visit(const Unary& expr) {
                 result = Value(-std::get<int>(right.value));
             } else if (right.type == ValueType::Double) {
                 result = Value(-std::get<double>(right.value));
+            } else if (right.type == ValueType::Float) {
+                result = Value(-std::get<float>(right.value));
+            } else if (right.type == ValueType::Int8) {
+                result = Value(static_cast<int8_t>(-std::get<int8_t>(right.value)));
+            } else if (right.type == ValueType::Int16) {
+                result = Value(static_cast<int16_t>(-std::get<int16_t>(right.value)));
+            } else if (right.type == ValueType::Int32) {
+                result = Value(-std::get<int>(right.value));
+            } else if (right.type == ValueType::Int64) {
+                result = Value(-std::get<int64_t>(right.value));
             } else {
                 throw std::runtime_error("Operand must be a number.");
             }
@@ -657,6 +783,36 @@ void Interpreter::visit(const DictionaryLiteral& expr) {
             case ValueType::Double:
                 keyStr = std::to_string(std::get<double>(key.value));
                 break;
+            case ValueType::Float:
+                keyStr = std::to_string(std::get<float>(key.value));
+                break;
+            case ValueType::Int8:
+                keyStr = std::to_string(static_cast<int>(std::get<int8_t>(key.value)));
+                break;
+            case ValueType::Int16:
+                keyStr = std::to_string(std::get<int16_t>(key.value));
+                break;
+            case ValueType::Int32:
+                keyStr = std::to_string(std::get<int>(key.value));
+                break;
+            case ValueType::Int64:
+                keyStr = std::to_string(std::get<int64_t>(key.value));
+                break;
+            case ValueType::UInt:
+                keyStr = std::to_string(std::get<uint32_t>(key.value));
+                break;
+            case ValueType::UInt8:
+                keyStr = std::to_string(static_cast<unsigned int>(std::get<uint8_t>(key.value)));
+                break;
+            case ValueType::UInt16:
+                keyStr = std::to_string(std::get<uint16_t>(key.value));
+                break;
+            case ValueType::UInt64:
+                keyStr = std::to_string(std::get<uint64_t>(key.value));
+                break;
+            case ValueType::Character:
+                keyStr = std::string(1, std::get<char>(key.value));
+                break;
             default:
                 throw std::runtime_error("Dictionary keys must be strings or numbers.");
         }
@@ -679,11 +835,34 @@ void Interpreter::visit(const IndexAccess& expr) {
     Value index = evaluate(*expr.index);
     
     if (object.type == ValueType::Array) {
-        if (index.type != ValueType::Int) {
+        // Helper function to check if index is an integer type
+        auto isIntegerType = [](const Value& val) {
+            return val.type == ValueType::Int || val.type == ValueType::Int8 || val.type == ValueType::Int16 ||
+                   val.type == ValueType::Int32 || val.type == ValueType::Int64 || val.type == ValueType::UInt ||
+                   val.type == ValueType::UInt8 || val.type == ValueType::UInt16 || val.type == ValueType::UInt64;
+        };
+        
+        // Helper function to convert index to int
+        auto toInt = [](const Value& val) -> int {
+            switch (val.type) {
+                case ValueType::Int: return std::get<int>(val.value);
+                case ValueType::Int8: return static_cast<int>(std::get<int8_t>(val.value));
+                case ValueType::Int16: return static_cast<int>(std::get<int16_t>(val.value));
+                case ValueType::Int32: return static_cast<int>(std::get<int>(val.value));
+                case ValueType::Int64: return static_cast<int>(std::get<int64_t>(val.value));
+                case ValueType::UInt: return static_cast<int>(std::get<uint32_t>(val.value));
+                case ValueType::UInt8: return static_cast<int>(std::get<uint8_t>(val.value));
+                case ValueType::UInt16: return static_cast<int>(std::get<uint16_t>(val.value));
+                case ValueType::UInt64: return static_cast<int>(std::get<uint64_t>(val.value));
+                default: return 0;
+            }
+        };
+        
+        if (!isIntegerType(index)) {
             throw std::runtime_error("Array index must be an integer.");
         }
         
-        int idx = std::get<int>(index.value);
+        int idx = toInt(index);
         const auto& arr = *object.asArray();
         
         if (idx < 0 || idx >= static_cast<int>(arr.size())) {
@@ -702,6 +881,36 @@ void Interpreter::visit(const IndexAccess& expr) {
                 break;
             case ValueType::Double:
                 key = std::to_string(std::get<double>(index.value));
+                break;
+            case ValueType::Float:
+                key = std::to_string(std::get<float>(index.value));
+                break;
+            case ValueType::Int8:
+                key = std::to_string(static_cast<int>(std::get<int8_t>(index.value)));
+                break;
+            case ValueType::Int16:
+                key = std::to_string(std::get<int16_t>(index.value));
+                break;
+            case ValueType::Int32:
+                key = std::to_string(std::get<int>(index.value));
+                break;
+            case ValueType::Int64:
+                key = std::to_string(std::get<int64_t>(index.value));
+                break;
+            case ValueType::UInt:
+                key = std::to_string(std::get<uint32_t>(index.value));
+                break;
+            case ValueType::UInt8:
+                key = std::to_string(static_cast<unsigned int>(std::get<uint8_t>(index.value)));
+                break;
+            case ValueType::UInt16:
+                key = std::to_string(std::get<uint16_t>(index.value));
+                break;
+            case ValueType::UInt64:
+                key = std::to_string(std::get<uint64_t>(index.value));
+                break;
+            case ValueType::Character:
+                key = std::string(1, std::get<char>(index.value));
                 break;
             default:
                 throw std::runtime_error("Dictionary key must be a string or number.");
@@ -908,6 +1117,39 @@ std::string Interpreter::valueToString(const Value& val) {
                 return "Result.failure(" + resultPtr->getError().getDescription() + ")";
             }
         }
+        
+        // Extended Integer Types
+        case ValueType::Int8:
+            return std::to_string(static_cast<int>(std::get<int8_t>(val.value)));
+        case ValueType::Int16:
+            return std::to_string(std::get<int16_t>(val.value));
+        case ValueType::Int32:
+            return std::to_string(std::get<int>(val.value));
+        case ValueType::Int64:
+            return std::to_string(std::get<int64_t>(val.value));
+        case ValueType::UInt:
+            return std::to_string(std::get<uint32_t>(val.value));
+        case ValueType::UInt8:
+            return std::to_string(static_cast<unsigned int>(std::get<uint8_t>(val.value)));
+        case ValueType::UInt16:
+            return std::to_string(std::get<uint16_t>(val.value));
+        case ValueType::UInt64:
+            return std::to_string(std::get<uint64_t>(val.value));
+        
+        // Additional Basic Types
+        case ValueType::Float:
+            return std::to_string(std::get<float>(val.value));
+        case ValueType::Character:
+            return std::string(1, std::get<char>(val.value));
+        
+        // Special Types
+        case ValueType::Set:
+            return "<set>";
+        case ValueType::Any:
+            return "<any>";
+        case ValueType::Void:
+            return "()";
+        
         default:
             return "<unknown>";
     }
@@ -1007,6 +1249,51 @@ void Interpreter::printValue(const Value& val) {
             break;
         case ValueType::Result:
             std::cout << "<result>";
+            break;
+        
+        // Extended Integer Types
+        case ValueType::Int8:
+            std::cout << static_cast<int>(std::get<int8_t>(val.value));
+            break;
+        case ValueType::Int16:
+            std::cout << std::get<int16_t>(val.value);
+            break;
+        case ValueType::Int32:
+            std::cout << std::get<int>(val.value);
+            break;
+        case ValueType::Int64:
+            std::cout << std::get<int64_t>(val.value);
+            break;
+        case ValueType::UInt:
+            std::cout << std::get<uint32_t>(val.value);
+            break;
+        case ValueType::UInt8:
+            std::cout << static_cast<unsigned int>(std::get<uint8_t>(val.value));
+            break;
+        case ValueType::UInt16:
+            std::cout << std::get<uint16_t>(val.value);
+            break;
+        case ValueType::UInt64:
+            std::cout << std::get<uint64_t>(val.value);
+            break;
+        
+        // Additional Basic Types
+        case ValueType::Float:
+            std::cout << std::get<float>(val.value);
+            break;
+        case ValueType::Character:
+            std::cout << "'" << std::get<char>(val.value) << "'";
+            break;
+        
+        // Special Types
+        case ValueType::Set:
+            std::cout << "<set>";
+            break;
+        case ValueType::Any:
+            std::cout << "<any>";
+            break;
+        case ValueType::Void:
+            std::cout << "()";
             break;
     }
 }

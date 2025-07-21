@@ -208,12 +208,32 @@ enum class ValueType {
   Destructor,
   Optional,
   Error,
-  Result
+  Result,
+  
+  // Extended Integer Types
+  Int8,
+  Int16,
+  Int32,
+  Int64,
+  UInt,
+  UInt8,
+  UInt16,
+  UInt64,
+  
+  // Additional Basic Types
+  Float,
+  Character,
+  
+  // Special Types
+  Any,
+  Void,
+  Set
 };
 
 struct Value {
     ValueType type;
-    std::variant<std::monostate, bool, int, double, std::string, Array, Dictionary, Tuple, std::shared_ptr<Function>, EnumValue, StructValue, std::shared_ptr<ClassValue>, std::shared_ptr<ConstructorValue>, std::shared_ptr<DestructorValue>, OptionalValue, ErrorValue, std::shared_ptr<ValueResult>> value;
+    std::variant<std::monostate, bool, int, double, std::string, Array, Dictionary, Tuple, std::shared_ptr<Function>, EnumValue, StructValue, std::shared_ptr<ClassValue>, std::shared_ptr<ConstructorValue>, std::shared_ptr<DestructorValue>, OptionalValue, ErrorValue, std::shared_ptr<ValueResult>, 
+                 int8_t, int16_t, int64_t, uint32_t, uint8_t, uint16_t, uint64_t, float, char> value;
 
     Value() : type(ValueType::Nil), value(std::monostate{}) {}
     Value(bool v) : type(ValueType::Bool), value(v) {}
@@ -233,6 +253,41 @@ struct Value {
     Value(ErrorValue v) : type(ValueType::Error), value(v) {}
     Value(ValueResult v) : type(ValueType::Result), value(std::make_shared<ValueResult>(v)) {}
     Value(std::shared_ptr<ValueResult> v) : type(ValueType::Result), value(v) {}
+    
+    // Extended Integer Type constructors
+    Value(int8_t v) : type(ValueType::Int8), value(v) {}
+    Value(int16_t v) : type(ValueType::Int16), value(v) {}
+    Value(int64_t v) : type(ValueType::Int64), value(v) {}
+    Value(uint32_t v) : type(ValueType::UInt), value(v) {}
+    Value(uint8_t v) : type(ValueType::UInt8), value(v) {}
+    Value(uint16_t v) : type(ValueType::UInt16), value(v) {}
+    Value(uint64_t v) : type(ValueType::UInt64), value(v) {}
+    
+    // Additional Basic Type constructors
+    Value(float v) : type(ValueType::Float), value(v) {}
+    Value(char v) : type(ValueType::Character), value(v) {}
+    
+    // Static factory methods for special types
+    static Value createAny() {
+        Value anyValue;
+        anyValue.type = ValueType::Any;
+        anyValue.value = std::monostate{};
+        return anyValue;
+    }
+    
+    static Value createVoid() {
+        Value voidValue;
+        voidValue.type = ValueType::Void;
+        voidValue.value = std::monostate{};
+        return voidValue;
+    }
+    
+    static Value createSet() {
+        Value setValue;
+        setValue.type = ValueType::Set;
+        setValue.value = std::monostate{};
+        return setValue;
+    }
 
     
     // Copy constructor
@@ -269,6 +324,21 @@ struct Value {
         auto func = std::get<std::shared_ptr<Function>>(value);
         return func && !func->isFunction;
     }
+    
+    // Type checking methods for new basic types
+    bool isInt8() const { return type == ValueType::Int8; }
+    bool isInt16() const { return type == ValueType::Int16; }
+    bool isInt32() const { return type == ValueType::Int32; }
+    bool isInt64() const { return type == ValueType::Int64; }
+    bool isUInt() const { return type == ValueType::UInt; }
+    bool isUInt8() const { return type == ValueType::UInt8; }
+    bool isUInt16() const { return type == ValueType::UInt16; }
+    bool isUInt64() const { return type == ValueType::UInt64; }
+    bool isFloat() const { return type == ValueType::Float; }
+    bool isCharacter() const { return type == ValueType::Character; }
+    bool isSet() const { return type == ValueType::Set; }
+    bool isAny() const { return type == ValueType::Any; }
+    bool isVoid() const { return type == ValueType::Void; }
     
     Array& asArray() { return std::get<Array>(value); }
     const Array& asArray() const { return std::get<Array>(value); }
@@ -318,6 +388,36 @@ struct Value {
     std::shared_ptr<ValueResult>& asResult() { return std::get<std::shared_ptr<ValueResult>>(value); }
     const std::shared_ptr<ValueResult>& asResult() const { return std::get<std::shared_ptr<ValueResult>>(value); }
     
+    // Accessor methods for new basic types
+    int8_t& asInt8() { return std::get<int8_t>(value); }
+    const int8_t& asInt8() const { return std::get<int8_t>(value); }
+    
+    int16_t& asInt16() { return std::get<int16_t>(value); }
+    const int16_t& asInt16() const { return std::get<int16_t>(value); }
+    
+    int& asInt32() { return std::get<int>(value); }
+    const int& asInt32() const { return std::get<int>(value); }
+    
+    int64_t& asInt64() { return std::get<int64_t>(value); }
+    const int64_t& asInt64() const { return std::get<int64_t>(value); }
+    
+    uint32_t& asUInt() { return std::get<uint32_t>(value); }
+    const uint32_t& asUInt() const { return std::get<uint32_t>(value); }
+    
+    uint8_t& asUInt8() { return std::get<uint8_t>(value); }
+    const uint8_t& asUInt8() const { return std::get<uint8_t>(value); }
+    
+    uint16_t& asUInt16() { return std::get<uint16_t>(value); }
+    const uint16_t& asUInt16() const { return std::get<uint16_t>(value); }
+    
+    uint64_t& asUInt64() { return std::get<uint64_t>(value); }
+    const uint64_t& asUInt64() const { return std::get<uint64_t>(value); }
+    
+    float& asFloat() { return std::get<float>(value); }
+    const float& asFloat() const { return std::get<float>(value); }
+    
+    char& asCharacter() { return std::get<char>(value); }
+    const char& asCharacter() const { return std::get<char>(value); }
 
     
     // Helper methods for optional values
@@ -368,6 +468,39 @@ struct Value {
                 return std::get<ErrorValue>(value) == std::get<ErrorValue>(other.value);
             case ValueType::Result:
                 return *std::get<std::shared_ptr<ValueResult>>(value) == *std::get<std::shared_ptr<ValueResult>>(other.value);
+            
+            // Extended Integer Types
+            case ValueType::Int8:
+                return std::get<int8_t>(value) == std::get<int8_t>(other.value);
+            case ValueType::Int16:
+                return std::get<int16_t>(value) == std::get<int16_t>(other.value);
+            case ValueType::Int32:
+            return std::get<int>(value) == std::get<int>(other.value);
+            case ValueType::Int64:
+                return std::get<int64_t>(value) == std::get<int64_t>(other.value);
+            case ValueType::UInt:
+                return std::get<uint32_t>(value) == std::get<uint32_t>(other.value);
+            case ValueType::UInt8:
+                return std::get<uint8_t>(value) == std::get<uint8_t>(other.value);
+            case ValueType::UInt16:
+                return std::get<uint16_t>(value) == std::get<uint16_t>(other.value);
+            case ValueType::UInt64:
+                return std::get<uint64_t>(value) == std::get<uint64_t>(other.value);
+            
+            // Additional Basic Types
+            case ValueType::Float:
+                return std::get<float>(value) == std::get<float>(other.value);
+            case ValueType::Character:
+                return std::get<char>(value) == std::get<char>(other.value);
+            
+            // Special Types
+             case ValueType::Set:
+                 return true; // For now, all sets are considered equal (placeholder implementation)
+             case ValueType::Any:
+                 return true; // For now, all Any values are considered equal (placeholder implementation)
+             case ValueType::Void:
+                 return true; // All void values are equal
+            
             default:
                 return false;
         }

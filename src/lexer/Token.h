@@ -34,7 +34,6 @@ enum class TokenType {
   Print,
   Return,
   Get,
-  Set,
   WillSet,
   DidSet,
   Init,
@@ -69,6 +68,25 @@ enum class TokenType {
   Int,
   Bool,
   Double,
+  
+  // Extended Integer Types
+  Int8,
+  Int16,
+  Int32,
+  Int64,
+  UInt,
+  UInt8,
+  UInt16,
+  UInt64,
+  
+  // Additional Basic Types
+  Float,
+  Character,
+  
+  // Special Types
+  Any,
+  Void,
+  Set,
 
   // Operators
   Plus,

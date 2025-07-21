@@ -65,6 +65,26 @@ static void initializeKeywords() {
   keywords["Int"] = TokenType::Int;
   keywords["Bool"] = TokenType::Bool;
   keywords["Double"] = TokenType::Double;
+  
+  // Extended Integer Types
+  keywords["Int8"] = TokenType::Int8;
+  keywords["Int16"] = TokenType::Int16;
+  keywords["Int32"] = TokenType::Int32;
+  keywords["Int64"] = TokenType::Int64;
+  keywords["UInt"] = TokenType::UInt;
+  keywords["UInt8"] = TokenType::UInt8;
+  keywords["UInt16"] = TokenType::UInt16;
+
+  keywords["UInt64"] = TokenType::UInt64;
+  
+  // Additional Basic Types
+  keywords["Float"] = TokenType::Float;
+  keywords["Character"] = TokenType::Character;
+  
+  // Special Types
+  keywords["Any"] = TokenType::Any;
+  keywords["Void"] = TokenType::Void;
+  keywords["Set"] = TokenType::Set;
 }
 
 Lexer::Lexer(const std::string &source)

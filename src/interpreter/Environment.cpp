@@ -61,6 +61,25 @@ void Environment::assign(const Token& name, const Value& value) {
                 case ValueType::Class:  valueTypeName = "Class";  break;
                 case ValueType::Constructor: valueTypeName = "Constructor"; break;
                 case ValueType::Destructor: valueTypeName = "Destructor"; break;
+                
+                // Extended Integer Types
+                case ValueType::Int8:   valueTypeName = "Int8";   break;
+                case ValueType::Int16:  valueTypeName = "Int16";  break;
+                case ValueType::Int32:  valueTypeName = "Int32";  break;
+                case ValueType::Int64:  valueTypeName = "Int64";  break;
+                case ValueType::UInt:   valueTypeName = "UInt";   break;
+                case ValueType::UInt8:  valueTypeName = "UInt8";  break;
+                case ValueType::UInt16: valueTypeName = "UInt16"; break;
+                case ValueType::UInt64: valueTypeName = "UInt64"; break;
+                
+                // Additional Basic Types
+                case ValueType::Float:     valueTypeName = "Float";     break;
+                case ValueType::Character: valueTypeName = "Character"; break;
+                
+                // Special Types
+                case ValueType::Set:  valueTypeName = "Set";  break;
+                case ValueType::Any:  valueTypeName = "Any";  break;
+                case ValueType::Void: valueTypeName = "Void"; break;
             }
 
             // Special case: assigning a Double to an Int variable

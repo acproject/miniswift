@@ -26,6 +26,7 @@ struct StringInterpolation;
 struct SubscriptAccess;
 struct OptionalChaining;
 struct Range;
+struct GenericTypeInstantiationExpr;
 
 // Visitor interface for expressions
 class ExprVisitor {
@@ -51,6 +52,7 @@ public:
   virtual void visit(const StringInterpolation &expr) = 0;
   virtual void visit(const OptionalChaining &expr) = 0;
   virtual void visit(const Range &expr) = 0;
+  virtual void visit(const GenericTypeInstantiationExpr &expr) = 0;
 };
 
 // Base class for all expression nodes
@@ -344,6 +346,21 @@ struct Range : Expr {
   const std::unique_ptr<Expr> start;
   const std::unique_ptr<Expr> end;
   const RangeType rangeType;
+};
+
+// Generic type instantiation expression: Container<String>
+struct GenericTypeInstantiationExpr : Expr {
+  GenericTypeInstantiationExpr(Token typeName, std::vector<Token> typeArguments)
+      : typeName(typeName), typeArguments(std::move(typeArguments)) {}
+
+  void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
+
+  std::unique_ptr<Expr> clone() const override {
+    return std::make_unique<GenericTypeInstantiationExpr>(typeName, typeArguments);
+  }
+
+  const Token typeName;
+  const std::vector<Token> typeArguments;
 };
 
 }; // namespace miniswift

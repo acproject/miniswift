@@ -59,6 +59,7 @@ public:
     void visit(const StringInterpolation& expr) override;
     void visit(const OptionalChaining& expr) override;
     void visit(const Range& expr) override;
+    void visit(const GenericTypeInstantiationExpr& expr) override;
 
 public:
     // Public methods for property system

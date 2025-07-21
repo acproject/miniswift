@@ -371,7 +371,29 @@ std::unique_ptr<Expr> Parser::primary() {
   if (match({TokenType::Identifier, TokenType::String, TokenType::Int, TokenType::Bool, TokenType::Double})) {
     Token identifier = previous();
     
-    std::unique_ptr<Expr> expr = std::make_unique<VarExpr>(identifier);
+    std::unique_ptr<Expr> expr;
+    
+    // Check for generic type instantiation: Identifier<Type1, Type2>
+    if (identifier.type == TokenType::Identifier && check(TokenType::LAngle)) {
+      // Parse generic type instantiation
+      advance(); // consume '<'
+      
+      std::vector<Token> typeArguments;
+      if (!check(TokenType::RAngle)) {
+        do {
+          Token typeArg = parseType();
+          typeArguments.push_back(typeArg);
+        } while (match({TokenType::Comma}));
+      }
+      
+      consume(TokenType::RAngle, "Expect '>' after generic type arguments.");
+      
+      // Create a GenericTypeInstantiation expression
+      expr = std::make_unique<GenericTypeInstantiationExpr>(identifier, std::move(typeArguments));
+    } else {
+      // Regular variable expression
+      expr = std::make_unique<VarExpr>(identifier);
+    }
     
     // Check for index/subscript access: identifier[index] or identifier[arg1, arg2, ...]
     while (check(TokenType::LSquare)) {

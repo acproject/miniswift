@@ -1865,4 +1865,16 @@ void Interpreter::visit(const Range& expr) {
     result = Value(rangeMap);
 }
 
+// Execute generic type instantiation: TypeName<Type1, Type2>
+void Interpreter::visit(const GenericTypeInstantiationExpr& expr) {
+    // For now, we'll treat generic type instantiation as a type identifier
+    // In a full implementation, this would involve:
+    // 1. Type checking and validation
+    // 2. Generic type specialization
+    // 3. Template instantiation
+    
+    // Create a simple representation that can be used for constructor calls
+    result = Value(expr.typeName.lexeme);
+}
+
 } // namespace miniswift

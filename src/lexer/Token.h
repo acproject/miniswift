@@ -45,6 +45,7 @@ enum class TokenType {
   Static,
   Subscript,
   Protocol,
+  Extension,
   Inout,
   Mutating,
 

@@ -157,15 +157,9 @@ Value MethodInterpreter::getMemberValue(const Value& object, const std::string& 
         
         // 然后尝试 legacy 成员访问
         if (structVal.members) {
-            std::cout << "Legacy members container exists" << std::endl;
             if (structVal.members->find(memberName) != structVal.members->end()) {
-                std::cout << "Property found in legacy members" << std::endl;
                 return structVal.members->at(memberName);
-            } else {
-                std::cout << "Property not found in legacy members" << std::endl;
             }
-        } else {
-            std::cout << "No legacy members container" << std::endl;
         }
     } else if (object.isClass()) {
         const auto& classVal = *object.asClass();
@@ -178,6 +172,31 @@ Value MethodInterpreter::getMemberValue(const Value& object, const std::string& 
         // 然后尝试 legacy 成员访问
         if (classVal.members && classVal.members->find(memberName) != classVal.members->end()) {
             return classVal.members->at(memberName);
+        }
+    }
+    
+    // 尝试查找扩展方法
+    if (object.isStruct()) {
+        const auto& structVal = object.asStruct();
+        std::string mangledName = structVal.structName + "." + memberName;
+        try {
+            Value extensionMethod = globals->get(Token(TokenType::Identifier, mangledName, 0));
+            if (extensionMethod.type == ValueType::Function) {
+                return extensionMethod;
+            }
+        } catch (const std::runtime_error&) {
+            // Extension method not found, continue to error
+        }
+    } else if (object.isClass()) {
+        const auto& classVal = *object.asClass();
+        std::string mangledName = classVal.className + "." + memberName;
+        try {
+            Value extensionMethod = globals->get(Token(TokenType::Identifier, mangledName, 0));
+            if (extensionMethod.type == ValueType::Function) {
+                return extensionMethod;
+            }
+        } catch (const std::runtime_error&) {
+            // Extension method not found, continue to error
         }
     }
     

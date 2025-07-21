@@ -1098,19 +1098,68 @@ void Interpreter::visit(const ReturnStmt& stmt) {
 
 // Execute function call: callee(arguments)
 void Interpreter::visit(const Call& expr) {
-    std::cout << "Call::visit called" << std::endl;
-    std::cout << "Callee expression type: " << typeid(*expr.callee).name() << std::endl;
-    
     // Check if callee is MemberAccess
     if (auto memberAccess = dynamic_cast<const MemberAccess*>(expr.callee.get())) {
-        std::cout << "Callee is MemberAccess: object=" << typeid(*memberAccess->object).name() 
-                  << ", member=" << memberAccess->member.lexeme << std::endl;
-    } else if (auto varExpr = dynamic_cast<const VarExpr*>(expr.callee.get())) {
-        std::cout << "Callee is VarExpr: name=" << varExpr->name.lexeme << std::endl;
         
+        // Handle method calls on objects (including extension methods)
+        Value object = evaluate(*memberAccess->object);
+        Value method = getMemberValue(object, memberAccess->member.lexeme);
+        
+        if (method.isFunction()) {
+            // This is a method call - prepare arguments with 'self' as first parameter
+            std::vector<Value> arguments;
+            arguments.push_back(object); // Add 'self' as first argument
+            
+            // Add the provided arguments
+            for (const auto& argument : expr.arguments) {
+                arguments.push_back(evaluate(*argument));
+            }
+            
+            auto callable = method.asFunction();
+            
+            if (callable->isFunction) {
+                // Handle function call with self parameter
+                if (arguments.size() != callable->functionDecl->parameters.size()) {
+                    throw std::runtime_error("Expected " + 
+                        std::to_string(callable->functionDecl->parameters.size()) + 
+                        " arguments but got " + std::to_string(arguments.size()) + ".");
+                }
+                
+                // Create new environment for function execution
+                auto previous = environment;
+                environment = std::make_shared<Environment>(callable->closure);
+                
+                // Bind parameters
+                for (size_t i = 0; i < callable->functionDecl->parameters.size(); ++i) {
+                    environment->define(
+                        callable->functionDecl->parameters[i].name.lexeme,
+                        arguments[i],
+                        false, // parameters are not const
+                        callable->functionDecl->parameters[i].type.lexeme
+                    );
+                }
+                
+                try {
+                    // Execute function body
+                    callable->functionDecl->body->accept(*this);
+                    
+                    // If no return statement was executed, return nil
+                    result = Value();
+                } catch (const ReturnException& returnValue) {
+                    // Function returned a value
+                    result = returnValue.value;
+                }
+                
+                // Restore previous environment
+                environment = previous;
+                return;
+            }
+        }
+        
+        // If not a method call, fall through to regular call handling
+    } else if (auto varExpr = dynamic_cast<const VarExpr*>(expr.callee.get())) {
         // Check if this is a class constructor call
         if (auto* classPropManager = getClassPropertyManager(varExpr->name.lexeme)) {
-            std::cout << "Detected class constructor call for: " << varExpr->name.lexeme << std::endl;
             
             // Create a new class instance
             auto propContainer = std::make_unique<InstancePropertyContainer>(*classPropManager, environment);
@@ -1122,7 +1171,6 @@ void Interpreter::visit(const Call& expr) {
         
         // Check if this is a struct constructor call
         if (auto* structPropManager = getStructPropertyManager(varExpr->name.lexeme)) {
-            std::cout << "Detected struct constructor call for: " << varExpr->name.lexeme << std::endl;
             
             // Create a new struct instance
             auto propContainer = std::make_shared<InstancePropertyContainer>(*structPropManager, environment);
@@ -1143,7 +1191,6 @@ void Interpreter::visit(const Call& expr) {
     }
     
     Value callee = evaluate(*expr.callee);
-    std::cout << "Callee evaluated, type: " << static_cast<int>(callee.type) << std::endl;
     
     if (!callee.isFunction()) {
         throw std::runtime_error("Can only call functions and closures.");
@@ -1464,16 +1511,8 @@ void Interpreter::visit(const SubscriptStmt& stmt) {
 
 // Execute member access: object.member
 void Interpreter::visit(const MemberAccess& expr) {
-    std::cout << "MemberAccess::visit called for member: " << expr.member.lexeme << std::endl;
-    try {
-        Value object = evaluate(*expr.object);
-        std::cout << "Object evaluated, type: " << static_cast<int>(object.type) << ", calling getMemberValue" << std::endl;
-        result = getMemberValue(object, expr.member.lexeme);
-        std::cout << "getMemberValue returned, result type: " << static_cast<int>(result.type) << std::endl;
-    } catch (const std::exception& e) {
-        std::cout << "Exception in MemberAccess: " << e.what() << std::endl;
-        throw;
-    }
+    Value object = evaluate(*expr.object);
+    result = getMemberValue(object, expr.member.lexeme);
 }
 
 // Execute struct initialization: StructName(member1: value1, member2: value2)
@@ -1685,6 +1724,20 @@ Value Interpreter::getMemberValue(const Value& object, const std::string& member
             return it->second;
         }
         
+        // Try to find extension methods
+        std::string mangledName = structValue.structName + "." + memberName;
+        try {
+            Value extensionMethod = globals->get(Token(TokenType::Identifier, mangledName, 0));
+            if (extensionMethod.type == ValueType::Function) {
+                // Create a bound method that includes the struct instance as 'self'
+                auto function = extensionMethod.asFunction();
+                // For now, return the function directly - the Call visitor will handle binding
+                return extensionMethod;
+            }
+        } catch (const std::runtime_error&) {
+            // Extension method not found, continue to error
+        }
+        
         throw std::runtime_error("Struct '" + structValue.structName + "' has no member '" + memberName + "'");
     } else if (object.isClass()) {
         const auto& classValue = object.asClass();
@@ -1698,6 +1751,20 @@ Value Interpreter::getMemberValue(const Value& object, const std::string& member
         auto it = classValue->members->find(memberName);
         if (it != classValue->members->end()) {
             return it->second;
+        }
+        
+        // Try to find extension methods
+        std::string mangledName = classValue->className + "." + memberName;
+        try {
+            Value extensionMethod = globals->get(Token(TokenType::Identifier, mangledName, 0));
+            if (extensionMethod.type == ValueType::Function) {
+                // Create a bound method that includes the class instance as 'self'
+                auto function = extensionMethod.asFunction();
+                // For now, return the function directly - the Call visitor will handle binding
+                return extensionMethod;
+            }
+        } catch (const std::runtime_error&) {
+            // Extension method not found, continue to error
         }
         
         throw std::runtime_error("Class '" + classValue->className + "' has no member '" + memberName + "'");
@@ -1849,6 +1916,113 @@ void Interpreter::visit(const ProtocolStmt& stmt) {
     
     std::cout << "Protocol '" << stmt.name.lexeme << "' registered with " 
               << stmt.requirements.size() << " requirements" << std::endl;
+}
+
+// Execute extension declaration: extension TypeName: Protocol1, Protocol2 { members }
+void Interpreter::visit(const ExtensionStmt& stmt) {
+    std::cout << "Extension declaration for: " << stmt.typeName.lexeme << std::endl;
+    
+    // Set current type context for member registration
+    environment->define("__current_type__", Value(stmt.typeName.lexeme), false, "String");
+    
+    // Get existing property managers for the extended type
+    auto* structPropManager = getStructPropertyManager(stmt.typeName.lexeme);
+    auto* classPropManager = getClassPropertyManager(stmt.typeName.lexeme);
+    
+    if (!structPropManager && !classPropManager) {
+        throw std::runtime_error("Cannot extend unknown type '" + stmt.typeName.lexeme + "'");
+    }
+    
+    // Register computed properties from extension
+    if (structPropManager) {
+        for (const auto& property : stmt.properties) {
+            PropertyDefinition propDef(property.name, property.type);
+            propDef.isVar = property.isVar;
+            propDef.isStatic = property.isStatic;
+            propDef.isLazy = property.isLazy;
+            propDef.propertyType = PropertyType::COMPUTED;
+            
+            // Copy accessors
+            for (const auto& accessor : property.accessors) {
+                propDef.accessors.emplace_back(
+                    accessor.type,
+                    accessor.body ? std::unique_ptr<Stmt>(accessor.body->clone()) : nullptr,
+                    accessor.parameterName
+                );
+            }
+            
+            structPropManager->addProperty(std::move(propDef));
+        }
+    } else if (classPropManager) {
+        for (const auto& property : stmt.properties) {
+            PropertyDefinition propDef(property.name, property.type);
+            propDef.isVar = property.isVar;
+            propDef.isStatic = property.isStatic;
+            propDef.isLazy = property.isLazy;
+            propDef.propertyType = PropertyType::COMPUTED;
+            
+            // Copy accessors
+            for (const auto& accessor : property.accessors) {
+                propDef.accessors.emplace_back(
+                    accessor.type,
+                    accessor.body ? std::unique_ptr<Stmt>(accessor.body->clone()) : nullptr,
+                    accessor.parameterName
+                );
+            }
+            
+            classPropManager->addProperty(std::move(propDef));
+        }
+    }
+    
+    // Register methods from extension
+    for (const auto& method : stmt.methods) {
+        // Create a function value and store it in the global environment
+        // with a mangled name that includes the type name
+        std::string mangledName = stmt.typeName.lexeme + "." + method->name.lexeme;
+        auto function = std::make_shared<Function>(method.get(), environment);
+        globals->define(mangledName, Value(function), false, "Function");
+        
+        std::cout << "Registered extension method: " << mangledName << std::endl;
+    }
+    
+    // Register convenience initializers from extension
+    for (const auto& initializer : stmt.initializers) {
+        // Create constructor definition
+        auto clonedBody = initializer->body->clone();
+        auto bodyClone = std::unique_ptr<BlockStmt>(static_cast<BlockStmt*>(clonedBody.release()));
+        
+        ConstructorDefinition constructorDef(initializer->initType, initializer->parameters, std::move(bodyClone));
+        auto constructorValue = std::make_shared<ConstructorValue>(constructorDef, environment);
+        
+        // Store with mangled name
+        std::string mangledName = stmt.typeName.lexeme + ".init";
+        globals->define(mangledName, Value(constructorValue), false, "Constructor");
+        
+        std::cout << "Registered extension initializer: " << mangledName << std::endl;
+    }
+    
+    // Register subscripts from extension
+    for (const auto& subscript : stmt.subscripts) {
+        subscript->accept(*this);
+    }
+    
+    // If extension adds protocol conformance, register it
+    if (!stmt.conformedProtocols.empty()) {
+        for (const auto& protocol : stmt.conformedProtocols) {
+            std::cout << "Extension adds protocol conformance: " << stmt.typeName.lexeme 
+                      << " : " << protocol.lexeme << std::endl;
+            // In a full implementation, this would update the type's protocol conformance registry
+        }
+    }
+    
+    // Clean up type context
+    try {
+        environment->assign(Token(TokenType::Identifier, "__current_type__", 0), Value());
+    } catch (...) {
+        // Ignore if __current_type__ doesn't exist
+    }
+    
+    std::cout << "Extension for '" << stmt.typeName.lexeme << "' processed successfully" << std::endl;
 }
 
 // Execute range expression: start..<end or start...end

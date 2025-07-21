@@ -14,6 +14,7 @@ static void initializeKeywords() {
   keywords["struct"] = TokenType::Struct;
   keywords["enum"] = TokenType::Enum;
   keywords["protocol"] = TokenType::Protocol;
+  keywords["extension"] = TokenType::Extension;
   keywords["if"] = TokenType::If;
   keywords["else"] = TokenType::Else;
   keywords["for"] = TokenType::For;

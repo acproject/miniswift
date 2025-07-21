@@ -29,6 +29,7 @@ struct InitStmt;
 struct DeinitStmt;
 struct SubscriptStmt;
 struct ProtocolStmt;
+struct ExtensionStmt;
 
 // Visitor for Stmt
 class StmtVisitor {
@@ -52,6 +53,7 @@ public:
   virtual void visit(const DeinitStmt &stmt) = 0;
   virtual void visit(const SubscriptStmt &stmt) = 0;
   virtual void visit(const ProtocolStmt &stmt) = 0;
+  virtual void visit(const ExtensionStmt &stmt) = 0;
 };
 
 // Base class for Stmt
@@ -728,6 +730,51 @@ struct ProtocolStmt : Stmt {
                                           std::vector<ProtocolRequirement>(),
                                           accessLevel);
   }
+};
+
+// Extension declaration: extension TypeName: Protocol1, Protocol2 where T: Equatable { members }
+struct ExtensionStmt : Stmt {
+  Token typeName;                                    // Type being extended
+  std::vector<Token> conformedProtocols;             // Protocols to conform to
+  GenericParameterClause genericParams;              // Generic parameters (for generic extensions)
+  WhereClause whereClause;                          // Generic constraints
+  AccessLevel accessLevel;                          // Access level for the extension
+  
+  // Extension members
+  std::vector<StructMember> properties;             // Computed properties
+  std::vector<std::unique_ptr<FunctionStmt>> methods; // Methods
+  std::vector<std::unique_ptr<InitStmt>> initializers; // Convenience initializers
+  std::vector<std::unique_ptr<SubscriptStmt>> subscripts; // Subscripts
+  
+  ExtensionStmt(Token typeName, 
+                std::vector<Token> conformedProtocols = {},
+                GenericParameterClause genericParams = GenericParameterClause({}),
+                WhereClause whereClause = WhereClause({}),
+                AccessLevel accessLevel = AccessLevel::INTERNAL,
+                std::vector<StructMember> properties = {},
+                std::vector<std::unique_ptr<FunctionStmt>> methods = {},
+                std::vector<std::unique_ptr<InitStmt>> initializers = {},
+                std::vector<std::unique_ptr<SubscriptStmt>> subscripts = {})
+      : typeName(typeName), conformedProtocols(std::move(conformedProtocols)),
+        genericParams(std::move(genericParams)), whereClause(std::move(whereClause)),
+        accessLevel(accessLevel), properties(std::move(properties)),
+        methods(std::move(methods)), initializers(std::move(initializers)),
+        subscripts(std::move(subscripts)) {}
+        
+  void accept(StmtVisitor &visitor) const override { visitor.visit(*this); }
+  
+  std::unique_ptr<Stmt> clone() const override {
+    // For simplicity, create a basic clone without deep copying members
+    return std::make_unique<ExtensionStmt>(typeName, conformedProtocols,
+                                           genericParams, whereClause,
+                                           accessLevel);
+  }
+  
+  // Check if this is a conditional extension (has where clause)
+  bool isConditional() const { return !whereClause.isEmpty(); }
+  
+  // Check if this extension adds protocol conformance
+  bool addsProtocolConformance() const { return !conformedProtocols.empty(); }
 };
 
 } // namespace miniswift

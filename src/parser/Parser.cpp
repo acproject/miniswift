@@ -77,6 +77,14 @@ std::vector<std::unique_ptr<Stmt>> Parser::declaration() {
     result.push_back(std::move(protocolStmt));
     return result;
   }
+  if (match({TokenType::Extension})) {
+    std::vector<std::unique_ptr<Stmt>> result;
+    auto extensionStmt = extensionDeclaration();
+    // Set access level for extension
+    static_cast<ExtensionStmt*>(extensionStmt.get())->accessLevel = accessLevel;
+    result.push_back(std::move(extensionStmt));
+    return result;
+  }
   if (match({TokenType::Init})) {
     std::vector<std::unique_ptr<Stmt>> result;
     result.push_back(initDeclaration());
@@ -946,9 +954,9 @@ std::unique_ptr<Stmt> Parser::functionDeclaration() {
   std::vector<Parameter> parameters;
   if (!check(TokenType::RParen)) {
     do {
-      // Parse parameter name (can be identifier or keyword like 'in')
+      // Parse parameter name (can be identifier, keyword like 'in', or 'self')
       Token paramName = Token(TokenType::Identifier, "", peek().line);
-      if (check(TokenType::Identifier) || check(TokenType::In)) {
+      if (check(TokenType::Identifier) || check(TokenType::In) || check(TokenType::Self)) {
         advance(); // consume the token
         paramName = previous();
         
@@ -2015,6 +2023,121 @@ GenericTypeInstantiation Parser::parseGenericTypeInstantiation() {
   
   consume(TokenType::RAngle, "Expect '>' after generic type arguments.");
   return GenericTypeInstantiation(typeName, std::move(typeArguments));
+}
+
+// Parse extension declaration: extension TypeName: Protocol1, Protocol2 where T: Equatable { members }
+std::unique_ptr<Stmt> Parser::extensionDeclaration() {
+  consume(TokenType::Identifier, "Expect type name after 'extension'.");
+  Token typeName = previous();
+  
+  std::cout << "Parsing extension for: " << typeName.lexeme << std::endl;
+  
+  // Parse optional generic parameter clause
+  GenericParameterClause genericParams = parseGenericParameterClause();
+  
+  // Parse protocol conformance
+  std::vector<Token> conformedProtocols;
+  if (match({TokenType::Colon})) {
+    do {
+      consume(TokenType::Identifier, "Expect protocol name.");
+      conformedProtocols.push_back(previous());
+    } while (match({TokenType::Comma}));
+  }
+  
+  // Parse optional where clause
+  WhereClause whereClause = parseWhereClause();
+  
+  consume(TokenType::LBrace, "Expect '{' after extension declaration.");
+  
+  std::vector<StructMember> computedProperties;
+  std::vector<std::unique_ptr<FunctionStmt>> methods;
+  std::vector<std::unique_ptr<InitStmt>> initializers;
+  std::vector<std::unique_ptr<SubscriptStmt>> subscripts;
+  
+  while (!check(TokenType::RBrace) && !isAtEnd()) {
+    // Parse optional access level modifier for extension members
+    AccessLevel memberAccessLevel = AccessLevel::INTERNAL;
+    AccessLevel memberSetterAccessLevel = AccessLevel::INTERNAL;
+    
+    if (isAccessLevelToken(peek().type)) {
+      auto accessPair = parseAccessLevelWithSetter();
+      memberAccessLevel = accessPair.first;
+      memberSetterAccessLevel = accessPair.second;
+    }
+    
+    // Check for mutating keyword before func
+    bool isMutating = false;
+    if (match({TokenType::Mutating})) {
+      isMutating = true;
+    }
+    
+    if (match({TokenType::Func})) {
+      // Parse method declaration
+      auto method = std::unique_ptr<FunctionStmt>(static_cast<FunctionStmt*>(functionDeclaration().release()));
+      method->accessLevel = memberAccessLevel;
+      method->isMutating = isMutating;
+      methods.push_back(std::move(method));
+    } else if (match({TokenType::Init})) {
+      // Parse initializer declaration (convenience initializers only)
+      auto init = std::unique_ptr<InitStmt>(static_cast<InitStmt*>(initDeclaration().release()));
+      init->accessLevel = memberAccessLevel;
+      init->initType = InitType::CONVENIENCE; // Extensions can only add convenience initializers
+      initializers.push_back(std::move(init));
+    } else if (match({TokenType::Subscript})) {
+      // Parse subscript declaration
+      auto subscript = std::unique_ptr<SubscriptStmt>(static_cast<SubscriptStmt*>(subscriptDeclaration().release()));
+      subscript->accessLevel = memberAccessLevel;
+      subscript->setterAccessLevel = memberSetterAccessLevel;
+      subscripts.push_back(std::move(subscript));
+    } else if (match({TokenType::Var})) {
+      // Parse computed property (extensions cannot add stored properties)
+      consume(TokenType::Identifier, "Expect property name.");
+      Token propertyName = previous();
+      
+      consume(TokenType::Colon, "Expect ':' after property name.");
+      Token propertyType = parseType();
+      
+      consume(TokenType::LBrace, "Expect '{' after property type.");
+      
+      std::vector<PropertyAccessor> accessors;
+      
+      while (!check(TokenType::RBrace) && !isAtEnd()) {
+        if (match({TokenType::Get})) {
+          consume(TokenType::LBrace, "Expect '{' after 'get'.");
+          auto body = blockStatement();
+          accessors.emplace_back(AccessorType::GET, std::move(body));
+        } else if (match({TokenType::Set})) {
+          consume(TokenType::LBrace, "Expect '{' after 'set'.");
+          auto body = blockStatement();
+          accessors.emplace_back(AccessorType::SET, std::move(body));
+        } else {
+          throw std::runtime_error("Expect 'get' or 'set' in computed property.");
+        }
+      }
+      
+      consume(TokenType::RBrace, "Expect '}' after property accessors.");
+      
+      // Create computed property member
+      StructMember member(propertyName, propertyType, nullptr, true, 
+                         memberAccessLevel, memberSetterAccessLevel);
+      member.accessors = std::move(accessors);
+      computedProperties.push_back(std::move(member));
+    } else {
+      // If we found mutating but no valid declaration, that's an error
+      if (isMutating) {
+        throw std::runtime_error("Expect 'func' after 'mutating' in extension.");
+      }
+      throw std::runtime_error("Expect 'var', 'func', 'init', or 'subscript' in extension body.");
+    }
+  }
+  
+  consume(TokenType::RBrace, "Expect '}' after extension body.");
+  
+  return std::make_unique<ExtensionStmt>(typeName, std::move(conformedProtocols), 
+                                        std::move(genericParams), std::move(whereClause),
+                                        AccessLevel::INTERNAL, std::move(computedProperties), 
+                                        std::move(methods), std::move(initializers), 
+                                        std::move(subscripts));
 }
 
 } // namespace miniswift

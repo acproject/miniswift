@@ -797,13 +797,16 @@ bool Parser::check(TokenType type) {
 std::unique_ptr<Stmt> Parser::blockStatement() {
   std::vector<std::unique_ptr<Stmt>> statements;
   
-  while (!check(TokenType::RBrace) && !isAtEnd()) {
+  while (!check(TokenType::RBrace) && !check(TokenType::Catch) && !isAtEnd()) {
     auto decls = declaration();
     statements.insert(statements.end(), std::make_move_iterator(decls.begin()),
                       std::make_move_iterator(decls.end()));
   }
   
-  consume(TokenType::RBrace, "Expect '}' after block.");
+  // Only consume RBrace if we're not at a catch clause
+  if (!check(TokenType::Catch)) {
+    consume(TokenType::RBrace, "Expect '}' after block.");
+  }
   return std::make_unique<BlockStmt>(std::move(statements));
 }
 
@@ -1021,6 +1024,12 @@ std::unique_ptr<Stmt> Parser::functionDeclaration() {
   
   consume(TokenType::RParen, "Expect ')' after parameters.");
   
+  // Check for throws keyword
+  bool canThrow = false;
+  if (match({TokenType::Throws})) {
+    canThrow = true;
+  }
+  
   Token returnType = Token(TokenType::Identifier, "Void", name.line);
   if (match({TokenType::Arrow})) {
     returnType = parseType();
@@ -1033,7 +1042,7 @@ std::unique_ptr<Stmt> Parser::functionDeclaration() {
   auto body = blockStatement();
   
   return std::make_unique<FunctionStmt>(name, std::move(parameters), returnType, std::move(body), 
-                                        AccessLevel::INTERNAL, std::move(genericParams), std::move(whereClause));
+                                        AccessLevel::INTERNAL, std::move(genericParams), std::move(whereClause), false, canThrow);
 }
 
 // Parse return statement: return expression?
@@ -2183,6 +2192,9 @@ std::unique_ptr<Stmt> Parser::throwStatement() {
 }
 
 std::unique_ptr<Stmt> Parser::doCatchStatement() {
+  // Consume the opening brace for do block
+  consume(TokenType::LBrace, "Expect '{' after 'do'.");
+  
   // Parse do block
   auto doBlock = blockStatement();
   
@@ -2202,24 +2214,15 @@ std::unique_ptr<Stmt> Parser::doCatchStatement() {
         consume(TokenType::Identifier, "Expect error case after '.'.");
         Token caseToken = previous();
         errorType = Token(TokenType::Identifier, firstToken.lexeme + "." + caseToken.lexeme, firstToken.line);
-      } else if (match({TokenType::Identifier})) {
-        // Pattern: catch let variable as ErrorType
-        if (previous().lexeme == "let") {
-          errorVariable = advance();
-          if (match({TokenType::As})) {
-            consume(TokenType::Identifier, "Expect error type after 'as'.");
-            errorType = previous();
-          }
-        } else {
+      } else {
+          // Put the firstToken back since we didn't consume it with a dot
+          current--;
           // Just error type: catch ErrorType
           errorType = firstToken;
         }
-      } else {
-        // Just error type: catch ErrorType
-        errorType = firstToken;
-      }
     }
     
+    consume(TokenType::LBrace, "Expect '{' after catch clause.");
     auto catchBlock = blockStatement();
     
     // Create CatchClause with all required parameters

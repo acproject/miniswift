@@ -270,23 +270,24 @@ struct Closure : Expr {
   const std::vector<std::unique_ptr<Stmt>> body;
 };
 
-// Function declaration: func name<T>(parameters) -> returnType where T: Equatable { body }
+// Function declaration: func name<T>(parameters) throws -> returnType where T: Equatable { body }
 struct FunctionStmt : Stmt {
   FunctionStmt(Token name, std::vector<Parameter> parameters, Token returnType,
                std::unique_ptr<Stmt> body, AccessLevel accessLevel = AccessLevel::INTERNAL,
                GenericParameterClause genericParams = GenericParameterClause({}),
-               WhereClause whereClause = WhereClause({}), bool isMutating = false)
+               WhereClause whereClause = WhereClause({}), bool isMutating = false,
+               bool canThrow = false)
       : name(name), parameters(std::move(parameters)), returnType(returnType),
         body(std::move(body)), accessLevel(accessLevel),
         genericParams(std::move(genericParams)), whereClause(std::move(whereClause)),
-        isMutating(isMutating) {}
+        isMutating(isMutating), canThrow(canThrow) {}
 
   void accept(StmtVisitor &visitor) const override { visitor.visit(*this); }
 
   std::unique_ptr<Stmt> clone() const override {
     return std::make_unique<FunctionStmt>(name, parameters, returnType,
                                           body->clone(), accessLevel,
-                                          genericParams, whereClause, isMutating);
+                                          genericParams, whereClause, isMutating, canThrow);
   }
 
   const Token name;
@@ -297,6 +298,7 @@ struct FunctionStmt : Stmt {
   GenericParameterClause genericParams; // Generic type parameters
   WhereClause whereClause;              // Generic constraints
   bool isMutating;                      // Whether this is a mutating function
+  bool canThrow;                        // Whether this function can throw errors
   
   // Check if this is a generic function
   bool isGeneric() const { return !genericParams.isEmpty(); }

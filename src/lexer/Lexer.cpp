@@ -30,6 +30,7 @@ static void initializeKeywords() {
   keywords["try"] = TokenType::Try;
   keywords["catch"] = TokenType::Catch;
   keywords["throw"] = TokenType::Throw;
+  keywords["throws"] = TokenType::Throws;
   keywords["nil"] = TokenType::Nil;
   keywords["self"] = TokenType::Self;
   keywords["true"] = TokenType::True;

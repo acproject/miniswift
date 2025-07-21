@@ -336,29 +336,7 @@ struct EnumCase {
 };
 
 // Enum declaration: enum Name: RawType { cases }
-struct EnumStmt : Stmt {
-  EnumStmt(Token name, Token rawType, std::vector<EnumCase> cases,
-           std::vector<std::unique_ptr<SubscriptStmt>> subscripts = {})
-      : name(name), rawType(rawType), cases(std::move(cases)), subscripts(std::move(subscripts)) {}
-
-  void accept(StmtVisitor &visitor) const override { visitor.visit(*this); }
-
-  std::unique_ptr<Stmt> clone() const override {
-    std::vector<EnumCase> clonedCases;
-    for (const auto &enumCase : cases) {
-      clonedCases.emplace_back(enumCase.name, enumCase.associatedTypes,
-                               enumCase.rawValue ? enumCase.rawValue->clone()
-                                                 : nullptr);
-    }
-    // For simplicity, skip cloning subscripts in this basic implementation
-    return std::make_unique<EnumStmt>(name, rawType, std::move(clonedCases));
-  }
-
-  const Token name;
-  const Token rawType; // Can be empty for no raw type
-  const std::vector<EnumCase> cases;
-  const std::vector<std::unique_ptr<SubscriptStmt>> subscripts; // Static subscripts
-};
+// EnumStmt moved after SubscriptStmt definition to avoid forward declaration issues
 
 // Enum case access expression: EnumName.caseName or .caseName
 struct EnumAccess : Expr {
@@ -490,6 +468,7 @@ struct StructStmt : Stmt {
   std::vector<std::unique_ptr<InitStmt>> initializers; // Constructors
   std::unique_ptr<DeinitStmt> deinitializer;           // Destructor
   std::vector<std::unique_ptr<SubscriptStmt>> subscripts; // Subscripts
+  std::vector<std::unique_ptr<Stmt>> nestedTypes; // Nested types (structs, classes, enums)
 
   StructStmt(Token name, std::vector<StructMember> members,
              std::vector<std::unique_ptr<FunctionStmt>> methods = {},
@@ -499,12 +478,14 @@ struct StructStmt : Stmt {
              std::vector<Token> conformedProtocols = {},
              AccessLevel accessLevel = AccessLevel::INTERNAL,
              GenericParameterClause genericParams = GenericParameterClause({}),
-             WhereClause whereClause = WhereClause({}))
+             WhereClause whereClause = WhereClause({}),
+             std::vector<std::unique_ptr<Stmt>> nestedTypes = {})
       : name(name), accessLevel(accessLevel), genericParams(std::move(genericParams)),
         conformedProtocols(std::move(conformedProtocols)), whereClause(std::move(whereClause)),
         members(std::move(members)), methods(std::move(methods)),
         initializers(std::move(initializers)),
-        deinitializer(std::move(deinitializer)), subscripts(std::move(subscripts)) {}
+        deinitializer(std::move(deinitializer)), subscripts(std::move(subscripts)),
+        nestedTypes(std::move(nestedTypes)) {}
 
   void accept(StmtVisitor &visitor) const override { visitor.visit(*this); }
 
@@ -533,6 +514,7 @@ struct ClassStmt : Stmt {
   std::vector<std::unique_ptr<InitStmt>> initializers; // Constructors
   std::unique_ptr<DeinitStmt> deinitializer;           // Destructor
   std::vector<std::unique_ptr<SubscriptStmt>> subscripts; // Subscripts
+  std::vector<std::unique_ptr<Stmt>> nestedTypes; // Nested types (structs, classes, enums)
 
   ClassStmt(Token name, Token superclass, std::vector<StructMember> members,
             std::vector<std::unique_ptr<FunctionStmt>> methods = {},
@@ -542,12 +524,14 @@ struct ClassStmt : Stmt {
             std::vector<Token> conformedProtocols = {},
             AccessLevel accessLevel = AccessLevel::INTERNAL,
             GenericParameterClause genericParams = GenericParameterClause({}),
-            WhereClause whereClause = WhereClause({}))
+            WhereClause whereClause = WhereClause({}),
+            std::vector<std::unique_ptr<Stmt>> nestedTypes = {})
       : name(name), superclass(superclass), accessLevel(accessLevel),
         genericParams(std::move(genericParams)), conformedProtocols(std::move(conformedProtocols)),
         whereClause(std::move(whereClause)), members(std::move(members)),
         methods(std::move(methods)), initializers(std::move(initializers)),
-        deinitializer(std::move(deinitializer)), subscripts(std::move(subscripts)) {}
+        deinitializer(std::move(deinitializer)), subscripts(std::move(subscripts)),
+        nestedTypes(std::move(nestedTypes)) {}
 
   void accept(StmtVisitor &visitor) const override { visitor.visit(*this); }
 
@@ -637,6 +621,45 @@ struct SubscriptStmt : Stmt {
                                            std::move(clonedAccessors), isStatic,
                                            accessLevel, setterAccessLevel);
   }
+};
+
+// Enum declaration: enum Name: RawType { cases }
+struct EnumStmt : Stmt {
+  EnumStmt(Token name, Token rawType, std::vector<EnumCase> cases,
+           std::vector<std::unique_ptr<SubscriptStmt>> subscripts = {},
+           std::vector<std::unique_ptr<Stmt>> nestedTypes = {})
+      : name(name), rawType(rawType), cases(std::move(cases)), 
+        subscripts(std::move(subscripts)), nestedTypes(std::move(nestedTypes)) {}
+
+  void accept(StmtVisitor &visitor) const override { visitor.visit(*this); }
+
+  std::unique_ptr<Stmt> clone() const override {
+    std::vector<EnumCase> clonedCases;
+    for (const auto &enumCase : cases) {
+      clonedCases.emplace_back(enumCase.name, enumCase.associatedTypes,
+                               enumCase.rawValue ? enumCase.rawValue->clone()
+                                                 : nullptr);
+    }
+    
+    std::vector<std::unique_ptr<SubscriptStmt>> clonedSubscripts;
+    for (const auto &subscript : subscripts) {
+      auto clonedStmt = subscript->clone();
+      clonedSubscripts.push_back(std::unique_ptr<SubscriptStmt>(static_cast<SubscriptStmt*>(clonedStmt.release())));
+    }
+    
+    std::vector<std::unique_ptr<Stmt>> clonedNestedTypes;
+    for (const auto &nestedType : nestedTypes) {
+      clonedNestedTypes.push_back(nestedType->clone());
+    }
+    
+    return std::make_unique<EnumStmt>(name, rawType, std::move(clonedCases), std::move(clonedSubscripts), std::move(clonedNestedTypes));
+  }
+
+  const Token name;
+  const Token rawType; // Can be empty for no raw type
+  const std::vector<EnumCase> cases;
+  const std::vector<std::unique_ptr<SubscriptStmt>> subscripts; // Static subscripts
+  const std::vector<std::unique_ptr<Stmt>> nestedTypes; // Nested types (structs, classes, enums)
 };
 
 // Protocol requirement types

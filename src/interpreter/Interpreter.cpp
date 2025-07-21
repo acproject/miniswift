@@ -1483,6 +1483,39 @@ void Interpreter::visit(const Call& expr) {
     // Check if callee is MemberAccess
     if (auto memberAccess = dynamic_cast<const MemberAccess*>(expr.callee.get())) {
         
+        // First check if this is a nested type constructor call
+        if (auto varExpr = dynamic_cast<const VarExpr*>(memberAccess->object.get())) {
+            std::string fullTypeName = varExpr->name.lexeme + "." + memberAccess->member.lexeme;
+            // Check if this is a nested struct constructor
+            if (auto* structPropManager = getStructPropertyManager(fullTypeName)) {
+                // Create a new struct instance
+                auto propContainer = std::make_shared<InstancePropertyContainer>(*structPropManager, environment);
+                propContainer->initializeDefaults(*this);
+                StructValue structValue(fullTypeName, propContainer);
+                
+                // Copy subscripts from static manager to instance
+                auto* typeSubscriptManager = staticSubscriptManager->getSubscriptManager(fullTypeName);
+                if (typeSubscriptManager) {
+                    for (const auto& subscript : typeSubscriptManager->getAllSubscripts()) {
+                        structValue.subscripts->addSubscript(std::make_unique<SubscriptValue>(*subscript));
+                    }
+                }
+                
+                result = Value(structValue);
+                return;
+            }
+            
+            // Check if this is a nested class constructor
+            if (auto* classPropManager = getClassPropertyManager(fullTypeName)) {
+                // Create a new class instance
+                auto propContainer = std::make_unique<InstancePropertyContainer>(*classPropManager, environment);
+                propContainer->initializeDefaults(*this);
+                auto classInstance = std::make_shared<ClassInstance>(fullTypeName, std::move(propContainer));
+                result = Value(classInstance);
+                return;
+            }
+        }
+        
         // Handle method calls on objects (including extension methods)
         Value object = evaluate(*memberAccess->object);
         Value method = getMemberValue(object, memberAccess->member.lexeme);
@@ -1586,7 +1619,39 @@ void Interpreter::visit(const Call& expr) {
     auto callable = callee.asFunction();
     
     if (callable->isFunction) {
-        // Handle function call
+        // Check if this is a constructor call by examining the function name
+        std::string functionName = callable->functionDecl->name.lexeme;
+        
+        // Check if this is a struct constructor
+        if (auto* structPropManager = getStructPropertyManager(functionName)) {
+            // Create a new struct instance
+            auto propContainer = std::make_shared<InstancePropertyContainer>(*structPropManager, environment);
+            propContainer->initializeDefaults(*this);
+            StructValue structValue(functionName, propContainer);
+            
+            // Copy subscripts from static manager to instance
+            auto* typeSubscriptManager = staticSubscriptManager->getSubscriptManager(functionName);
+            if (typeSubscriptManager) {
+                for (const auto& subscript : typeSubscriptManager->getAllSubscripts()) {
+                    structValue.subscripts->addSubscript(std::make_unique<SubscriptValue>(*subscript));
+                }
+            }
+            
+            result = Value(structValue);
+            return;
+        }
+        
+        // Check if this is a class constructor
+        if (auto* classPropManager = getClassPropertyManager(functionName)) {
+            // Create a new class instance
+            auto propContainer = std::make_unique<InstancePropertyContainer>(*classPropManager, environment);
+            propContainer->initializeDefaults(*this);
+            auto classInstance = std::make_shared<ClassInstance>(functionName, std::move(propContainer));
+            result = Value(classInstance);
+            return;
+        }
+        
+        // Handle regular function call
         if (arguments.size() != callable->functionDecl->parameters.size()) {
             throw std::runtime_error("Expected " + 
                 std::to_string(callable->functionDecl->parameters.size()) + 
@@ -1668,9 +1733,71 @@ void Interpreter::visit(const Closure& expr) {
 
 // Execute enum declaration: enum Name: RawType { cases }
 void Interpreter::visit(const EnumStmt& stmt) {
+    // Set current type context for subscript registration
+    environment->define("__current_type__", Value(stmt.name.lexeme), false, "String");
+    
+    // Process subscripts
+    for (const auto& subscript : stmt.subscripts) {
+        subscript->accept(*this);
+    }
+    
+    // Process nested types
+    for (const auto& nestedType : stmt.nestedTypes) {
+        // Set nested type context for proper naming
+        std::string previousContext;
+        try {
+            Value context = environment->get(Token(TokenType::Identifier, "__nested_context__", 0));
+            if (context.type == ValueType::String) {
+                previousContext = std::get<std::string>(context.value);
+            }
+        } catch (const std::runtime_error&) {
+            // No previous context
+        }
+        
+        std::string nestedContext = stmt.name.lexeme;
+        if (!previousContext.empty()) {
+            nestedContext = previousContext + "." + stmt.name.lexeme;
+        }
+        environment->define("__nested_context__", Value(nestedContext), false, "String");
+        
+        nestedType->accept(*this);
+        
+        // Restore previous context
+        if (!previousContext.empty()) {
+            environment->assign(Token(TokenType::Identifier, "__nested_context__", 0), Value(previousContext));
+        } else {
+            try {
+                environment->assign(Token(TokenType::Identifier, "__nested_context__", 0), Value());
+            } catch (...) {
+                // Ignore if __nested_context__ doesn't exist
+            }
+        }
+    }
+    
     // Store enum definition in environment for later use
-    // For now, we'll store the enum name as a special marker
-    environment->define(stmt.name.lexeme, Value(), false, "Enum");
+    std::string typeName = stmt.name.lexeme;
+    
+    // Check if we're in a nested context
+    try {
+        Value context = environment->get(Token(TokenType::Identifier, "__nested_context__", 0));
+        if (context.type == ValueType::String) {
+            std::string nestedContext = std::get<std::string>(context.value);
+            if (!nestedContext.empty()) {
+                typeName = nestedContext + "." + stmt.name.lexeme;
+            }
+        }
+    } catch (const std::runtime_error&) {
+        // No nested context, use simple name
+    }
+    
+    environment->define(typeName, Value(), false, "Enum");
+    
+    // Clean up type context
+    try {
+        environment->assign(Token(TokenType::Identifier, "__current_type__", 0), Value());
+    } catch (...) {
+        // Ignore if __current_type__ doesn't exist
+    }
 }
 
 // Execute enum access: EnumType.caseName or EnumType.caseName(arguments)
@@ -1704,24 +1831,101 @@ void Interpreter::visit(const StructStmt& stmt) {
     // Set current type context for subscript registration
     environment->define("__current_type__", Value(stmt.name.lexeme), false, "String");
     
-    // Register struct properties
-    registerStructProperties(stmt.name.lexeme, stmt.members);
+    // Store struct definition in environment for later use
+    std::string typeName = stmt.name.lexeme;
+    
+    // Check if we're in a nested context (but only for nested types, not the current type)
+    std::string currentNestedContext;
+    try {
+        Value context = environment->get(Token(TokenType::Identifier, "__nested_context__", 0));
+        if (context.type == ValueType::String) {
+            currentNestedContext = std::get<std::string>(context.value);
+            // Only use nested context if it doesn't end with our own name
+             // (to avoid OuterStruct.OuterStruct situation)
+             std::string suffix = "." + stmt.name.lexeme;
+             if (!currentNestedContext.empty() && 
+                 currentNestedContext != stmt.name.lexeme &&
+                 (currentNestedContext.length() < suffix.length() || 
+                  currentNestedContext.substr(currentNestedContext.length() - suffix.length()) != suffix)) {
+                 typeName = currentNestedContext + "." + stmt.name.lexeme;
+             }
+        }
+    } catch (const std::runtime_error&) {
+        // No nested context, use simple name
+    }
+    
+    // Register struct properties with the full type name
+    registerStructProperties(typeName, stmt.members);
     
     // Process subscripts
     for (const auto& subscript : stmt.subscripts) {
         subscript->accept(*this);
     }
     
-    // Debug: Check if property manager was created
-    auto* propManager = getStructPropertyManager(stmt.name.lexeme);
-    if (propManager) {
-        // std::cout << "Property manager created for struct: " << stmt.name.lexeme << std::endl;
-    } else {
-        std::cout << "Failed to create property manager for struct: " << stmt.name.lexeme << std::endl;
+    // Process nested types
+    for (const auto& nestedType : stmt.nestedTypes) {
+        // Set nested type context for proper naming
+        std::string previousContext;
+        try {
+            Value context = environment->get(Token(TokenType::Identifier, "__nested_context__", 0));
+            if (context.type == ValueType::String) {
+                previousContext = std::get<std::string>(context.value);
+            }
+        } catch (const std::runtime_error&) {
+            // No previous context
+        }
+        
+        std::string nestedContext = stmt.name.lexeme;
+        if (!previousContext.empty()) {
+            nestedContext = previousContext + "." + stmt.name.lexeme;
+        }
+        environment->define("__nested_context__", Value(nestedContext), false, "String");
+        
+        nestedType->accept(*this);
+        
+        // Restore previous context
+        if (!previousContext.empty()) {
+            environment->assign(Token(TokenType::Identifier, "__nested_context__", 0), Value(previousContext));
+        } else {
+            try {
+                environment->assign(Token(TokenType::Identifier, "__nested_context__", 0), Value());
+            } catch (...) {
+                // Ignore if __nested_context__ doesn't exist
+            }
+        }
     }
     
-    // Store struct definition in environment for later use
-    environment->define(stmt.name.lexeme, Value(), false, "Struct");
+    // Check if property manager was created
+    auto* propManager = getStructPropertyManager(typeName);
+    if (!propManager) {
+        std::cout << "Failed to create property manager for struct: " << typeName << std::endl;
+    }
+    
+    // Create a constructor for the struct type
+    Token constructorName{TokenType::Identifier, stmt.name.lexeme, 0};
+    std::vector<Parameter> emptyParams;
+    Token voidType{TokenType::Identifier, "Void", 0};
+    
+    // Create constructor body that creates and returns a struct instance
+    std::vector<std::unique_ptr<Stmt>> constructorStmts;
+    auto constructorBody = std::make_unique<BlockStmt>(std::move(constructorStmts));
+    
+    // Create the constructor function statement
+    auto constructorFunc = std::make_shared<FunctionStmt>(
+        constructorName,
+        emptyParams,
+        voidType,
+        std::move(constructorBody)
+    );
+    
+    // Store the function statement to keep it alive
+    constructorFunctions[typeName] = constructorFunc;
+    
+    // Create a special callable that creates struct instances
+    auto callable = std::make_shared<Function>(constructorFunc.get(), environment);
+    
+    // Store the constructor in the environment with the type name
+    environment->define(typeName, Value(callable), false, "Constructor");
     
     // Clean up type context
     try {
@@ -1736,12 +1940,61 @@ void Interpreter::visit(const ClassStmt& stmt) {
     // Set current type context for subscript registration
     environment->define("__current_type__", Value(stmt.name.lexeme), false, "String");
     
-    // Register class properties
-    registerClassProperties(stmt.name.lexeme, stmt.members);
+    // Store class definition in environment for later use
+    std::string typeName = stmt.name.lexeme;
+    
+    // Check if we're in a nested context
+    try {
+        Value context = environment->get(Token(TokenType::Identifier, "__nested_context__", 0));
+        if (context.type == ValueType::String) {
+            std::string nestedContext = std::get<std::string>(context.value);
+            if (!nestedContext.empty()) {
+                typeName = nestedContext + "." + stmt.name.lexeme;
+            }
+        }
+    } catch (const std::runtime_error&) {
+        // No nested context, use simple name
+    }
+    
+    // Register class properties with the full type name
+    registerClassProperties(typeName, stmt.members);
     
     // Process subscripts
     for (const auto& subscript : stmt.subscripts) {
         subscript->accept(*this);
+    }
+    
+    // Process nested types
+    for (const auto& nestedType : stmt.nestedTypes) {
+        // Set nested type context for proper naming
+        std::string previousContext;
+        try {
+            Value context = environment->get(Token(TokenType::Identifier, "__nested_context__", 0));
+            if (context.type == ValueType::String) {
+                previousContext = std::get<std::string>(context.value);
+            }
+        } catch (const std::runtime_error&) {
+            // No previous context
+        }
+        
+        std::string nestedContext = stmt.name.lexeme;
+        if (!previousContext.empty()) {
+            nestedContext = previousContext + "." + stmt.name.lexeme;
+        }
+        environment->define("__nested_context__", Value(nestedContext), false, "String");
+        
+        nestedType->accept(*this);
+        
+        // Restore previous context
+        if (!previousContext.empty()) {
+            environment->assign(Token(TokenType::Identifier, "__nested_context__", 0), Value(previousContext));
+        } else {
+            try {
+                environment->assign(Token(TokenType::Identifier, "__nested_context__", 0), Value());
+            } catch (...) {
+                // Ignore if __nested_context__ doesn't exist
+            }
+        }
     }
     
     // Register inheritance relationship
@@ -1787,13 +2040,19 @@ void Interpreter::visit(const ClassStmt& stmt) {
             std::move(constructorBody)
         );
         
+        // Store the function statement to keep it alive
+        constructorFunctions[typeName] = constructorFunc;
+        
         // Create a special callable that creates class instances
         auto callable = std::make_shared<Function>(constructorFunc.get(), environment);
         
-        // Store the constructor in the environment with the class name
-        environment->define(stmt.name.lexeme, Value(callable), false, "Constructor");
-        
-        std::cout << "Created default constructor for class: " << stmt.name.lexeme << std::endl;
+        // Store the constructor in the environment with the type name
+        environment->define(typeName, Value(callable), false, "Constructor");
+    }
+    
+    // For classes with explicit constructors, store class definition
+    if (hasExplicitConstructor) {
+        environment->define(typeName, Value(), false, "Class");
     }
     
     // Clean up type context
@@ -1893,6 +2152,31 @@ void Interpreter::visit(const SubscriptStmt& stmt) {
 
 // Execute member access: object.member
 void Interpreter::visit(const MemberAccess& expr) {
+    // Check if this is a type access (e.g., OuterType.NestedType)
+    if (auto varExpr = dynamic_cast<const VarExpr*>(expr.object.get())) {
+        std::string typeName = varExpr->name.lexeme;
+        
+        // Check if this is accessing a nested type
+        std::string nestedTypeName = typeName + "." + expr.member.lexeme;
+        try {
+            Value nestedType = environment->get(Token(TokenType::Identifier, nestedTypeName, 0));
+            result = nestedType;
+            return;
+        } catch (const std::runtime_error&) {
+            // Not a nested type, check if the object is a type name (constructor)
+            try {
+                Value typeConstructor = environment->get(Token(TokenType::Identifier, typeName, 0));
+                if (typeConstructor.isFunction()) {
+                    // This is a type name, use getMemberValue to handle it
+                    result = getMemberValue(typeConstructor, expr.member.lexeme);
+                    return;
+                }
+            } catch (const std::runtime_error&) {
+                // Not a type name either, continue with normal member access
+            }
+        }
+    }
+    
     Value object = evaluate(*expr.object);
     result = getMemberValue(object, expr.member.lexeme);
 }
@@ -2090,6 +2374,26 @@ Value Interpreter::getMemberValue(const Value& object, const std::string& member
     // If the object is an optional, we cannot access its members directly
     if (object.isOptional()) {
         throw std::runtime_error("Cannot access member '" + memberName + "' on optional value. Use optional chaining (?.) instead.");
+    }
+    
+    // Handle function types (constructors) - check for nested types
+    if (object.isFunction()) {
+        auto function = object.asFunction();
+        // Try to find nested type with the function name + member name
+        std::string functionName;
+        if (function->isFunction && function->functionDecl) {
+            functionName = function->functionDecl->name.lexeme;
+        } else {
+            throw std::runtime_error("Cannot access members on closure");
+        }
+        
+        std::string nestedTypeName = functionName + "." + memberName;
+        try {
+            Value nestedType = environment->get(Token(TokenType::Identifier, nestedTypeName, 0));
+            return nestedType;
+        } catch (const std::runtime_error&) {
+            throw std::runtime_error("Type '" + functionName + "' has no member '" + memberName + "'");
+        }
     }
     
     if (object.isStruct()) {

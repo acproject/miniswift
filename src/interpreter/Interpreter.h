@@ -94,6 +94,9 @@ private:
     std::unordered_map<std::string, std::unique_ptr<PropertyManager>> structPropertyManagers;
     std::unordered_map<std::string, std::unique_ptr<PropertyManager>> classPropertyManagers;
     
+    // Constructor function storage to keep them alive
+    std::unordered_map<std::string, std::shared_ptr<FunctionStmt>> constructorFunctions;
+    
     // Inheritance management
     std::unique_ptr<InheritanceManager> inheritanceManager;
     std::unique_ptr<SuperHandler> superHandler;

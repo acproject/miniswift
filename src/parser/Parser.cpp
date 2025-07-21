@@ -1268,6 +1268,7 @@ std::unique_ptr<Stmt> Parser::enumDeclaration() {
   
   std::vector<EnumCase> cases;
   std::vector<std::unique_ptr<SubscriptStmt>> subscripts;
+  std::vector<std::unique_ptr<Stmt>> nestedTypes;
   
   while (!check(TokenType::RBrace) && !isAtEnd()) {
     if (match({TokenType::Case})) {
@@ -1314,13 +1315,25 @@ std::unique_ptr<Stmt> Parser::enumDeclaration() {
       } else {
         throw std::runtime_error("Only static subscripts are currently supported in enums.");
       }
+    } else if (match({TokenType::Struct})) {
+      // Parse nested struct declaration
+      auto nestedStruct = structDeclaration();
+      nestedTypes.push_back(std::move(nestedStruct));
+    } else if (match({TokenType::Class})) {
+      // Parse nested class declaration
+      auto nestedClass = classDeclaration();
+      nestedTypes.push_back(std::move(nestedClass));
+    } else if (match({TokenType::Enum})) {
+      // Parse nested enum declaration
+      auto nestedEnum = enumDeclaration();
+      nestedTypes.push_back(std::move(nestedEnum));
     } else {
-      throw std::runtime_error("Expect 'case' or 'static' in enum declaration.");
+      throw std::runtime_error("Expect 'case', 'static', 'struct', 'class', or 'enum' in enum declaration.");
     }
   }
   
   consume(TokenType::RBrace, "Expect '}' after enum cases.");
-  return std::make_unique<EnumStmt>(name, rawType, std::move(cases), std::move(subscripts));
+  return std::make_unique<EnumStmt>(name, rawType, std::move(cases), std::move(subscripts), std::move(nestedTypes));
 }
 
 // Parse struct declaration: struct Name<T> { var member1: Type, let member2: Type = defaultValue }
@@ -1352,6 +1365,7 @@ std::unique_ptr<Stmt> Parser::structDeclaration() {
   std::vector<std::unique_ptr<InitStmt>> initializers;
   std::unique_ptr<DeinitStmt> deinitializer;
   std::vector<std::unique_ptr<SubscriptStmt>> subscripts;
+  std::vector<std::unique_ptr<Stmt>> nestedTypes;
   
   while (!check(TokenType::RBrace) && !isAtEnd()) {
     // Parse optional access level modifier for struct members
@@ -1395,6 +1409,18 @@ std::unique_ptr<Stmt> Parser::structDeclaration() {
       subscript->accessLevel = memberAccessLevel;
       subscript->setterAccessLevel = memberSetterAccessLevel;
       subscripts.push_back(std::move(subscript));
+    } else if (match({TokenType::Struct})) {
+      // Parse nested struct declaration
+      auto nestedStruct = structDeclaration();
+      nestedTypes.push_back(std::move(nestedStruct));
+    } else if (match({TokenType::Class})) {
+      // Parse nested class declaration
+      auto nestedClass = classDeclaration();
+      nestedTypes.push_back(std::move(nestedClass));
+    } else if (match({TokenType::Enum})) {
+      // Parse nested enum declaration
+      auto nestedEnum = enumDeclaration();
+      nestedTypes.push_back(std::move(nestedEnum));
     } else if (match({TokenType::Var, TokenType::Let})) {
       // Parse member declaration
       bool isVar = previous().type == TokenType::Var;
@@ -1460,7 +1486,7 @@ std::unique_ptr<Stmt> Parser::structDeclaration() {
       
       match({TokenType::Semicolon}); // Optional semicolon
     } else {
-      throw std::runtime_error("Expect 'var', 'let', 'func', 'init', 'deinit', or 'subscript' in struct body.");
+      throw std::runtime_error("Expect 'var', 'let', 'func', 'init', 'deinit', 'subscript', 'struct', 'class', or 'enum' in struct body.");
     }
   }
   
@@ -1468,7 +1494,7 @@ std::unique_ptr<Stmt> Parser::structDeclaration() {
   return std::make_unique<StructStmt>(name, std::move(members), std::move(methods), 
                                       std::move(initializers), std::move(deinitializer), std::move(subscripts), 
                                       std::move(conformedProtocols), AccessLevel::INTERNAL, 
-                                      std::move(genericParams), std::move(whereClause));
+                                      std::move(genericParams), std::move(whereClause), std::move(nestedTypes));
 }
 
 // Parse class declaration: class Name<T>: Superclass, Protocol1, Protocol2 { var member1: Type, func method() {} }
@@ -1478,6 +1504,8 @@ std::unique_ptr<Stmt> Parser::classDeclaration() {
   
   // Parse optional generic parameter clause
   GenericParameterClause genericParams = parseGenericParameterClause();
+  
+  std::vector<std::unique_ptr<Stmt>> nestedTypes;
   
   Token superclass = Token(TokenType::Nil, "", name.line);
   std::vector<Token> conformedProtocols;
@@ -1545,6 +1573,18 @@ std::unique_ptr<Stmt> Parser::classDeclaration() {
       subscript->accessLevel = memberAccessLevel;
       subscript->setterAccessLevel = memberSetterAccessLevel;
       subscripts.push_back(std::move(subscript));
+    } else if (match({TokenType::Struct})) {
+      // Parse nested struct declaration
+      auto nestedStruct = structDeclaration();
+      nestedTypes.push_back(std::move(nestedStruct));
+    } else if (match({TokenType::Class})) {
+      // Parse nested class declaration
+      auto nestedClass = classDeclaration();
+      nestedTypes.push_back(std::move(nestedClass));
+    } else if (match({TokenType::Enum})) {
+      // Parse nested enum declaration
+      auto nestedEnum = enumDeclaration();
+      nestedTypes.push_back(std::move(nestedEnum));
     } else if (match({TokenType::Var, TokenType::Let})) {
       // Parse member declaration
       bool isVar = previous().type == TokenType::Var;
@@ -1564,7 +1604,7 @@ std::unique_ptr<Stmt> Parser::classDeclaration() {
       
       match({TokenType::Semicolon}); // Optional semicolon
     } else {
-      throw std::runtime_error("Expect 'var', 'let', 'func', 'init', 'deinit', or 'subscript' in class body.");
+      throw std::runtime_error("Expect 'var', 'let', 'func', 'init', 'deinit', 'subscript', 'struct', 'class', or 'enum' in class body.");
     }
   }
   
@@ -1572,7 +1612,7 @@ std::unique_ptr<Stmt> Parser::classDeclaration() {
   return std::make_unique<ClassStmt>(name, superclass, std::move(members), std::move(methods),
                                      std::move(initializers), std::move(deinitializer), std::move(subscripts), 
                                      std::move(conformedProtocols), AccessLevel::INTERNAL, 
-                                     std::move(genericParams), std::move(whereClause));
+                                     std::move(genericParams), std::move(whereClause), std::move(nestedTypes));
 }
 
 // Parse member access: object.member

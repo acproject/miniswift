@@ -26,7 +26,7 @@ Interpreter::Interpreter() {
 }
 
 void Interpreter::interpret(const std::vector<std::unique_ptr<Stmt>>& statements) {
-    std::cout << "Starting interpretation with " << statements.size() << " statements" << std::endl;
+    // std::cout << "Starting interpretation with " << statements.size() << " statements" << std::endl;
     try {
         for (const auto& statement : statements) {
             statement->accept(*this);
@@ -1333,7 +1333,7 @@ void Interpreter::visit(const StructStmt& stmt) {
     // Debug: Check if property manager was created
     auto* propManager = getStructPropertyManager(stmt.name.lexeme);
     if (propManager) {
-        std::cout << "Property manager created for struct: " << stmt.name.lexeme << std::endl;
+        // std::cout << "Property manager created for struct: " << stmt.name.lexeme << std::endl;
     } else {
         std::cout << "Failed to create property manager for struct: " << stmt.name.lexeme << std::endl;
     }
@@ -1920,7 +1920,7 @@ void Interpreter::visit(const ProtocolStmt& stmt) {
 
 // Execute extension declaration: extension TypeName: Protocol1, Protocol2 { members }
 void Interpreter::visit(const ExtensionStmt& stmt) {
-    std::cout << "Extension declaration for: " << stmt.typeName.lexeme << std::endl;
+    // std::cout << "Extension declaration for: " << stmt.typeName.lexeme << std::endl;
     
     // Set current type context for member registration
     environment->define("__current_type__", Value(stmt.typeName.lexeme), false, "String");
@@ -1982,7 +1982,7 @@ void Interpreter::visit(const ExtensionStmt& stmt) {
         auto function = std::make_shared<Function>(method.get(), environment);
         globals->define(mangledName, Value(function), false, "Function");
         
-        std::cout << "Registered extension method: " << mangledName << std::endl;
+        // std::cout << "Registered extension method: " << mangledName << std::endl;
     }
     
     // Register convenience initializers from extension
@@ -1998,7 +1998,7 @@ void Interpreter::visit(const ExtensionStmt& stmt) {
         std::string mangledName = stmt.typeName.lexeme + ".init";
         globals->define(mangledName, Value(constructorValue), false, "Constructor");
         
-        std::cout << "Registered extension initializer: " << mangledName << std::endl;
+        // std::cout << "Registered extension initializer: " << mangledName << std::endl;
     }
     
     // Register subscripts from extension
@@ -2022,7 +2022,7 @@ void Interpreter::visit(const ExtensionStmt& stmt) {
         // Ignore if __current_type__ doesn't exist
     }
     
-    std::cout << "Extension for '" << stmt.typeName.lexeme << "' processed successfully" << std::endl;
+    // std::cout << "Extension for '" << stmt.typeName.lexeme << "' processed successfully" << std::endl;
 }
 
 // Execute range expression: start..<end or start...end

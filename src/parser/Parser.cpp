@@ -1275,7 +1275,7 @@ std::unique_ptr<Stmt> Parser::structDeclaration() {
   consume(TokenType::Identifier, "Expect struct name.");
   Token name = previous();
   
-  std::cout << "Parsing struct: " << name.lexeme << std::endl;
+  // std::cout << "Parsing struct: " << name.lexeme << std::endl;
   
   // Parse optional generic parameter clause
   GenericParameterClause genericParams = parseGenericParameterClause();
@@ -2030,7 +2030,7 @@ std::unique_ptr<Stmt> Parser::extensionDeclaration() {
   consume(TokenType::Identifier, "Expect type name after 'extension'.");
   Token typeName = previous();
   
-  std::cout << "Parsing extension for: " << typeName.lexeme << std::endl;
+  // std::cout << "Parsing extension for: " << typeName.lexeme << std::endl;
   
   // Parse optional generic parameter clause
   GenericParameterClause genericParams = parseGenericParameterClause();

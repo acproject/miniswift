@@ -26,7 +26,7 @@ void MethodInterpreter::registerStructMethods(const std::string& structName, con
 
 // 注册类方法
 void MethodInterpreter::registerClassMethods(const std::string& className, const std::vector<std::unique_ptr<FunctionStmt>>& methods) {
-    std::cout << "Registering " << methods.size() << " methods for class '" << className << "'" << std::endl;
+    // std::cout << "Registering " << methods.size() << " methods for class '" << className << "'" << std::endl;
     auto manager = getClassMethodManager(className);
     if (!manager) {
         classMethods_[className] = std::make_unique<MethodManager>();
@@ -34,7 +34,7 @@ void MethodInterpreter::registerClassMethods(const std::string& className, const
     }
     
     for (const auto& method : methods) {
-        std::cout << "Registering method: " << method->name.lexeme << std::endl;
+        // std::cout << "Registering method: " << method->name.lexeme << std::endl;
         auto methodDef = createMethodDefinition(*method);
         manager->addMethod(std::move(methodDef));
     }
@@ -51,14 +51,14 @@ const MethodDefinition* MethodInterpreter::getStructMethod(const std::string& st
 
 // 获取类方法
 const MethodDefinition* MethodInterpreter::getClassMethod(const std::string& className, const std::string& methodName) const {
-    std::cout << "getClassMethod called for class '" << className << "', method '" << methodName << "'" << std::endl;
+    // std::cout << "getClassMethod called for class '" << className << "', method '" << methodName << "'" << std::endl;
     const auto* manager = getClassMethodManager(className);
     if (!manager) {
-        std::cout << "No method manager found for class '" << className << "'" << std::endl;
+        // std::cout << "No method manager found for class '" << className << "'" << std::endl;
         return nullptr;
     }
     const auto* result = manager->getMethod(methodName);
-    std::cout << "getMethod returned: " << (result ? "found" : "not found") << std::endl;
+    // std::cout << "getMethod returned: " << (result ? "found" : "not found") << std::endl;
     return result;
 }
 
@@ -105,10 +105,10 @@ Value MethodInterpreter::getMemberValue(const Value& object, const std::string& 
         }
     } else if (object.isClass()) {
         const auto& classVal = *object.asClass();
-        std::cout << "Looking for method '" << memberName << "' in class '" << classVal.className << "'" << std::endl;
+        // std::cout << "Looking for method '" << memberName << "' in class '" << classVal.className << "'" << std::endl;
         const auto* methodDef = getClassMethod(classVal.className, memberName);
         if (methodDef) {
-            std::cout << "Found method '" << memberName << "' in class '" << classVal.className << "'" << std::endl;
+            // std::cout << "Found method '" << memberName << "' in class '" << classVal.className << "'" << std::endl;
             // 创建绑定了 self 的方法
             auto methodManager = getClassMethodManager(classVal.className);
             if (methodManager) {

@@ -51,6 +51,15 @@ void AstPrinter::visit(const DictionaryLiteral& expr) {
     result += "}";
 }
 
+void AstPrinter::visit(const TupleLiteral& expr) {
+    result += "(";
+    for (size_t i = 0; i < expr.elements.size(); ++i) {
+        if (i > 0) result += ", ";
+        expr.elements[i]->accept(*this);
+    }
+    result += ")";
+}
+
 void AstPrinter::visit(const IndexAccess& expr) {
     parenthesize("index", {expr.object.get(), expr.index.get()});
 }

@@ -23,6 +23,25 @@ class SubscriptManager;
 using Array = std::shared_ptr<std::vector<Value>>;
 using Dictionary = std::shared_ptr<std::unordered_map<std::string, Value>>;
 
+// Tuple wrapper to distinguish from Array in variant
+struct TupleValue {
+    std::shared_ptr<std::vector<Value>> elements;
+    
+    TupleValue() : elements(std::make_shared<std::vector<Value>>()) {}
+    TupleValue(std::shared_ptr<std::vector<Value>> elems) : elements(elems) {}
+    TupleValue(std::vector<Value> elems) : elements(std::make_shared<std::vector<Value>>(std::move(elems))) {}
+    
+    bool operator==(const TupleValue& other) const {
+        return elements == other.elements;
+    }
+    
+    bool operator!=(const TupleValue& other) const {
+        return !(*this == other);
+    }
+};
+
+using Tuple = TupleValue;
+
 // Struct value type with property support
 struct StructValue {
     std::string structName;
@@ -166,6 +185,7 @@ enum class ValueType {
   String,
   Array,
   Dictionary,
+  Tuple,
   Function,
   Enum,
   Struct,
@@ -177,7 +197,7 @@ enum class ValueType {
 
 struct Value {
     ValueType type;
-    std::variant<std::monostate, bool, int, double, std::string, Array, Dictionary, std::shared_ptr<Function>, EnumValue, StructValue, std::shared_ptr<ClassValue>, std::shared_ptr<ConstructorValue>, std::shared_ptr<DestructorValue>, OptionalValue> value;
+    std::variant<std::monostate, bool, int, double, std::string, Array, Dictionary, Tuple, std::shared_ptr<Function>, EnumValue, StructValue, std::shared_ptr<ClassValue>, std::shared_ptr<ConstructorValue>, std::shared_ptr<DestructorValue>, OptionalValue> value;
 
     Value() : type(ValueType::Nil), value(std::monostate{}) {}
     Value(bool v) : type(ValueType::Bool), value(v) {}
@@ -186,6 +206,7 @@ struct Value {
     Value(std::string v) : type(ValueType::String), value(v) {}
     Value(Array v) : type(ValueType::Array), value(v) {}
     Value(Dictionary v) : type(ValueType::Dictionary), value(v) {}
+    Value(Tuple v) : type(ValueType::Tuple), value(v) {}
     Value(std::shared_ptr<Function> v) : type(ValueType::Function), value(v) {}
     Value(EnumValue v) : type(ValueType::Enum), value(v) {}
     Value(StructValue v) : type(ValueType::Struct), value(v) {}
@@ -201,6 +222,7 @@ struct Value {
     // Helper methods for collections and functions
     bool isArray() const { return type == ValueType::Array; }
     bool isDictionary() const { return type == ValueType::Dictionary; }
+    bool isTuple() const { return type == ValueType::Tuple; }
     bool isFunction() const { return type == ValueType::Function; }
     bool isEnum() const { return type == ValueType::Enum; }
     bool isStruct() const { return type == ValueType::Struct; }
@@ -220,12 +242,18 @@ struct Value {
     Dictionary& asDictionary() { return std::get<Dictionary>(value); }
     const Dictionary& asDictionary() const { return std::get<Dictionary>(value); }
     
+    Tuple& asTuple() { return std::get<Tuple>(value); }
+    const Tuple& asTuple() const { return std::get<Tuple>(value); }
+    
     // Convenience methods for accessing collection contents
     std::vector<Value>& asArrayRef() { return *std::get<Array>(value); }
     const std::vector<Value>& asArrayRef() const { return *std::get<Array>(value); }
     
     std::unordered_map<std::string, Value>& asDictionaryRef() { return *std::get<Dictionary>(value); }
     const std::unordered_map<std::string, Value>& asDictionaryRef() const { return *std::get<Dictionary>(value); }
+    
+    std::vector<Value>& asTupleRef() { return *std::get<Tuple>(value).elements; }
+    const std::vector<Value>& asTupleRef() const { return *std::get<Tuple>(value).elements; }
     
     std::shared_ptr<Function>& asFunction() { return std::get<std::shared_ptr<Function>>(value); }
     const std::shared_ptr<Function>& asFunction() const { return std::get<std::shared_ptr<Function>>(value); }
@@ -279,6 +307,8 @@ struct Value {
                 return std::get<Array>(value) == std::get<Array>(other.value);
             case ValueType::Dictionary:
                 return std::get<Dictionary>(value) == std::get<Dictionary>(other.value);
+            case ValueType::Tuple:
+                return std::get<Tuple>(value) == std::get<Tuple>(other.value);
             case ValueType::Function:
                 return std::get<std::shared_ptr<Function>>(value) == std::get<std::shared_ptr<Function>>(other.value);
             case ValueType::Enum:

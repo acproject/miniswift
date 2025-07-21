@@ -61,6 +61,9 @@ void Interpreter::visit(const PrintStmt& stmt) {
         case ValueType::Dictionary:
             printDictionary(val.asDictionary());
             break;
+        case ValueType::Tuple:
+            printTuple(val.asTuple());
+            break;
         case ValueType::Nil:
             std::cout << "nil" << std::endl;
             break;
@@ -644,6 +647,14 @@ void Interpreter::visit(const DictionaryLiteral& expr) {
     result = Value(dict);
 }
 
+void Interpreter::visit(const TupleLiteral& expr) {
+    std::vector<Value> elements;
+    for (const auto& element : expr.elements) {
+        elements.push_back(evaluate(*element));
+    }
+    result = Value(TupleValue(std::move(elements)));
+}
+
 void Interpreter::visit(const IndexAccess& expr) {
     Value object = evaluate(*expr.object);
     Value index = evaluate(*expr.index);
@@ -815,6 +826,15 @@ void Interpreter::printDictionary(const Dictionary& dict) {
     std::cout << "}" << std::endl;
 }
 
+void Interpreter::printTuple(const Tuple& tuple) {
+    std::cout << "(";
+    for (size_t i = 0; i < tuple.elements->size(); ++i) {
+        if (i > 0) std::cout << ", ";
+        printValue((*tuple.elements)[i]);
+    }
+    std::cout << ")" << std::endl;
+}
+
 void Interpreter::printValue(const Value& val) {
     switch (val.type) {
         case ValueType::Int:
@@ -834,6 +854,9 @@ void Interpreter::printValue(const Value& val) {
             break;
         case ValueType::Dictionary:
             printDictionary(val.asDictionary());
+            break;
+        case ValueType::Tuple:
+            printTuple(val.asTuple());
             break;
         case ValueType::Nil:
             std::cout << "nil";

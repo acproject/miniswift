@@ -35,6 +35,9 @@ public:
     // 重写 Range 表达式的 visit 方法
     void visit(const Range& expr) override;
     
+    // 重写 TupleLiteral 表达式的 visit 方法
+    void visit(const TupleLiteral& expr) override;
+    
     // 调用结构体方法
     Value callStructMethod(const std::string& structName, const std::string& methodName, 
                           const std::vector<Value>& arguments, const Value& selfValue);

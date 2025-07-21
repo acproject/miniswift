@@ -278,4 +278,10 @@ void MethodInterpreter::visit(const Range& expr) {
     Interpreter::visit(expr);
 }
 
+// 重写 TupleLiteral 表达式的 visit 方法
+void MethodInterpreter::visit(const TupleLiteral& expr) {
+    // 直接调用父类的实现
+    Interpreter::visit(expr);
+}
+
 } // namespace miniswift

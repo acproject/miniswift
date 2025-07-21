@@ -17,6 +17,7 @@ public:
     void visit(const Assign& expr) override;
     void visit(const ArrayLiteral& expr) override;
     void visit(const DictionaryLiteral& expr) override;
+    void visit(const TupleLiteral& expr) override;
     void visit(const IndexAccess& expr) override;
     void visit(const SubscriptAccess& expr) override;
     void visit(const Call& expr) override;

@@ -46,6 +46,7 @@ public:
     void visit(const Assign& expr) override;
     void visit(const ArrayLiteral& expr) override;
     void visit(const DictionaryLiteral& expr) override;
+    void visit(const TupleLiteral& expr) override;
     void visit(const IndexAccess& expr) override;
     void visit(const SubscriptAccess& expr) override;
     void visit(const Call& expr) override;
@@ -87,6 +88,7 @@ private:
     bool isTruthy(const Value& value);
     void printArray(const Array& arr);
     void printDictionary(const Dictionary& dict);
+    void printTuple(const Tuple& tuple);
     void printValue(const Value& val);
     
     // Property system helpers

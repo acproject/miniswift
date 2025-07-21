@@ -408,9 +408,33 @@ std::unique_ptr<Expr> Parser::primary() {
   }
 
   if (match({TokenType::LParen})) {
-    auto expr = expression();
-    consume(TokenType::RParen, "Expect ')' after expression.");
-    return std::make_unique<Grouping>(std::move(expr));
+    // Check if this is a tuple literal or a grouping expression
+    if (check(TokenType::RParen)) {
+      // Empty tuple: ()
+      consume(TokenType::RParen, "Expect ')' after empty tuple.");
+      return std::make_unique<TupleLiteral>(std::vector<std::unique_ptr<Expr>>{});
+    }
+    
+    auto firstExpr = expression();
+    
+    if (match({TokenType::Comma})) {
+      // This is a tuple literal: (expr1, expr2, ...)
+      std::vector<std::unique_ptr<Expr>> elements;
+      elements.push_back(std::move(firstExpr));
+      
+      if (!check(TokenType::RParen)) {
+        do {
+          elements.push_back(expression());
+        } while (match({TokenType::Comma}));
+      }
+      
+      consume(TokenType::RParen, "Expect ')' after tuple elements.");
+      return std::make_unique<TupleLiteral>(std::move(elements));
+    } else {
+      // This is a grouping expression: (expr)
+      consume(TokenType::RParen, "Expect ')' after expression.");
+      return std::make_unique<Grouping>(std::move(firstExpr));
+    }
   }
 
   // Handle range operators: start..<end or start...end
@@ -989,8 +1013,18 @@ std::unique_ptr<Expr> Parser::call() {
       auto indexExpr = std::make_unique<IndexAccess>(std::make_unique<VarExpr>(Token(TokenType::Identifier, "__placeholder__", 0)), std::move(index));
       expr = std::make_unique<OptionalChaining>(std::move(expr), OptionalChaining::ChainType::Subscript, std::move(indexExpr));
     } else if (match({TokenType::Dot})) {
-      consume(TokenType::Identifier, "Expect member name after '.'.");
-      Token memberName = previous();
+      // Support both identifier member access (object.member) and tuple index access (tuple.0)
+      Token memberName(TokenType::Identifier, "", peek().line);
+      if (check(TokenType::Identifier)) {
+        consume(TokenType::Identifier, "Expect member name after '.'.");
+        memberName = previous();
+      } else if (check(TokenType::IntegerLiteral)) {
+        // Tuple index access: tuple.0, tuple.1, etc.
+        consume(TokenType::IntegerLiteral, "Expect tuple index after '.'.");
+        memberName = previous();
+      } else {
+        throw std::runtime_error("Expect member name or tuple index after '.'.");
+      }
       
       // Check if this is an enum access with arguments
       if (match({TokenType::LParen})) {
@@ -1004,7 +1038,7 @@ std::unique_ptr<Expr> Parser::call() {
         consume(TokenType::RParen, "Expect ')' after enum case arguments.");
         expr = std::make_unique<EnumAccess>(std::move(expr), memberName, std::move(arguments));
       } else {
-        // Regular member access: object.member
+        // Regular member access: object.member or tuple.index
         expr = std::make_unique<MemberAccess>(std::move(expr), memberName);
       }
     } else if (match({TokenType::Bang})) {

@@ -14,6 +14,7 @@ struct VarExpr;
 struct Assign;
 struct ArrayLiteral;
 struct DictionaryLiteral;
+struct TupleLiteral;
 struct IndexAccess;
 struct Call;
 struct Closure;
@@ -38,6 +39,7 @@ public:
   virtual void visit(const Assign &expr) = 0;
   virtual void visit(const ArrayLiteral &expr) = 0;
   virtual void visit(const DictionaryLiteral &expr) = 0;
+  virtual void visit(const TupleLiteral &expr) = 0;
   virtual void visit(const IndexAccess &expr) = 0;
   virtual void visit(const SubscriptAccess &expr) = 0;
   virtual void visit(const Call &expr) = 0;
@@ -182,6 +184,24 @@ struct DictionaryLiteral : Expr {
   }
 
   const std::vector<KeyValuePair> pairs;
+};
+
+// Tuple literal expression: ("hello", 42)
+struct TupleLiteral : Expr {
+  explicit TupleLiteral(std::vector<std::unique_ptr<Expr>> elements)
+      : elements(std::move(elements)) {}
+
+  void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
+
+  std::unique_ptr<Expr> clone() const override {
+    std::vector<std::unique_ptr<Expr>> clonedElements;
+    for (const auto &element : elements) {
+      clonedElements.push_back(element->clone());
+    }
+    return std::make_unique<TupleLiteral>(std::move(clonedElements));
+  }
+
+  const std::vector<std::unique_ptr<Expr>> elements;
 };
 
 // Index access expression: array[index] or dict["key"]

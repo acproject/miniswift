@@ -1122,51 +1122,8 @@ std::unique_ptr<Expr> Parser::call() {
 
 // Parse function call arguments
 std::unique_ptr<Expr> Parser::finishCall(std::unique_ptr<Expr> callee) {
-  // Check if this might be a struct initialization by looking ahead
-  // Struct init has pattern: StructName(memberName: value, ...)
-  // Function call has pattern: functionName(arg1, arg2, ...)
-  // Only check for struct init if callee is a simple identifier (VarExpr)
-  
-  if (!check(TokenType::RParen) && dynamic_cast<VarExpr*>(callee.get())) {
-    // Look ahead to see if the first argument has the pattern "identifier:"
-    int savedCurrent = current;
-    bool isStructInit = false;
-    
-    if (check(TokenType::Identifier)) {
-      advance(); // consume identifier
-      if (check(TokenType::Colon)) {
-        isStructInit = true;
-      }
-    }
-    
-    // Restore position
-    current = savedCurrent;
-    
-    if (isStructInit) {
-      // Parse as struct initialization
-      std::vector<std::pair<Token, std::unique_ptr<Expr>>> members;
-      
-      do {
-        consume(TokenType::Identifier, "Expect member name.");
-        Token memberName = previous();
-        
-        consume(TokenType::Colon, "Expect ':' after member name.");
-        auto value = expression();
-        
-        members.emplace_back(memberName, std::move(value));
-      } while (match({TokenType::Comma}));
-      
-      consume(TokenType::RParen, "Expect ')' after struct members.");
-      
-      // Extract struct name from callee (should be a VarExpr)
-      if (auto varExpr = dynamic_cast<VarExpr*>(callee.get())) {
-        Token structName = varExpr->name;
-        return std::make_unique<StructInit>(structName, std::move(members));
-      } else {
-        throw std::runtime_error("Invalid struct initialization.");
-      }
-    }
-  }
+  // For now, always parse as function call to avoid confusion with labeled parameters
+  // TODO: Implement proper struct initialization detection that doesn't conflict with labeled function parameters
   
   // Parse as regular function call
   std::vector<std::unique_ptr<Expr>> arguments;
@@ -1174,9 +1131,10 @@ std::unique_ptr<Expr> Parser::finishCall(std::unique_ptr<Expr> callee) {
   if (!check(TokenType::RParen)) {
     do {
       // Check for parameter label: label: expression
-      if (check(TokenType::Identifier)) {
+      // Parameter labels can be identifiers or keywords like 'in'
+      if (check(TokenType::Identifier) || check(TokenType::In)) {
         int savedCurrent = current;
-        advance(); // consume identifier
+        advance(); // consume identifier or keyword
         if (check(TokenType::Colon)) {
           // This is a parameter label, skip it and parse the expression
           advance(); // consume ':'
@@ -1187,7 +1145,7 @@ std::unique_ptr<Expr> Parser::finishCall(std::unique_ptr<Expr> callee) {
           arguments.push_back(expression());
         }
       } else {
-        // Not an identifier, parse as expression
+        // Not an identifier or keyword, parse as expression
         arguments.push_back(expression());
       }
     } while (match({TokenType::Comma}));

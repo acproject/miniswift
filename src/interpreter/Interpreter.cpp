@@ -2229,6 +2229,75 @@ void Interpreter::visit(const GuardStmt& stmt) {
     // If condition is true, continue execution normally
 }
 
+void Interpreter::visit(const GuardLetStmt& stmt) {
+    Value expressionValue = evaluate(*stmt.expression);
+    
+    // Check if the value is not nil (optional binding succeeds)
+    if (expressionValue.type == ValueType::Nil) {
+        // Optional binding failed, execute else block
+        stmt.elseBody->accept(*this);
+    } else {
+        // Bind the unwrapped value to the variable in the current environment
+        environment->define(stmt.variable.lexeme, expressionValue, false, "Any");
+        // Continue execution normally (guard let succeeded)
+    }
+}
+
+void Interpreter::visit(const SwitchStmt& stmt) {
+    Value switchValue = evaluate(*stmt.expression);
+    bool matched = false;
+    
+    for (const auto& switchCase : stmt.cases) {
+        if (switchCase.isDefault) {
+            // Default case - execute if no other case matched
+            if (!matched) {
+                for (const auto& statement : switchCase.statements) {
+                    statement->accept(*this);
+                }
+                matched = true;
+            }
+            break;
+        } else {
+            // Regular case - check if pattern matches
+            Value caseValue = evaluate(*switchCase.pattern);
+            
+            // Simple equality check for now
+            bool caseMatches = false;
+            if (switchValue.type == caseValue.type) {
+                switch (switchValue.type) {
+                    case ValueType::Int:
+                        caseMatches = std::get<int>(switchValue.value) == std::get<int>(caseValue.value);
+                        break;
+                    case ValueType::Double:
+                        caseMatches = std::get<double>(switchValue.value) == std::get<double>(caseValue.value);
+                        break;
+                    case ValueType::String:
+                        caseMatches = std::get<std::string>(switchValue.value) == std::get<std::string>(caseValue.value);
+                        break;
+                    case ValueType::Bool:
+                        caseMatches = std::get<bool>(switchValue.value) == std::get<bool>(caseValue.value);
+                        break;
+                    default:
+                        caseMatches = false;
+                        break;
+                }
+            }
+            
+            if (caseMatches) {
+                for (const auto& statement : switchCase.statements) {
+                    statement->accept(*this);
+                }
+                matched = true;
+                break; // Swift switch cases don't fall through by default
+            }
+        }
+    }
+    
+    if (!matched) {
+        throw std::runtime_error("Switch statement must be exhaustive or have a default case.");
+    }
+}
+
 // Error handling expression implementations
 void Interpreter::visit(const TryExpr& expr) {
     try {

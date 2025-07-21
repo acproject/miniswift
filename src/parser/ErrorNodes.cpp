@@ -28,6 +28,11 @@ void GuardStmt::accept(StmtVisitor& visitor) const {
     visitor.visit(*this);
 }
 
+// GuardLetStmt accept implementation
+void GuardLetStmt::accept(StmtVisitor& visitor) const {
+    visitor.visit(*this);
+}
+
 // ResultTypeExpr accept implementation
 void ResultTypeExpr::accept(ExprVisitor& visitor) const {
     visitor.visit(*this);

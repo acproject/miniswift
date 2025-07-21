@@ -35,6 +35,9 @@ struct ThrowStmt;
 struct DoCatchStmt;
 struct DeferStmt;
 struct GuardStmt;
+struct GuardLetStmt;
+// Switch statement
+struct SwitchStmt;
 
 // Visitor for Stmt
 class StmtVisitor {
@@ -64,6 +67,8 @@ public:
   virtual void visit(const DoCatchStmt &stmt) = 0;
   virtual void visit(const DeferStmt &stmt) = 0;
   virtual void visit(const GuardStmt &stmt) = 0;
+  virtual void visit(const GuardLetStmt &stmt) = 0;
+  virtual void visit(const SwitchStmt &stmt) = 0;
 };
 
 // Base class for Stmt
@@ -787,6 +792,43 @@ struct ExtensionStmt : Stmt {
   
   // Check if this extension adds protocol conformance
   bool addsProtocolConformance() const { return !conformedProtocols.empty(); }
+};
+
+// Switch case: case pattern: statements
+struct SwitchCase {
+  std::unique_ptr<Expr> pattern;  // Pattern to match (can be literal, enum case, etc.)
+  std::vector<std::unique_ptr<Stmt>> statements;  // Statements to execute
+  bool isDefault;  // true for default case
+  
+  SwitchCase(std::unique_ptr<Expr> pattern, std::vector<std::unique_ptr<Stmt>> statements, bool isDefault = false)
+      : pattern(std::move(pattern)), statements(std::move(statements)), isDefault(isDefault) {}
+};
+
+// Switch statement: switch expression { cases }
+struct SwitchStmt : Stmt {
+  std::unique_ptr<Expr> expression;  // Expression to switch on
+  std::vector<SwitchCase> cases;     // Switch cases
+  
+  SwitchStmt(std::unique_ptr<Expr> expression, std::vector<SwitchCase> cases)
+      : expression(std::move(expression)), cases(std::move(cases)) {}
+      
+  void accept(StmtVisitor &visitor) const override { visitor.visit(*this); }
+  
+  std::unique_ptr<Stmt> clone() const override {
+    std::vector<SwitchCase> clonedCases;
+    for (const auto &switchCase : cases) {
+      std::vector<std::unique_ptr<Stmt>> clonedStatements;
+      for (const auto &stmt : switchCase.statements) {
+        clonedStatements.push_back(stmt->clone());
+      }
+      clonedCases.emplace_back(
+          switchCase.pattern ? switchCase.pattern->clone() : nullptr,
+          std::move(clonedStatements),
+          switchCase.isDefault
+      );
+    }
+    return std::make_unique<SwitchStmt>(expression->clone(), std::move(clonedCases));
+  }
 };
 
 } // namespace miniswift

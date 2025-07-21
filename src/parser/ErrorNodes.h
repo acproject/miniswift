@@ -142,6 +142,22 @@ struct GuardStmt : Stmt {
     }
 };
 
+// Guard let statement: guard let variable = expression else { ... }
+struct GuardLetStmt : Stmt {
+    Token variable;
+    std::unique_ptr<Expr> expression;
+    std::unique_ptr<Stmt> elseBody;
+    
+    GuardLetStmt(Token var, std::unique_ptr<Expr> expr, std::unique_ptr<Stmt> body)
+        : variable(var), expression(std::move(expr)), elseBody(std::move(body)) {}
+    
+    void accept(StmtVisitor& visitor) const override;
+    
+    std::unique_ptr<Stmt> clone() const override {
+        return std::make_unique<GuardLetStmt>(variable, expression->clone(), elseBody->clone());
+    }
+};
+
 // Result type expression: Result<T, Error>
 struct ResultTypeExpr : Expr {
     std::unique_ptr<Expr> successType;

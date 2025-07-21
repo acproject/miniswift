@@ -37,6 +37,7 @@ private:
     std::unique_ptr<Stmt> doCatchStatement();
     std::unique_ptr<Stmt> deferStatement();
     std::unique_ptr<Stmt> guardStatement();
+    std::unique_ptr<Stmt> switchStatement();
     std::unique_ptr<Expr> expression();
     std::unique_ptr<Expr> assignment();
     std::unique_ptr<Expr> logicalOr();

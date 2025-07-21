@@ -46,6 +46,8 @@ public:
     void visit(const DoCatchStmt& stmt) override;
     void visit(const DeferStmt& stmt) override;
     void visit(const GuardStmt& stmt) override;
+    void visit(const GuardLetStmt& stmt) override;
+    void visit(const SwitchStmt& stmt) override;
 
     void visit(const Binary& expr) override;
     void visit(const Grouping& expr) override;

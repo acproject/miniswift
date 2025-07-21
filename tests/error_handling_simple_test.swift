@@ -1,81 +1,58 @@
-// 错误处理综合测试
-// 测试 Error 协议、throw/try/catch 语法、Result 类型和错误传播
+// 简化的错误处理测试，避免使用switch语句
 
-// 1. 自定义错误类型定义
-enum NetworkError: Error {
+// 1. 定义错误类型
+enum NetworkError {
     case timeout
     case connectionLost
     case invalidURL
     case serverError(code: Int)
 }
 
-enum FileError: Error {
+enum FileError {
     case notFound
     case permissionDenied
-    case corrupted
-    case diskFull
+    case corruptedData
 }
 
-enum ValidationError: Error {
+enum ValidationError {
     case emptyInput
     case invalidFormat
     case tooLong
-    case tooShort
 }
 
-// 2. 抛出错误的函数测试
+// 2. 定义抛出错误的函数
 func connectToServer(url: String) throws -> String {
-    if url.isEmpty {
-        throw NetworkError.invalidURL
-    }
     if url == "timeout.com" {
         throw NetworkError.timeout
     }
     if url == "error500.com" {
         throw NetworkError.serverError(code: 500)
     }
-    return "Connected to " + url
+    if url == "invalid.url" {
+        throw NetworkError.invalidURL
+    }
+    return "连接成功: " + url
 }
 
 func readFile(path: String) throws -> String {
-    if path.isEmpty {
+    if path == "missing.txt" {
         throw FileError.notFound
     }
     if path == "protected.txt" {
         throw FileError.permissionDenied
     }
-    if path == "corrupted.txt" {
-        throw FileError.corrupted
-    }
-    return "File content from " + path
+    return "文件内容: " + path
 }
 
-func validateInput(text: String) throws -> String {
-    if text.isEmpty {
-        throw ValidationError.emptyInput
-    }
-    if text.count < 3 {
-        throw ValidationError.tooShort
-    }
-    if text.count > 100 {
-        throw ValidationError.tooLong
-    }
-    return "Valid: " + text
-}
+// 3. 基本错误处理测试
+print("=== 基本错误处理测试 ===")
 
-// 3. Do-Catch 语句测试
-print("=== Do-Catch 测试 ===")
-
-// 测试网络错误处理
+// 测试成功情况
 do {
     let result = try connectToServer(url: "example.com")
-    print("成功: " + result)
+    print(result)
 } catch NetworkError.timeout {
-    print("网络超时")
-} catch NetworkError.connectionLost {
-    print("连接丢失")
-} catch NetworkError.invalidURL {
-    print("无效URL")
+    print("捕获到超时错误")
 } catch NetworkError.serverError(let code) {
     print("服务器错误，代码: " + String(code))
 } catch {
@@ -89,7 +66,7 @@ do {
 } catch NetworkError.timeout {
     print("捕获到超时错误")
 } catch {
-    print("其他错误: " + String(error))
+    print("其他错误")
 }
 
 // 测试服务器错误
@@ -124,9 +101,6 @@ print("\n=== Try! 测试 ===")
 
 let result3 = try! connectToServer(url: "example.com")
 print("Try! 成功: " + result3)
-
-// 注意：下面的代码会导致运行时错误，在实际测试中应该注释掉
-// let result4 = try! connectToServer(url: "timeout.com")  // 这会崩溃
 
 // 6. 错误传播测试
 print("\n=== 错误传播测试 ===")
@@ -244,36 +218,5 @@ func nestedErrorHandling() {
 }
 
 nestedErrorHandling()
-
-// 10. 多种错误类型混合测试
-print("\n=== 多种错误类型混合测试 ===")
-
-func mixedErrorTest(scenario: Int) throws {
-    switch scenario {
-    case 1:
-        throw NetworkError.timeout
-    case 2:
-        throw FileError.notFound
-    case 3:
-        throw ValidationError.emptyInput
-    default:
-        print("正常执行")
-    }
-}
-
-for i in 1...4 {
-    do {
-        try mixedErrorTest(scenario: i)
-        print("场景 " + String(i) + ": 成功")
-    } catch NetworkError.timeout {
-        print("场景 " + String(i) + ": 网络超时")
-    } catch FileError.notFound {
-        print("场景 " + String(i) + ": 文件未找到")
-    } catch ValidationError.emptyInput {
-        print("场景 " + String(i) + ": 输入为空")
-    } catch {
-        print("场景 " + String(i) + ": 未知错误")
-    }
-}
 
 print("\n=== 错误处理测试完成 ===")

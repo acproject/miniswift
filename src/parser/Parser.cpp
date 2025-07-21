@@ -174,6 +174,9 @@ std::unique_ptr<Stmt> Parser::statement() {
   if (match({TokenType::Guard})) {
     return guardStatement();
   }
+  if (match({TokenType::Switch})) {
+    return switchStatement();
+  }
   return expressionStatement();
 }
 
@@ -1276,10 +1279,16 @@ std::unique_ptr<Stmt> Parser::enumDeclaration() {
         std::vector<Token> associatedTypes;
         std::unique_ptr<Expr> rawValue = nullptr;
         
-        // Check for associated values: case name(Type1, Type2)
+        // Check for associated values: case name(Type1, Type2) or case name(label: Type)
         if (match({TokenType::LParen})) {
           if (!check(TokenType::RParen)) {
             do {
+              // Check if this is a labeled parameter: label: Type
+              if (check(TokenType::Identifier) && tokens[current + 1].type == TokenType::Colon) {
+                // Skip the label and colon
+                advance(); // consume label
+                advance(); // consume colon
+              }
               Token associatedType = parseType();
               associatedTypes.push_back(associatedType);
             } while (match({TokenType::Comma}));
@@ -2205,7 +2214,7 @@ std::unique_ptr<Stmt> Parser::doCatchStatement() {
     std::optional<Token> errorType;
     std::optional<Token> errorVariable;
     
-    // Check for error type pattern: catch ErrorType.case
+    // Check for error type pattern: catch ErrorType.case or catch ErrorType.case(let variable)
     if (check(TokenType::Identifier)) {
       Token firstToken = advance();
       
@@ -2214,6 +2223,15 @@ std::unique_ptr<Stmt> Parser::doCatchStatement() {
         consume(TokenType::Identifier, "Expect error case after '.'.");
         Token caseToken = previous();
         errorType = Token(TokenType::Identifier, firstToken.lexeme + "." + caseToken.lexeme, firstToken.line);
+        
+        // Check for associated value binding: (let variable)
+        if (match({TokenType::LParen})) {
+          if (match({TokenType::Let})) {
+            consume(TokenType::Identifier, "Expect variable name after 'let'.");
+            errorVariable = previous();
+          }
+          consume(TokenType::RParen, "Expect ')' after associated value binding.");
+        }
       } else {
           // Put the firstToken back since we didn't consume it with a dot
           current--;
@@ -2243,10 +2261,67 @@ std::unique_ptr<Stmt> Parser::deferStatement() {
 }
 
 std::unique_ptr<Stmt> Parser::guardStatement() {
-  auto condition = expression();
-  consume(TokenType::Else, "Expect 'else' after guard condition.");
-  auto elseBlock = blockStatement();
-  return std::make_unique<GuardStmt>(std::move(condition), std::move(elseBlock));
+  // Check if this is a "guard let" statement
+  if (check(TokenType::Let)) {
+    // Parse "guard let variable = expression"
+    consume(TokenType::Let, "Expect 'let' in guard-let statement.");
+    consume(TokenType::Identifier, "Expect variable name after 'let'.");
+    Token variable = previous();
+    
+    consume(TokenType::Equal, "Expect '=' after variable in guard-let statement.");
+    auto expression = this->expression();
+    
+    consume(TokenType::Else, "Expect 'else' after guard-let condition.");
+    consume(TokenType::LBrace, "Expect '{' after 'else'.");
+    auto elseBlock = blockStatement();
+    
+    return std::make_unique<GuardLetStmt>(variable, std::move(expression), std::move(elseBlock));
+  } else {
+    // Regular guard statement
+    auto condition = expression();
+    consume(TokenType::Else, "Expect 'else' after guard condition.");
+    consume(TokenType::LBrace, "Expect '{' after 'else'.");
+    auto elseBlock = blockStatement();
+    return std::make_unique<GuardStmt>(std::move(condition), std::move(elseBlock));
+  }
+}
+
+std::unique_ptr<Stmt> Parser::switchStatement() {
+  auto expression = this->expression();
+  consume(TokenType::LBrace, "Expect '{' after switch expression.");
+  
+  std::vector<SwitchCase> cases;
+  
+  while (!check(TokenType::RBrace) && !isAtEnd()) {
+    if (match({TokenType::Case})) {
+      // Parse case pattern
+      auto pattern = this->expression();
+      consume(TokenType::Colon, "Expect ':' after case pattern.");
+      
+      // Parse case statements
+      std::vector<std::unique_ptr<Stmt>> statements;
+      while (!check(TokenType::Case) && !check(TokenType::Default) && !check(TokenType::RBrace) && !isAtEnd()) {
+        statements.push_back(statement());
+      }
+      
+      cases.emplace_back(std::move(pattern), std::move(statements), false);
+    } else if (match({TokenType::Default})) {
+      consume(TokenType::Colon, "Expect ':' after 'default'.");
+      
+      // Parse default statements
+      std::vector<std::unique_ptr<Stmt>> statements;
+      while (!check(TokenType::Case) && !check(TokenType::Default) && !check(TokenType::RBrace) && !isAtEnd()) {
+        statements.push_back(statement());
+      }
+      
+      cases.emplace_back(nullptr, std::move(statements), true);
+    } else {
+      throw std::runtime_error("Expect 'case' or 'default' in switch statement.");
+    }
+  }
+  
+  consume(TokenType::RBrace, "Expect '}' after switch body.");
+  return std::make_unique<SwitchStmt>(std::move(expression), std::move(cases));
 }
 
 // Error handling expression parsing methods

@@ -94,16 +94,20 @@ struct ExprStmt : Stmt {
 };
 
 struct PrintStmt : Stmt {
-  explicit PrintStmt(std::unique_ptr<Expr> expression)
-      : expression(std::move(expression)) {}
+  explicit PrintStmt(std::vector<std::unique_ptr<Expr>> expressions)
+      : expressions(std::move(expressions)) {}
 
   void accept(StmtVisitor &visitor) const override { visitor.visit(*this); }
 
   std::unique_ptr<Stmt> clone() const override {
-    return std::make_unique<PrintStmt>(expression->clone());
+    std::vector<std::unique_ptr<Expr>> clonedExpressions;
+    for (const auto& expr : expressions) {
+      clonedExpressions.push_back(expr->clone());
+    }
+    return std::make_unique<PrintStmt>(std::move(clonedExpressions));
   }
 
-  const std::unique_ptr<Expr> expression;
+  const std::vector<std::unique_ptr<Expr>> expressions;
 };
 
 struct VarStmt : Stmt {

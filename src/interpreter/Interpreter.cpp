@@ -44,37 +44,50 @@ void Interpreter::visit(const ExprStmt& stmt) {
 }
 
 void Interpreter::visit(const PrintStmt& stmt) {
-    Value val = evaluate(*stmt.expression);
+    // Handle multiple expressions
+    for (size_t i = 0; i < stmt.expressions.size(); ++i) {
+        if (i > 0) {
+            std::cout << " "; // Add space between arguments
+        }
+        Value val = evaluate(*stmt.expressions[i]);
+        
+        // Print value without newline (except for the last one)
+        printValueInline(val);
+    }
+    std::cout << std::endl; // Add newline at the end
+}
+
+void Interpreter::printValueInline(const Value& val) {
     switch (val.type) {
         case ValueType::Int:
-            std::cout << std::get<int>(val.value) << std::endl;
+            std::cout << std::get<int>(val.value);
             break;
         case ValueType::Double:
-            std::cout << std::get<double>(val.value) << std::endl;
+            std::cout << std::get<double>(val.value);
             break;
         case ValueType::Bool:
-            std::cout << (std::get<bool>(val.value) ? "true" : "false") << std::endl;
+            std::cout << (std::get<bool>(val.value) ? "true" : "false");
             break;
         case ValueType::String:
-            std::cout << std::get<std::string>(val.value) << std::endl;
+            std::cout << std::get<std::string>(val.value);
             break;
         case ValueType::Array:
-            printArray(val.asArray());
+            printArrayInline(val.asArray());
             break;
         case ValueType::Dictionary:
-            printDictionary(val.asDictionary());
+            printDictionaryInline(val.asDictionary());
             break;
         case ValueType::Tuple:
-            printTuple(val.asTuple());
+            printTupleInline(val.asTuple());
             break;
         case ValueType::Nil:
-            std::cout << "nil" << std::endl;
+            std::cout << "nil";
             break;
         case ValueType::Function:
             if (val.isClosure()) {
-                std::cout << "<closure>" << std::endl;
+                std::cout << "<closure>";
             } else {
-                std::cout << "<function>" << std::endl;
+                std::cout << "<function>";
             }
             break;
         case ValueType::Enum: {
@@ -84,11 +97,10 @@ void Interpreter::visit(const PrintStmt& stmt) {
                 std::cout << "(";
                 for (size_t i = 0; i < enumVal.associatedValues.size(); ++i) {
                     if (i > 0) std::cout << ", ";
-                    printValue(enumVal.associatedValues[i]);
+                    printValueInline(enumVal.associatedValues[i]);
                 }
                 std::cout << ")";
             }
-            std::cout << std::endl;
             break;
         }
         case ValueType::Struct: {
@@ -98,10 +110,10 @@ void Interpreter::visit(const PrintStmt& stmt) {
             for (const auto& member : *structVal.members) {
                 if (!first) std::cout << ", ";
                 std::cout << member.first << ": ";
-                printValue(member.second);
+                printValueInline(member.second);
                 first = false;
             }
-            std::cout << ")" << std::endl;
+            std::cout << ")";
             break;
         }
         case ValueType::Class: {
@@ -111,26 +123,26 @@ void Interpreter::visit(const PrintStmt& stmt) {
             for (const auto& member : *classVal->members) {
                 if (!first) std::cout << ", ";
                 std::cout << member.first << ": ";
-                printValue(member.second);
+                printValueInline(member.second);
                 first = false;
             }
-            std::cout << ")" << std::endl;
+            std::cout << ")";
             break;
         }
         case ValueType::Constructor:
-            std::cout << "<constructor>" << std::endl;
+            std::cout << "<constructor>";
             break;
         case ValueType::Destructor:
-            std::cout << "<destructor>" << std::endl;
+            std::cout << "<destructor>";
             break;
         case ValueType::Optional: {
             const auto& optionalVal = val.asOptional();
             if (optionalVal.hasValue && optionalVal.wrappedValue) {
                 std::cout << "Optional(";
-                printValue(*optionalVal.wrappedValue);
-                std::cout << ")" << std::endl;
+                printValueInline(*optionalVal.wrappedValue);
+                std::cout << ")";
             } else {
-                std::cout << "nil" << std::endl;
+                std::cout << "nil";
             }
             break;
         }
@@ -143,7 +155,7 @@ void Interpreter::visit(const PrintStmt& stmt) {
             auto resultPtr = val.asResult();
             if (resultPtr->isSuccess) {
                 std::cout << "Result.success(";
-                printValue(resultPtr->getValue());
+                printValueInline(resultPtr->getValue());
                 std::cout << ")";
             } else {
                 std::cout << "Result.failure(" << resultPtr->getError().getDescription() << ")";
@@ -153,47 +165,47 @@ void Interpreter::visit(const PrintStmt& stmt) {
         
         // Extended Integer Types
         case ValueType::Int8:
-            std::cout << static_cast<int>(std::get<int8_t>(val.value)) << std::endl;
+            std::cout << static_cast<int>(std::get<int8_t>(val.value));
             break;
         case ValueType::Int16:
-            std::cout << std::get<int16_t>(val.value) << std::endl;
+            std::cout << std::get<int16_t>(val.value);
             break;
         case ValueType::Int32:
-            std::cout << std::get<int>(val.value) << std::endl;
+            std::cout << std::get<int>(val.value);
             break;
         case ValueType::Int64:
-            std::cout << std::get<int64_t>(val.value) << std::endl;
+            std::cout << std::get<int64_t>(val.value);
             break;
         case ValueType::UInt:
-            std::cout << std::get<uint32_t>(val.value) << std::endl;
+            std::cout << std::get<uint32_t>(val.value);
             break;
         case ValueType::UInt8:
-            std::cout << static_cast<unsigned int>(std::get<uint8_t>(val.value)) << std::endl;
+            std::cout << static_cast<unsigned int>(std::get<uint8_t>(val.value));
             break;
         case ValueType::UInt16:
-            std::cout << std::get<uint16_t>(val.value) << std::endl;
+            std::cout << std::get<uint16_t>(val.value);
             break;
         case ValueType::UInt64:
-            std::cout << std::get<uint64_t>(val.value) << std::endl;
+            std::cout << std::get<uint64_t>(val.value);
             break;
         
         // Additional Basic Types
         case ValueType::Float:
-            std::cout << std::get<float>(val.value) << std::endl;
+            std::cout << std::get<float>(val.value);
             break;
         case ValueType::Character:
-            std::cout << "'" << std::get<char>(val.value) << "'" << std::endl;
+            std::cout << "'" << std::get<char>(val.value) << "'";
             break;
         
         // Special Types
         case ValueType::Set:
-            std::cout << "<set>" << std::endl;
+            std::cout << "<set>";
             break;
         case ValueType::Any:
-            std::cout << "<any>" << std::endl;
+            std::cout << "<any>";
             break;
         case ValueType::Void:
-            std::cout << "()" << std::endl;
+            std::cout << "()";
             break;
     }
 }
@@ -1054,6 +1066,27 @@ void Interpreter::printDictionary(const Dictionary& dict) {
     std::cout << "}" << std::endl;
 }
 
+void Interpreter::printArrayInline(const Array& arr) {
+    std::cout << "[";
+    for (size_t i = 0; i < arr->size(); ++i) {
+        if (i > 0) std::cout << ", ";
+        printValueInline((*arr)[i]);
+    }
+    std::cout << "]";
+}
+
+void Interpreter::printDictionaryInline(const Dictionary& dict) {
+    std::cout << "{";
+    bool first = true;
+    for (const auto& pair : *dict) {
+        if (!first) std::cout << ", ";
+        std::cout << "\"" << pair.first << "\": ";
+        printValueInline(pair.second);
+        first = false;
+    }
+    std::cout << "}";
+}
+
 void Interpreter::printTuple(const Tuple& tuple) {
     std::cout << "(";
     for (size_t i = 0; i < tuple.elements->size(); ++i) {
@@ -1061,6 +1094,15 @@ void Interpreter::printTuple(const Tuple& tuple) {
         printValue((*tuple.elements)[i]);
     }
     std::cout << ")" << std::endl;
+}
+
+void Interpreter::printTupleInline(const Tuple& tuple) {
+    std::cout << "(";
+    for (size_t i = 0; i < tuple.elements->size(); ++i) {
+        if (i > 0) std::cout << ", ";
+        printValueInline((*tuple.elements)[i]);
+    }
+    std::cout << ")";
 }
 
 std::string Interpreter::valueToString(const Value& val) {
@@ -1438,20 +1480,53 @@ void Interpreter::visit(const ForInStmt& stmt) {
                 throw std::runtime_error("Invalid number of variables for array iteration");
             }
         } else if (collection.type == ValueType::Dictionary) {
-            const auto& dict = *collection.asDictionary();
+            // First check if this is a range expression by looking for range keys
+            const auto& dict = collection.asDictionaryRef();
+            auto startIt = dict.find("start");
+            auto endIt = dict.find("end");
+            auto typeIt = dict.find("type");
             
-            if (stmt.variables.size() == 2) {
-                // Dictionary iteration: for (key, value) in dictionary
-                for (const auto& pair : dict) {
-                    environment->define(stmt.variables[0].lexeme, Value(pair.first), false, "String");
-                    environment->define(stmt.variables[1].lexeme, pair.second, false, "Any");
-                    stmt.body->accept(*this);
+            if (startIt != dict.end() && endIt != dict.end() && typeIt != dict.end()) {
+                // This is a range expression: for i in 1...4 or for i in 1..<4
+                if (stmt.variables.size() == 1) {
+                    Value startVal = startIt->second;
+                    Value endVal = endIt->second;
+                    Value typeVal = typeIt->second;
+                    
+                    if (startVal.type == ValueType::Int && endVal.type == ValueType::Int) {
+                        int start = startVal.asInt32();
+                        int end = endVal.asInt32();
+                        bool isClosed = (typeVal.type == ValueType::String && std::get<std::string>(typeVal.value) == "closed");
+                        
+                        // Iterate through the range
+                        int limit = isClosed ? end : end - 1;
+                        for (int i = start; i <= limit; ++i) {
+                            environment->define(stmt.variables[0].lexeme, Value(i), false, "Int");
+                            stmt.body->accept(*this);
+                        }
+                    } else {
+                        throw std::runtime_error("Range bounds must be integers");
+                    }
+                } else {
+                    throw std::runtime_error("Range iteration requires exactly 1 variable");
                 }
             } else {
-                throw std::runtime_error("Dictionary iteration requires exactly 2 variables");
+                // This is a regular dictionary
+                const auto& dictRef = *collection.asDictionary();
+                
+                if (stmt.variables.size() == 2) {
+                    // Dictionary iteration: for (key, value) in dictionary
+                    for (const auto& pair : dictRef) {
+                        environment->define(stmt.variables[0].lexeme, Value(pair.first), false, "String");
+                        environment->define(stmt.variables[1].lexeme, pair.second, false, "Any");
+                        stmt.body->accept(*this);
+                    }
+                } else {
+                    throw std::runtime_error("Dictionary iteration requires exactly 2 variables");
+                }
             }
         } else {
-            throw std::runtime_error("Can only iterate over arrays and dictionaries");
+            throw std::runtime_error("Can only iterate over arrays, dictionaries, and ranges");
         }
     } catch (...) {
         // Restore previous environment even if exception occurs
@@ -1544,6 +1619,9 @@ void Interpreter::visit(const Call& expr) {
                 auto previous = environment;
                 environment = std::make_shared<Environment>(callable->closure);
                 
+                // Create new defer stack level for this method
+                deferStack.push(std::vector<std::unique_ptr<Stmt>>());
+                
                 // Bind parameters
                 for (size_t i = 0; i < callable->functionDecl->parameters.size(); ++i) {
                     environment->define(
@@ -1558,9 +1636,15 @@ void Interpreter::visit(const Call& expr) {
                     // Execute function body
                     callable->functionDecl->body->accept(*this);
                     
+                    // Execute deferred statements before function exits
+                    executeDeferredStatements();
+                    
                     // If no return statement was executed, return nil
                     result = Value();
                 } catch (const ReturnException& returnValue) {
+                    // Execute deferred statements before function exits
+                    executeDeferredStatements();
+                    
                     // Function returned a value
                     result = returnValue.value;
                 }
@@ -1662,6 +1746,9 @@ void Interpreter::visit(const Call& expr) {
         auto previous = environment;
         environment = std::make_shared<Environment>(callable->closure);
         
+        // Create new defer stack level for this function
+        deferStack.push(std::vector<std::unique_ptr<Stmt>>());
+        
         // Bind parameters
         for (size_t i = 0; i < callable->functionDecl->parameters.size(); ++i) {
             environment->define(
@@ -1676,9 +1763,15 @@ void Interpreter::visit(const Call& expr) {
             // Execute function body
             callable->functionDecl->body->accept(*this);
             
+            // Execute deferred statements before function exits
+            executeDeferredStatements();
+            
             // If no return statement was executed, return nil
             result = Value();
         } catch (const ReturnException& returnValue) {
+            // Execute deferred statements before function exits
+            executeDeferredStatements();
+            
             // Function returned a value
             result = returnValue.value;
         }
@@ -1697,6 +1790,9 @@ void Interpreter::visit(const Call& expr) {
         auto previous = environment;
         environment = std::make_shared<Environment>(callable->closure);
         
+        // Create new defer stack level for this closure
+        deferStack.push(std::vector<std::unique_ptr<Stmt>>());
+        
         // Bind parameters
         for (size_t i = 0; i < callable->closureDecl->parameters.size(); ++i) {
             environment->define(
@@ -1713,9 +1809,15 @@ void Interpreter::visit(const Call& expr) {
                 statement->accept(*this);
             }
             
+            // Execute deferred statements before closure exits
+            executeDeferredStatements();
+            
             // If no return statement was executed, return nil
             result = Value();
         } catch (const ReturnException& returnValue) {
+            // Execute deferred statements before closure exits
+            executeDeferredStatements();
+            
             // Closure returned a value
             result = returnValue.value;
         }
@@ -2976,6 +3078,7 @@ void Interpreter::executeDeferredStatements() {
 
 void Interpreter::pushDeferredStatement(std::unique_ptr<Stmt> stmt) {
     if (deferStack.empty()) {
+        // Create a defer stack level for global scope if needed
         deferStack.push(std::vector<std::unique_ptr<Stmt>>());
     }
     deferStack.top().push_back(std::move(stmt));
@@ -2989,6 +3092,181 @@ ValueResult Interpreter::wrapInResult(const Value& value, bool isSuccess, const 
     } else {
         auto defaultError = std::make_unique<RuntimeError>("Unknown error");
         return ValueResult::failure(ErrorValue(std::move(defaultError)));
+    }
+}
+
+// Type checking and casting implementations
+void Interpreter::visit(const TypeCheck& expr) {
+    Value value = evaluate(*expr.expression);
+    std::string targetTypeName = expr.targetType.lexeme;
+    
+    // Check if the value is of the target type
+    bool isOfType = false;
+    
+    // Handle basic type checking
+    if (targetTypeName == "Int" && value.type == ValueType::Int) {
+        isOfType = true;
+    } else if (targetTypeName == "Double" && value.type == ValueType::Double) {
+        isOfType = true;
+    } else if (targetTypeName == "String" && value.type == ValueType::String) {
+        isOfType = true;
+    } else if (targetTypeName == "Bool" && value.type == ValueType::Bool) {
+        isOfType = true;
+    } else if (targetTypeName == "Array" && value.type == ValueType::Array) {
+        isOfType = true;
+    } else if (targetTypeName == "Dictionary" && value.type == ValueType::Dictionary) {
+        isOfType = true;
+    } else if (targetTypeName == "Optional" && value.type == ValueType::Optional) {
+        isOfType = true;
+    } else if (value.type == ValueType::Class) {
+        // For class types, check class name
+        const auto& classVal = value.asClass();
+        isOfType = (classVal->className == targetTypeName);
+    } else if (value.type == ValueType::Struct) {
+        // For struct types, check struct name
+        const auto& structVal = value.asStruct();
+        isOfType = (structVal.structName == targetTypeName);
+    } else if (value.type == ValueType::Enum) {
+        // For enum types, check enum name
+        const auto& enumVal = value.asEnum();
+        isOfType = (enumVal.enumName == targetTypeName);
+    }
+    
+    result = Value(isOfType);
+}
+
+void Interpreter::visit(const TypeCast& expr) {
+    Value value = evaluate(*expr.expression);
+    std::string targetTypeName = expr.targetType.lexeme;
+    
+    // Handle different cast types
+    switch (expr.castType) {
+        case TypeCast::CastType::Safe: {
+            // Safe casting (as) - returns optional
+            Value castResult = performTypeCast(value, targetTypeName, false);
+            if (castResult.type != ValueType::Nil) {
+                result = OptionalManager::createOptional(castResult);
+            } else {
+                result = Value(); // nil
+            }
+            break;
+        }
+        case TypeCast::CastType::Optional: {
+            // Optional casting (as?) - returns optional
+            Value castResult = performTypeCast(value, targetTypeName, false);
+            if (castResult.type != ValueType::Nil) {
+                result = OptionalManager::createOptional(castResult);
+            } else {
+                result = Value(); // nil
+            }
+            break;
+        }
+        case TypeCast::CastType::Forced: {
+            // Forced casting (as!) - crashes on failure
+            Value castResult = performTypeCast(value, targetTypeName, true);
+            if (castResult.type == ValueType::Nil) {
+                throw std::runtime_error("Forced cast failed: Cannot cast " + 
+                                        valueTypeToString(value.type) + " to " + targetTypeName);
+            }
+            result = castResult;
+            break;
+        }
+    }
+}
+
+Value Interpreter::performTypeCast(const Value& value, const std::string& targetType, bool isForced) {
+    // Handle basic type conversions
+    if (targetType == "String") {
+        return Value(valueToString(value));
+    }
+    
+    if (targetType == "Int") {
+        switch (value.type) {
+            case ValueType::Double:
+                return Value(static_cast<int>(std::get<double>(value.value)));
+            case ValueType::Float:
+                return Value(static_cast<int>(std::get<float>(value.value)));
+            case ValueType::String: {
+                try {
+                    return Value(std::stoi(std::get<std::string>(value.value)));
+                } catch (...) {
+                    return Value(); // nil
+                }
+            }
+            case ValueType::Int:
+                return value; // Already the right type
+            default:
+                return Value(); // nil
+        }
+    }
+    
+    if (targetType == "Double") {
+        switch (value.type) {
+            case ValueType::Int:
+                return Value(static_cast<double>(std::get<int>(value.value)));
+            case ValueType::Float:
+                return Value(static_cast<double>(std::get<float>(value.value)));
+            case ValueType::String: {
+                try {
+                    return Value(std::stod(std::get<std::string>(value.value)));
+                } catch (...) {
+                    return Value(); // nil
+                }
+            }
+            case ValueType::Double:
+                return value; // Already the right type
+            default:
+                return Value(); // nil
+        }
+    }
+    
+    // For same type, return the value as-is
+    if ((targetType == "Int" && value.type == ValueType::Int) ||
+        (targetType == "Double" && value.type == ValueType::Double) ||
+        (targetType == "String" && value.type == ValueType::String) ||
+        (targetType == "Bool" && value.type == ValueType::Bool)) {
+        return value;
+    }
+    
+    // For class/struct/enum types, check if they match
+    if (value.type == ValueType::Class) {
+        const auto& classVal = value.asClass();
+        if (classVal->className == targetType) {
+            return value;
+        }
+    } else if (value.type == ValueType::Struct) {
+        const auto& structVal = value.asStruct();
+        if (structVal.structName == targetType) {
+            return value;
+        }
+    } else if (value.type == ValueType::Enum) {
+        const auto& enumVal = value.asEnum();
+        if (enumVal.enumName == targetType) {
+            return value;
+        }
+    }
+    
+    // Suppress unused parameter warning
+    (void)isForced;
+    
+    // Cast failed
+    return Value(); // nil
+}
+
+std::string Interpreter::valueTypeToString(ValueType type) {
+    switch (type) {
+        case ValueType::Int: return "Int";
+        case ValueType::Double: return "Double";
+        case ValueType::String: return "String";
+        case ValueType::Bool: return "Bool";
+        case ValueType::Array: return "Array";
+        case ValueType::Dictionary: return "Dictionary";
+        case ValueType::Optional: return "Optional";
+        case ValueType::Class: return "Class";
+        case ValueType::Struct: return "Struct";
+        case ValueType::Enum: return "Enum";
+        case ValueType::Nil: return "Nil";
+        default: return "Unknown";
     }
 }
 

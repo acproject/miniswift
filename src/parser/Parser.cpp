@@ -182,10 +182,22 @@ std::unique_ptr<Stmt> Parser::statement() {
 
 std::unique_ptr<Stmt> Parser::printStatement() {
   consume(TokenType::LParen, "Expect '(' after 'print'.");
-  auto value = expression();
+  
+  std::vector<std::unique_ptr<Expr>> expressions;
+  
+  // Parse first expression
+  if (!check(TokenType::RParen)) {
+    expressions.push_back(expression());
+    
+    // Parse additional expressions separated by commas
+    while (match({TokenType::Comma})) {
+      expressions.push_back(expression());
+    }
+  }
+  
   consume(TokenType::RParen, "Expect ')' after expression.");
   match({TokenType::Semicolon}); // Optional semicolon
-  return std::make_unique<PrintStmt>(std::move(value));
+  return std::make_unique<PrintStmt>(std::move(expressions));
 }
 
 std::unique_ptr<Stmt> Parser::expressionStatement() {
@@ -252,13 +264,50 @@ std::unique_ptr<Expr> Parser::equality() {
 }
 
 std::unique_ptr<Expr> Parser::comparison() {
-  auto expr = range();
+  auto expr = typeCasting();
   while (match({TokenType::RAngle, TokenType::GreaterEqual, TokenType::LAngle,
                 TokenType::LessEqual})) {
     Token op = previous();
-    auto right = range();
+    auto right = typeCasting();
     expr = std::make_unique<Binary>(std::move(expr), op, std::move(right));
   }
+  return expr;
+}
+
+std::unique_ptr<Expr> Parser::typeCasting() {
+  auto expr = typeChecking();
+  
+  while (match({TokenType::As})) {
+    Token op = previous();
+    
+    // Check for as?, as! variants
+    TypeCast::CastType castType = TypeCast::CastType::Safe;
+    if (match({TokenType::Unknown})) {
+      if (previous().lexeme == "?") {
+        castType = TypeCast::CastType::Optional;
+      } else {
+        // Put the token back
+        current--;
+      }
+    } else if (match({TokenType::Bang})) {
+      castType = TypeCast::CastType::Forced;
+    }
+    
+    Token targetType = parseType();
+    expr = std::make_unique<TypeCast>(std::move(expr), targetType, castType);
+  }
+  
+  return expr;
+}
+
+std::unique_ptr<Expr> Parser::typeChecking() {
+  auto expr = range();
+  
+  while (match({TokenType::Is})) {
+    Token targetType = parseType();
+    expr = std::make_unique<TypeCheck>(std::move(expr), targetType);
+  }
+  
   return expr;
 }
 
@@ -2296,6 +2345,7 @@ std::unique_ptr<Stmt> Parser::doCatchStatement() {
 }
 
 std::unique_ptr<Stmt> Parser::deferStatement() {
+  consume(TokenType::LBrace, "Expect '{' after 'defer'.");
   auto deferBlock = blockStatement();
   return std::make_unique<DeferStmt>(std::move(deferBlock));
 }

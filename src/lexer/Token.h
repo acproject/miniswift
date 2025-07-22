@@ -24,6 +24,7 @@ enum class TokenType {
   Guard,
   Defer,
   As,
+  Is,
   Try,
   Catch,
   Throw,

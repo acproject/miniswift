@@ -27,6 +27,7 @@ static void initializeKeywords() {
   keywords["defer"] = TokenType::Defer;
   keywords["do"] = TokenType::Do;
   keywords["as"] = TokenType::As;
+  keywords["is"] = TokenType::Is;
   keywords["try"] = TokenType::Try;
   keywords["catch"] = TokenType::Catch;
   keywords["throw"] = TokenType::Throw;
@@ -178,7 +179,10 @@ Token Lexer::scanToken() {
     if (match('.')) {
       if (match('<'))
         return {TokenType::LessEllipsis, "..<", line};
-      return {TokenType::Ellipsis, "...", line};
+      if (match('.'))
+        return {TokenType::Ellipsis, "...", line};
+      // If we have .. but not ..< or ..., it's an error
+      return {TokenType::Unknown, "..", line};
     }
     return {TokenType::Dot, ".", line};
   case '-':

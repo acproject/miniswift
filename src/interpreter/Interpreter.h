@@ -70,6 +70,13 @@ public:
     void visit(const OptionalChaining& expr) override;
     void visit(const Range& expr) override;
     void visit(const GenericTypeInstantiationExpr& expr) override;
+    void visit(const TypeCheck& expr) override;
+    void visit(const TypeCast& expr) override;
+    
+    // Helper methods for type casting
+    Value performTypeCast(const Value& value, const std::string& targetType, bool isForced);
+    std::string valueTypeToString(ValueType type);
+    
     // Error handling expressions
     void visit(const TryExpr& expr) override;
     void visit(const ResultTypeExpr& expr) override;
@@ -111,9 +118,13 @@ private:
     
     bool isTruthy(const Value& value);
     void printArray(const Array& arr);
+    void printArrayInline(const Array& arr);
     void printDictionary(const Dictionary& dict);
+    void printDictionaryInline(const Dictionary& dict);
     void printTuple(const Tuple& tuple);
+    void printTupleInline(const Tuple& tuple);
     void printValue(const Value& val);
+    void printValueInline(const Value& val);
     std::string valueToString(const Value& val);
     
     // Property system helpers

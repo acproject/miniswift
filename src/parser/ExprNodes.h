@@ -27,6 +27,8 @@ struct SubscriptAccess;
 struct OptionalChaining;
 struct Range;
 struct GenericTypeInstantiationExpr;
+struct TypeCheck;
+struct TypeCast;
 // Error handling expressions
 struct TryExpr;
 struct ResultTypeExpr;
@@ -57,6 +59,8 @@ public:
   virtual void visit(const OptionalChaining &expr) = 0;
   virtual void visit(const Range &expr) = 0;
   virtual void visit(const GenericTypeInstantiationExpr &expr) = 0;
+  virtual void visit(const TypeCheck &expr) = 0;
+  virtual void visit(const TypeCast &expr) = 0;
   // Error handling expressions
   virtual void visit(const TryExpr &expr) = 0;
   virtual void visit(const ResultTypeExpr &expr) = 0;
@@ -369,6 +373,43 @@ struct GenericTypeInstantiationExpr : Expr {
 
   const Token typeName;
   const std::vector<Token> typeArguments;
+};
+
+// Type checking expression: value is Type
+struct TypeCheck : Expr {
+  TypeCheck(std::unique_ptr<Expr> expression, Token targetType)
+      : expression(std::move(expression)), targetType(targetType) {}
+
+  void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
+
+  std::unique_ptr<Expr> clone() const override {
+    return std::make_unique<TypeCheck>(expression->clone(), targetType);
+  }
+
+  const std::unique_ptr<Expr> expression;
+  const Token targetType;
+};
+
+// Type casting expression: value as Type or value as? Type or value as! Type
+struct TypeCast : Expr {
+  enum class CastType {
+    Forced,      // as!
+    Optional,    // as?
+    Safe         // as
+  };
+  
+  TypeCast(std::unique_ptr<Expr> expression, Token targetType, CastType castType)
+      : expression(std::move(expression)), targetType(targetType), castType(castType) {}
+
+  void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
+
+  std::unique_ptr<Expr> clone() const override {
+    return std::make_unique<TypeCast>(expression->clone(), targetType, castType);
+  }
+
+  const std::unique_ptr<Expr> expression;
+  const Token targetType;
+  const CastType castType;
 };
 
 }; // namespace miniswift

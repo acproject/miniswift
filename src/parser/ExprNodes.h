@@ -41,6 +41,9 @@ struct BitwiseExpr;
 struct OverflowExpr;
 // Result Builder expressions
 struct ResultBuilderExpr;
+// Concurrency expressions
+struct AwaitExpr;
+struct TaskExpr;
 
 // Visitor interface for expressions
 class ExprVisitor {
@@ -81,6 +84,9 @@ public:
   virtual void visit(const OverflowExpr &expr) = 0;
   // Result Builder expressions
   virtual void visit(const ResultBuilderExpr &expr) = 0;
+  // Concurrency expressions
+  virtual void visit(const AwaitExpr &expr) = 0;
+  virtual void visit(const TaskExpr &expr) = 0;
 };
 
 // Base class for all expression nodes
@@ -531,6 +537,42 @@ struct ResultBuilderExpr : Expr {
 
   const Token builderType;
   const std::vector<std::unique_ptr<Expr>> components;
+};
+
+// Await expression: await expression
+struct AwaitExpr : Expr {
+  AwaitExpr(Token awaitKeyword, std::unique_ptr<Expr> expression)
+      : awaitKeyword(awaitKeyword), expression(std::move(expression)) {}
+
+  void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
+
+  std::unique_ptr<Expr> clone() const override {
+    return std::make_unique<AwaitExpr>(awaitKeyword, expression->clone());
+  }
+
+  const Token awaitKeyword;
+  const std::unique_ptr<Expr> expression;
+};
+
+// Task expression: Task { ... } or Task.detached { ... }
+struct TaskExpr : Expr {
+  enum class TaskType {
+    Regular,   // Task { ... }
+    Detached   // Task.detached { ... }
+  };
+  
+  TaskExpr(Token taskKeyword, TaskType taskType, std::unique_ptr<Expr> closure)
+      : taskKeyword(taskKeyword), taskType(taskType), closure(std::move(closure)) {}
+
+  void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
+
+  std::unique_ptr<Expr> clone() const override {
+    return std::make_unique<TaskExpr>(taskKeyword, taskType, closure->clone());
+  }
+
+  const Token taskKeyword;
+  const TaskType taskType;
+  const std::unique_ptr<Expr> closure;
 };
 
 }; // namespace miniswift

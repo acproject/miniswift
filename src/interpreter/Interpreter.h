@@ -53,6 +53,7 @@ public:
     void visit(const CustomOperatorStmt& stmt) override;
     void visit(const OperatorPrecedenceStmt& stmt) override;
     void visit(const ResultBuilderStmt& stmt) override;
+    void visit(const ActorStmt& stmt) override;
 
     void visit(const Binary& expr) override;
     void visit(const Ternary& expr) override;
@@ -94,6 +95,10 @@ public:
     void visit(const OverflowExpr& expr) override;
     void visit(const CustomOperatorExpr& expr) override;
     void visit(const ResultBuilderExpr& expr) override;
+    
+    // Concurrency expressions
+    void visit(const AwaitExpr& expr) override;
+    void visit(const TaskExpr& expr) override;
 
 public:
     // Public methods for property system

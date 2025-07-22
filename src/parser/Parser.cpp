@@ -86,6 +86,14 @@ std::vector<std::unique_ptr<Stmt>> Parser::declaration() {
     result.push_back(std::move(extensionStmt));
     return result;
   }
+  if (match({TokenType::Actor})) {
+    std::vector<std::unique_ptr<Stmt>> result;
+    auto actorStmt = actorDeclaration();
+    // Set access level for actor
+    static_cast<ActorStmt*>(actorStmt.get())->accessLevel = accessLevel;
+    result.push_back(std::move(actorStmt));
+    return result;
+  }
   if (match({TokenType::Init})) {
     std::vector<std::unique_ptr<Stmt>> result;
     result.push_back(initDeclaration());
@@ -567,6 +575,16 @@ std::unique_ptr<Expr> Parser::unary() {
   // Handle try expressions: try, try?, try!
   if (match({TokenType::Try})) {
     return tryExpression();
+  }
+  
+  // Handle await expressions: await expression
+  if (match({TokenType::Await})) {
+    return awaitExpression();
+  }
+  
+  // Handle task expressions: Task { ... }
+  if (match({TokenType::Task})) {
+    return taskExpression();
   }
   
   return call();
@@ -1316,6 +1334,12 @@ std::unique_ptr<Stmt> Parser::functionDeclaration() {
   
   consume(TokenType::RParen, "Expect ')' after parameters.");
   
+  // Check for async keyword
+  bool isAsync = false;
+  if (match({TokenType::Async})) {
+    isAsync = true;
+  }
+  
   // Check for throws keyword
   bool canThrow = false;
   if (match({TokenType::Throws})) {
@@ -1334,7 +1358,7 @@ std::unique_ptr<Stmt> Parser::functionDeclaration() {
   auto body = blockStatement();
   
   return std::make_unique<FunctionStmt>(functionName, std::move(parameters), returnType, std::move(body), 
-                                        AccessLevel::INTERNAL, std::move(genericParams), std::move(whereClause), false, canThrow);
+                                        AccessLevel::INTERNAL, std::move(genericParams), std::move(whereClause), false, canThrow, isAsync);
 }
 
 // Parse return statement: return expression?
@@ -2862,6 +2886,162 @@ bool miniswift::Parser::isCustomPrefixOperator(const std::string& lexeme) {
   // In a real implementation, this would be populated by operator declarations
   static std::set<std::string> prefixOperators = {"±"};
   return prefixOperators.find(lexeme) != prefixOperators.end();
+}
+
+// Parse actor declaration: actor Name { properties and methods }
+std::unique_ptr<Stmt> Parser::actorDeclaration() {
+  consume(TokenType::Identifier, "Expect actor name.");
+  Token name = previous();
+  
+  // Parse optional generic parameter clause
+  GenericParameterClause genericParams = parseGenericParameterClause();
+  
+  // Parse protocol conformance
+  std::vector<Token> conformedProtocols;
+  if (match({TokenType::Colon})) {
+    do {
+      consume(TokenType::Identifier, "Expect protocol name.");
+      conformedProtocols.push_back(previous());
+    } while (match({TokenType::Comma}));
+  }
+  
+  // Parse optional where clause
+  WhereClause whereClause = parseWhereClause();
+  
+  consume(TokenType::LBrace, "Expect '{' after actor declaration.");
+  
+  std::vector<StructMember> properties;
+  std::vector<std::unique_ptr<FunctionStmt>> methods;
+  std::vector<std::unique_ptr<InitStmt>> initializers;
+  std::vector<std::unique_ptr<SubscriptStmt>> subscripts;
+  bool isGlobalActor = false;
+  
+  while (!check(TokenType::RBrace) && !isAtEnd()) {
+    // Parse optional access level modifier for actor members
+    AccessLevel memberAccessLevel = AccessLevel::INTERNAL;
+    AccessLevel memberSetterAccessLevel = AccessLevel::INTERNAL;
+    
+    if (isAccessLevelToken(peek().type)) {
+      auto accessPair = parseAccessLevelWithSetter();
+      memberAccessLevel = accessPair.first;
+      memberSetterAccessLevel = accessPair.second;
+    }
+    
+    // Check for isolated/nonisolated keywords
+    bool isIsolated = true; // Default for actor members
+    if (match({TokenType::Nonisolated})) {
+      isIsolated = false;
+    } else if (match({TokenType::Isolated})) {
+      isIsolated = true;
+    }
+    
+    // Check for mutating keyword before func
+    bool isMutating = false;
+    if (match({TokenType::Mutating})) {
+      isMutating = true;
+    }
+    
+    if (match({TokenType::Func})) {
+      // Parse method declaration
+      auto method = std::unique_ptr<FunctionStmt>(static_cast<FunctionStmt*>(functionDeclaration().release()));
+      method->accessLevel = memberAccessLevel;
+      method->isMutating = isMutating;
+      methods.push_back(std::move(method));
+    } else if (isMutating) {
+      throw std::runtime_error("Expect 'func' after 'mutating'.");
+    } else if (match({TokenType::Init})) {
+      // Parse initializer declaration
+      auto init = std::unique_ptr<InitStmt>(static_cast<InitStmt*>(initDeclaration().release()));
+      init->accessLevel = memberAccessLevel;
+      initializers.push_back(std::move(init));
+    } else if (match({TokenType::Subscript})) {
+      // Parse subscript declaration
+      auto subscript = std::unique_ptr<SubscriptStmt>(static_cast<SubscriptStmt*>(subscriptDeclaration().release()));
+      subscript->accessLevel = memberAccessLevel;
+      subscript->setterAccessLevel = memberSetterAccessLevel;
+      subscripts.push_back(std::move(subscript));
+    } else if (match({TokenType::Var, TokenType::Let})) {
+      // Parse property declaration
+      bool isVar = previous().type == TokenType::Var;
+      
+      consume(TokenType::Identifier, "Expect property name.");
+      Token propertyName = previous();
+      
+      consume(TokenType::Colon, "Expect ':' after property name.");
+      Token propertyType = parseType();
+      
+      std::unique_ptr<Expr> defaultValue = nullptr;
+      std::vector<PropertyAccessor> accessors;
+      
+      if (match({TokenType::Equal})) {
+        defaultValue = expression();
+      } else if (match({TokenType::LBrace})) {
+        // Parse property accessors
+        while (!check(TokenType::RBrace) && !isAtEnd()) {
+          if (match({TokenType::Get})) {
+            consume(TokenType::LBrace, "Expect '{' after 'get'.");
+            auto body = blockStatement();
+            accessors.emplace_back(AccessorType::GET, std::move(body));
+          } else if (match({TokenType::Set})) {
+            std::string paramName = "newValue";
+            if (match({TokenType::LParen})) {
+              consume(TokenType::Identifier, "Expect parameter name.");
+              paramName = previous().lexeme;
+              consume(TokenType::RParen, "Expect ')' after parameter name.");
+            }
+            consume(TokenType::LBrace, "Expect '{' after 'set'.");
+            auto body = blockStatement();
+            accessors.emplace_back(AccessorType::SET, std::move(body), paramName);
+          } else {
+            throw std::runtime_error("Expect 'get' or 'set' in property accessor.");
+          }
+        }
+        consume(TokenType::RBrace, "Expect '}' after property accessors.");
+      }
+      
+      StructMember member(propertyName, propertyType, std::move(defaultValue), 
+                         isVar, memberAccessLevel, memberSetterAccessLevel);
+      member.accessors = std::move(accessors);
+      properties.push_back(std::move(member));
+    } else {
+      throw std::runtime_error("Expect property, method, initializer, or subscript in actor declaration.");
+    }
+  }
+  
+  consume(TokenType::RBrace, "Expect '}' after actor body.");
+  
+  return std::make_unique<ActorStmt>(name, std::move(properties), std::move(methods), 
+                                     std::move(initializers), AccessLevel::INTERNAL, isGlobalActor);
+}
+
+// Parse await expression: await expression
+std::unique_ptr<Expr> Parser::awaitExpression() {
+  Token awaitKeyword = previous(); // Get the 'await' token
+  auto expression = unary();
+  return std::make_unique<AwaitExpr>(awaitKeyword, std::move(expression));
+}
+
+// Parse task expression: Task { closure }
+std::unique_ptr<Expr> Parser::taskExpression() {
+  Token taskKeyword = previous(); // Get the 'Task' token
+  consume(TokenType::LBrace, "Expect '{' after 'Task'.");
+  
+  // Parse the task body as a closure
+  std::vector<std::unique_ptr<Stmt>> statements;
+  while (!check(TokenType::RBrace) && !isAtEnd()) {
+    statements.push_back(statement());
+  }
+  
+  consume(TokenType::RBrace, "Expect '}' after task body.");
+  
+  // Create a closure expression with the task body
+  auto taskBody = std::make_unique<Closure>(
+    std::vector<Parameter>(), // No parameters for task closure
+    Token(TokenType::Void, "Void", peek().line), // Return type is Void
+    std::move(statements) // Pass statements directly
+  );
+  
+  return std::make_unique<TaskExpr>(taskKeyword, TaskExpr::TaskType::Regular, std::move(taskBody));
 }
 
 } // namespace miniswift

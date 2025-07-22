@@ -43,6 +43,8 @@ struct CustomOperatorStmt;
 struct OperatorPrecedenceStmt;
 // Result Builder statements
 struct ResultBuilderStmt;
+// Concurrency statements
+struct ActorStmt;
 
 // Visitor for Stmt
 class StmtVisitor {
@@ -79,6 +81,8 @@ public:
   virtual void visit(const OperatorPrecedenceStmt &stmt) = 0;
   // Result Builder statements
   virtual void visit(const ResultBuilderStmt &stmt) = 0;
+  // Concurrency statements
+  virtual void visit(const ActorStmt &stmt) = 0;
 };
 
 // Base class for Stmt
@@ -295,24 +299,24 @@ struct Closure : Expr {
   const std::vector<std::unique_ptr<Stmt>> body;
 };
 
-// Function declaration: func name<T>(parameters) throws -> returnType where T: Equatable { body }
+// Function declaration: func name<T>(parameters) async throws -> returnType where T: Equatable { body }
 struct FunctionStmt : Stmt {
   FunctionStmt(Token name, std::vector<Parameter> parameters, Token returnType,
                std::unique_ptr<Stmt> body, AccessLevel accessLevel = AccessLevel::INTERNAL,
                GenericParameterClause genericParams = GenericParameterClause({}),
                WhereClause whereClause = WhereClause({}), bool isMutating = false,
-               bool canThrow = false)
+               bool canThrow = false, bool isAsync = false)
       : name(name), parameters(std::move(parameters)), returnType(returnType),
         body(std::move(body)), accessLevel(accessLevel),
         genericParams(std::move(genericParams)), whereClause(std::move(whereClause)),
-        isMutating(isMutating), canThrow(canThrow) {}
+        isMutating(isMutating), canThrow(canThrow), isAsync(isAsync) {}
 
   void accept(StmtVisitor &visitor) const override { visitor.visit(*this); }
 
   std::unique_ptr<Stmt> clone() const override {
     return std::make_unique<FunctionStmt>(name, parameters, returnType,
                                           body->clone(), accessLevel,
-                                          genericParams, whereClause, isMutating, canThrow);
+                                          genericParams, whereClause, isMutating, canThrow, isAsync);
   }
 
   const Token name;
@@ -324,6 +328,7 @@ struct FunctionStmt : Stmt {
   WhereClause whereClause;              // Generic constraints
   bool isMutating;                      // Whether this is a mutating function
   bool canThrow;                        // Whether this function can throw errors
+  bool isAsync;                         // Whether this is an async function
   
   // Check if this is a generic function
   bool isGeneric() const { return !genericParams.isEmpty(); }
@@ -929,6 +934,36 @@ struct ResultBuilderStmt : Stmt {
       clonedMethods.push_back(std::unique_ptr<FunctionStmt>(static_cast<FunctionStmt*>(method->clone().release())));
     }
     return std::make_unique<ResultBuilderStmt>(name, std::move(clonedMethods), accessLevel);
+  }
+};
+
+// Actor declaration: actor ActorName { properties and methods }
+struct ActorStmt : Stmt {
+  Token name;                                        // Actor name
+  std::vector<StructMember> properties;             // Actor properties
+  std::vector<std::unique_ptr<FunctionStmt>> methods; // Actor methods
+  std::vector<std::unique_ptr<InitStmt>> initializers; // Actor initializers
+  AccessLevel accessLevel;                          // Access level
+  bool isGlobalActor;                              // Whether this is a global actor
+  
+  ActorStmt(Token name, 
+            std::vector<StructMember> properties = {},
+            std::vector<std::unique_ptr<FunctionStmt>> methods = {},
+            std::vector<std::unique_ptr<InitStmt>> initializers = {},
+            AccessLevel accessLevel = AccessLevel::INTERNAL,
+            bool isGlobalActor = false)
+      : name(name), properties(std::move(properties)),
+        methods(std::move(methods)), initializers(std::move(initializers)),
+        accessLevel(accessLevel), isGlobalActor(isGlobalActor) {}
+        
+  void accept(StmtVisitor &visitor) const override { visitor.visit(*this); }
+  
+  std::unique_ptr<Stmt> clone() const override {
+    // For simplicity, create a basic clone without deep copying members
+    return std::make_unique<ActorStmt>(name, std::vector<StructMember>(),
+                                       std::vector<std::unique_ptr<FunctionStmt>>(),
+                                       std::vector<std::unique_ptr<InitStmt>>(),
+                                       accessLevel, isGlobalActor);
   }
 };
 

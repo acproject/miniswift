@@ -1,5 +1,4 @@
 #include "Lexer.h"
-#include <iostream>
 #include <unordered_map>
 
 namespace miniswift {
@@ -52,7 +51,7 @@ static void initializeKeywords() {
   keywords["where"] = TokenType::Where;
   keywords["inout"] = TokenType::Inout;
   keywords["mutating"] = TokenType::Mutating;
-  
+
   // Access Control Keywords
   keywords["open"] = TokenType::Open;
   keywords["public"] = TokenType::Public;
@@ -60,13 +59,13 @@ static void initializeKeywords() {
   keywords["internal"] = TokenType::Internal;
   keywords["fileprivate"] = TokenType::Fileprivate;
   keywords["private"] = TokenType::Private;
-  
+
   // Basic types
   keywords["String"] = TokenType::String;
   keywords["Int"] = TokenType::Int;
   keywords["Bool"] = TokenType::Bool;
   keywords["Double"] = TokenType::Double;
-  
+
   // Extended Integer Types
   keywords["Int8"] = TokenType::Int8;
   keywords["Int16"] = TokenType::Int16;
@@ -77,16 +76,16 @@ static void initializeKeywords() {
   keywords["UInt16"] = TokenType::UInt16;
 
   keywords["UInt64"] = TokenType::UInt64;
-  
+
   // Additional Basic Types
   keywords["Float"] = TokenType::Float;
   keywords["Character"] = TokenType::Character;
-  
+
   // Special Types
   keywords["Any"] = TokenType::Any;
   keywords["Void"] = TokenType::Void;
   keywords["Set"] = TokenType::Set;
-  
+
   // Custom Operator Keywords
   keywords["operator"] = TokenType::Operator;
   keywords["prefix"] = TokenType::Prefix;
@@ -98,9 +97,20 @@ static void initializeKeywords() {
   keywords["left"] = TokenType::Left;
   keywords["right"] = TokenType::Right;
   keywords["none"] = TokenType::None;
-  
+
   // Result Builder Keywords
   keywords["resultBuilder"] = TokenType::ResultBuilder;
+
+  // Concurrency Keywords
+  keywords["async"] = TokenType::Async;
+  keywords["await"] = TokenType::Await;
+  keywords["actor"] = TokenType::Actor;
+  keywords["Task"] = TokenType::Task;
+  keywords["MainActor"] = TokenType::MainActor;
+  keywords["globalActor"] = TokenType::GlobalActor;
+  keywords["Sendable"] = TokenType::Sendable;
+  keywords["isolated"] = TokenType::Isolated;
+  keywords["nonisolated"] = TokenType::Nonisolated;
 }
 
 Lexer::Lexer(const std::string &source)

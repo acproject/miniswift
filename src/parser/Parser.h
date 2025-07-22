@@ -22,6 +22,7 @@ private:
     std::unique_ptr<Stmt> classDeclaration();
     std::unique_ptr<Stmt> protocolDeclaration();
     std::unique_ptr<Stmt> extensionDeclaration();
+    std::unique_ptr<Stmt> actorDeclaration();
     std::unique_ptr<Stmt> initDeclaration();
     std::unique_ptr<Stmt> deinitDeclaration();
     std::unique_ptr<Stmt> subscriptDeclaration();
@@ -76,6 +77,8 @@ private:
     std::unique_ptr<Expr> closure();
     std::unique_ptr<Expr> resultTypeExpression();
     std::unique_ptr<Expr> errorLiteral();
+    std::unique_ptr<Expr> awaitExpression();
+    std::unique_ptr<Expr> taskExpression();
 
     // Generic parsing methods
     GenericParameterClause parseGenericParameterClause();

@@ -3660,4 +3660,68 @@ void Interpreter::visit(const ResultBuilderStmt& stmt) {
     // and its transformation methods
 }
 
+// Concurrency statement implementation
+void Interpreter::visit(const ActorStmt& stmt) {
+    // Actor declarations are handled at compile time
+    // For now, we just print the actor information
+    std::cout << "Actor declared: " << stmt.name.lexeme << std::endl;
+    
+    // In a full implementation, this would:
+    // 1. Create an actor type with isolated state
+    // 2. Register actor methods with proper isolation
+    // 3. Set up message passing mechanisms
+    // 4. Handle actor initialization and lifecycle
+}
+
+// Concurrency expression implementations
+void Interpreter::visit(const AwaitExpr& expr) {
+    // For now, we simulate async behavior by evaluating the expression synchronously
+    // In a full implementation, this would:
+    // 1. Check if we're in an async context
+    // 2. Suspend the current task
+    // 3. Wait for the async operation to complete
+    // 4. Resume with the result
+    
+    std::cout << "Awaiting expression..." << std::endl;
+    result = evaluate(*expr.expression);
+    std::cout << "Await completed." << std::endl;
+}
+
+void Interpreter::visit(const TaskExpr& expr) {
+    // For now, we simulate task creation by executing the closure immediately
+    // In a full implementation, this would:
+    // 1. Create a new task with the given closure
+    // 2. Schedule the task for execution
+    // 3. Return a task handle that can be awaited
+    
+    std::cout << "Creating task..." << std::endl;
+    
+    // Create new environment for task execution
+    auto previous = environment;
+    environment = std::make_shared<Environment>(environment);
+    
+    try {
+        // Cast the closure expression to Closure type
+        const Closure* closure = dynamic_cast<const Closure*>(expr.closure.get());
+        if (!closure) {
+            throw std::runtime_error("Task closure is not a valid closure expression");
+        }
+        
+        // Execute the task closure
+        for (const auto& statement : closure->body) {
+            statement->accept(*this);
+        }
+        
+        // For now, return the last result
+        // In a full implementation, this would return a Task<T> type
+    } catch (const ReturnException& returnValue) {
+        result = returnValue.value;
+    }
+    
+    // Restore previous environment
+    environment = previous;
+    
+    std::cout << "Task created and executed." << std::endl;
+}
+
 } // namespace miniswift

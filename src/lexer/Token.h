@@ -153,6 +153,17 @@ enum class TokenType {
   
   // Result Builder Keywords
   ResultBuilder,   // @resultBuilder
+  
+  // Concurrency Keywords
+  Async,           // async
+  Await,           // await
+  Actor,           // actor
+  Task,            // Task
+  MainActor,       // @MainActor
+  GlobalActor,     // @globalActor
+  Sendable,        // Sendable
+  Isolated,        // isolated
+  Nonisolated,     // nonisolated
 
   // Punctuation
   LParen,

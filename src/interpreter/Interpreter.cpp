@@ -2600,7 +2600,21 @@ void Interpreter::visit(const MemberAccess& expr) {
             result = nestedType;
             return;
         } catch (const std::runtime_error&) {
-            // Not a nested type, check if the object is a type name (constructor)
+            // Not a nested type, check if this is an enum access
+            try {
+                Value enumType = environment->get(Token(TokenType::Identifier, typeName, 0));
+                // Check if this is an enum type by checking if it exists and is not a function
+                if (enumType.type == ValueType::Nil || !enumType.isFunction()) {
+                    // This might be an enum type, try to create enum value
+                    EnumValue enumValue(typeName, expr.member.lexeme, {});
+                    result = Value(std::make_shared<EnumValue>(enumValue));
+                    return;
+                }
+            } catch (const std::runtime_error&) {
+                // Not an enum type either
+            }
+            
+            // Check if the object is a type name (constructor)
             try {
                 Value typeConstructor = environment->get(Token(TokenType::Identifier, typeName, 0));
                 if (typeConstructor.isFunction()) {

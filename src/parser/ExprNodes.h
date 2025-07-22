@@ -44,6 +44,9 @@ struct ResultBuilderExpr;
 // Concurrency expressions
 struct AwaitExpr;
 struct TaskExpr;
+// Opaque and Boxed Protocol Types
+struct OpaqueTypeExpr;
+struct BoxedProtocolTypeExpr;
 
 // Visitor interface for expressions
 class ExprVisitor {
@@ -87,6 +90,8 @@ public:
   // Concurrency expressions
   virtual void visit(const AwaitExpr &expr) = 0;
   virtual void visit(const TaskExpr &expr) = 0;
+  virtual void visit(const OpaqueTypeExpr &expr) = 0;
+  virtual void visit(const BoxedProtocolTypeExpr &expr) = 0;
 };
 
 // Base class for all expression nodes
@@ -573,6 +578,36 @@ struct TaskExpr : Expr {
   const Token taskKeyword;
   const TaskType taskType;
   const std::unique_ptr<Expr> closure;
+};
+
+// Opaque type expression: some Protocol
+struct OpaqueTypeExpr : Expr {
+  OpaqueTypeExpr(Token someKeyword, Token protocolName)
+      : someKeyword(someKeyword), protocolName(protocolName) {}
+
+  void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
+
+  std::unique_ptr<Expr> clone() const override {
+    return std::make_unique<OpaqueTypeExpr>(someKeyword, protocolName);
+  }
+
+  const Token someKeyword;
+  const Token protocolName;
+};
+
+// Boxed protocol type expression: any Protocol
+struct BoxedProtocolTypeExpr : Expr {
+  BoxedProtocolTypeExpr(Token anyKeyword, Token protocolName)
+      : anyKeyword(anyKeyword), protocolName(protocolName) {}
+
+  void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
+
+  std::unique_ptr<Expr> clone() const override {
+    return std::make_unique<BoxedProtocolTypeExpr>(anyKeyword, protocolName);
+  }
+
+  const Token anyKeyword;
+  const Token protocolName;
 };
 
 }; // namespace miniswift

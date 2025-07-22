@@ -164,6 +164,10 @@ enum class TokenType {
   Sendable,        // Sendable
   Isolated,        // isolated
   Nonisolated,     // nonisolated
+  
+  // Opaque and Boxed Protocol Types
+  Some,            // some keyword for opaque types
+  // Note: Any is already defined above in Special Types section
 
   // Punctuation
   LParen,

@@ -611,6 +611,22 @@ std::unique_ptr<Expr> Parser::primary() {
     Token method = previous();
     return std::make_unique<Super>(keyword, method);
   }
+  
+  // Handle opaque types: some Protocol
+  if (match({TokenType::Some})) {
+    Token someKeyword = previous();
+    consume(TokenType::Identifier, "Expect protocol name after 'some'.");
+    Token protocolName = previous();
+    return std::make_unique<OpaqueTypeExpr>(someKeyword, protocolName);
+  }
+  
+  // Handle boxed protocol types: any Protocol
+  if (match({TokenType::Any})) {
+    Token anyKeyword = previous();
+    consume(TokenType::Identifier, "Expect protocol name after 'any'.");
+    Token protocolName = previous();
+    return std::make_unique<BoxedProtocolTypeExpr>(anyKeyword, protocolName);
+  }
 
   // Handle string interpolation - can start with either InterpolatedStringLiteral or InterpolationStart
   if (match({TokenType::InterpolatedStringLiteral, TokenType::InterpolationStart})) {
@@ -935,8 +951,26 @@ Token Parser::parseType() {
     }
   }
   
+  // Handle opaque types: some Protocol
+  if (match({TokenType::Some})) {
+    Token someKeyword = previous();
+    consume(TokenType::Identifier, "Expect protocol name after 'some'.");
+    Token protocolName = previous();
+    // Create a synthetic token for opaque type
+    return Token(TokenType::Identifier, "some " + protocolName.lexeme, someKeyword.line);
+  }
+  
+  // Handle boxed protocol types: any Protocol
+  if (match({TokenType::Any})) {
+    Token anyKeyword = previous();
+    consume(TokenType::Identifier, "Expect protocol name after 'any'.");
+    Token protocolName = previous();
+    // Create a synthetic token for boxed protocol type
+    return Token(TokenType::Identifier, "any " + protocolName.lexeme, anyKeyword.line);
+  }
+  
   // Accept basic types or identifiers
-   if (match({TokenType::String, TokenType::Int, TokenType::Bool, TokenType::Double, TokenType::Int8, TokenType::Int16, TokenType::Int32, TokenType::Int64, TokenType::UInt, TokenType::UInt8, TokenType::UInt16, TokenType::UInt64, TokenType::Float, TokenType::Character, TokenType::Any, TokenType::Void, TokenType::Set, TokenType::Identifier})) {
+   if (match({TokenType::String, TokenType::Int, TokenType::Bool, TokenType::Double, TokenType::Int8, TokenType::Int16, TokenType::Int32, TokenType::Int64, TokenType::UInt, TokenType::UInt8, TokenType::UInt16, TokenType::UInt64, TokenType::Float, TokenType::Character, TokenType::Void, TokenType::Set, TokenType::Identifier})) {
      Token baseType = previous();
      
      // Check for generic type syntax: Type<T, U>

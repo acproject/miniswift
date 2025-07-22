@@ -3738,4 +3738,40 @@ void Interpreter::visit(const TaskExpr& expr) {
     std::cout << "Task created and executed." << std::endl;
 }
 
+// Opaque and Boxed Protocol Types implementations
+void Interpreter::visit(const OpaqueTypeExpr& expr) {
+    // For opaque types (some Protocol), we create a special type wrapper
+    // that hides the concrete type while preserving protocol conformance
+    
+    std::string protocolName = expr.protocolName.lexeme;
+    
+    // In a full implementation, this would:
+    // 1. Verify that the protocol exists
+    // 2. Create an opaque type wrapper that enforces protocol conformance
+    // 3. Hide the concrete type information from the caller
+    
+    // For now, we create a placeholder value that represents the opaque type
+    result = Value("<opaque type conforming to " + protocolName + ">");
+    
+    std::cout << "Created opaque type for protocol: " << protocolName << std::endl;
+}
+
+void Interpreter::visit(const BoxedProtocolTypeExpr& expr) {
+    // For boxed protocol types (any Protocol), we create a type-erased wrapper
+    // that can hold any type conforming to the protocol
+    
+    std::string protocolName = expr.protocolName.lexeme;
+    
+    // In a full implementation, this would:
+    // 1. Verify that the protocol exists
+    // 2. Create a boxed protocol type that can hold any conforming type
+    // 3. Provide dynamic dispatch for protocol methods
+    // 4. Allow runtime type checking and casting
+    
+    // For now, we create a placeholder value that represents the boxed protocol type
+    result = Value("<boxed protocol type: " + protocolName + ">");
+    
+    std::cout << "Created boxed protocol type: " << protocolName << std::endl;
+}
+
 } // namespace miniswift

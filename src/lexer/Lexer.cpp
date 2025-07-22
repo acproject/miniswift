@@ -111,6 +111,9 @@ static void initializeKeywords() {
   keywords["Sendable"] = TokenType::Sendable;
   keywords["isolated"] = TokenType::Isolated;
   keywords["nonisolated"] = TokenType::Nonisolated;
+  
+  // Opaque and Boxed Protocol Types
+  keywords["some"] = TokenType::Some;
 }
 
 Lexer::Lexer(const std::string &source)

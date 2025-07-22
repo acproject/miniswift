@@ -99,6 +99,10 @@ public:
     // Concurrency expressions
     void visit(const AwaitExpr& expr) override;
     void visit(const TaskExpr& expr) override;
+    
+    // Opaque and Boxed Protocol Types
+    void visit(const OpaqueTypeExpr& expr) override;
+    void visit(const BoxedProtocolTypeExpr& expr) override;
 
 public:
     // Public methods for property system

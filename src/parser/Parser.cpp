@@ -1,6 +1,7 @@
 #include "Parser.h"
 #include <stdexcept>
 #include <iostream>
+#include <set>
 
 namespace miniswift {
 
@@ -526,11 +527,18 @@ std::unique_ptr<Expr> Parser::factor() {
 std::unique_ptr<Expr> Parser::customOperatorExpression() {
   auto expr = unary();
   
-  // Check for custom operators (identified by specific token patterns)
-  while (check(TokenType::Identifier) && isCustomOperator(peek().lexeme)) {
-    Token op = advance();
-    auto right = unary();
-    expr = std::make_unique<CustomOperatorExpr>(std::move(expr), op, std::move(right));
+  // Check for custom infix operators (both predefined and identifier-based)
+  while ((check(TokenType::Identifier) && isCustomOperator(peek().lexeme)) ||
+         check(TokenType::StarStar) || check(TokenType::LAngleRAngle) || check(TokenType::PlusMinus)) {
+    Token op = peek();
+    // Only process as infix if it's not a prefix operator
+    if (!isCustomPrefixOperator(op.lexeme)) {
+      advance(); // consume the operator
+      auto right = unary();
+      expr = std::make_unique<CustomOperatorExpr>(std::move(expr), op, std::move(right));
+    } else {
+      break; // This is a prefix operator, don't consume it here
+    }
   }
   
   return expr;
@@ -541,6 +549,19 @@ std::unique_ptr<Expr> Parser::unary() {
     Token op = previous();
     auto right = unary();
     return std::make_unique<Unary>(op, std::move(right));
+  }
+  
+  // Handle custom prefix operators like ±
+  if ((check(TokenType::Identifier) && isCustomOperator(peek().lexeme)) ||
+      check(TokenType::PlusMinus)) {
+    // Check if this is a prefix operator by looking at the operator registry
+    Token op = peek();
+    if (isCustomPrefixOperator(op.lexeme)) {
+      advance(); // consume the operator
+      auto right = unary();
+      // Create a CustomOperatorExpr with null left operand for prefix operators
+      return std::make_unique<CustomOperatorExpr>(nullptr, op, std::move(right));
+    }
   }
   
   // Handle try expressions: try, try?, try!
@@ -646,16 +667,8 @@ std::unique_ptr<Expr> Parser::primary() {
     }
     
     // Check for Error literal: ErrorType("message")
-    if (identifier.type == TokenType::Identifier && check(TokenType::LParen)) {
-      // Look ahead to see if this looks like an error literal
-      int savedCurrent = current;
-      advance(); // consume '('
-      if (check(TokenType::StringLiteral)) {
-        current = savedCurrent; // restore position
-        return errorLiteral();
-      }
-      current = savedCurrent; // restore position
-    }
+    // Removed incorrect error literal detection logic
+    // This was causing normal function calls with string arguments to be misinterpreted
     
     // Check for generic type instantiation: Identifier<Type1, Type2>
     if (identifier.type == TokenType::Identifier && check(TokenType::LAngle)) {
@@ -1231,17 +1244,10 @@ std::unique_ptr<Stmt> Parser::functionDeclaration() {
   } else if (match({TokenType::Star, TokenType::Plus, TokenType::Minus, TokenType::Slash, 
                    TokenType::Percent, TokenType::LAngle, TokenType::RAngle, TokenType::Bang, 
                    TokenType::Equal, TokenType::BitwiseAnd, TokenType::BitwiseOr, 
-                   TokenType::BitwiseXor, TokenType::BitwiseNot})) {
+                   TokenType::BitwiseXor, TokenType::BitwiseNot, TokenType::StarStar,
+                   TokenType::LAngleRAngle, TokenType::PlusMinus})) {
     functionName = previous();
     isOperatorFunction = true;
-    // Handle multi-character operators like **
-    if (functionName.type == TokenType::Star && check(TokenType::Star)) {
-      advance(); // consume second *
-      functionName.lexeme = "**";
-    } else if (functionName.type == TokenType::LAngle && check(TokenType::RAngle)) {
-      advance(); // consume >
-      functionName.lexeme = "<>";
-    }
   } else {
     throw std::runtime_error("Expect function name.");
   }
@@ -1498,12 +1504,16 @@ std::unique_ptr<Expr> Parser::finishCall(std::unique_ptr<Expr> callee) {
   
   consume(TokenType::RParen, "Expect ')' after arguments.");
   
-  // Create appropriate call expression based on whether we have labels
-  if (hasAnyLabels) {
-    return std::make_unique<LabeledCall>(std::move(callee), std::move(arguments), std::move(argumentLabels));
-  } else {
-    return std::make_unique<Call>(std::move(callee), std::move(arguments));
+  // Check if this is an operator function call (no labels expected)
+  if (auto varExpr = dynamic_cast<const VarExpr*>(callee.get())) {
+    if (isCustomOperator(varExpr->name.lexeme) || isCustomPrefixOperator(varExpr->name.lexeme)) {
+      // This is an operator function call, use regular Call instead of LabeledCall
+      return std::make_unique<Call>(std::move(callee), std::move(arguments));
+    }
   }
+  
+  // For regular functions, create LabeledCall to handle mixed labeled/unlabeled arguments
+  return std::make_unique<LabeledCall>(std::move(callee), std::move(arguments), std::move(argumentLabels));
 }
 
 // Parse closure: { (parameters) -> ReturnType in body }
@@ -2734,24 +2744,16 @@ std::unique_ptr<miniswift::Stmt> miniswift::Parser::customOperatorDeclaration() 
   Token operatorType = previous(); // infix, prefix, or postfix
   consume(TokenType::Operator, "Expect 'operator' keyword.");
   
-  // Accept various operator symbols
+  // Accept various operator symbols including custom ones
   if (!match({TokenType::Identifier, TokenType::Star, TokenType::Plus, TokenType::Minus, 
             TokenType::Slash, TokenType::Percent, TokenType::LAngle, TokenType::RAngle,
             TokenType::Bang, TokenType::Equal, TokenType::BitwiseAnd, TokenType::BitwiseOr,
-            TokenType::BitwiseXor, TokenType::BitwiseNot})) {
+            TokenType::BitwiseXor, TokenType::BitwiseNot, TokenType::StarStar, 
+            TokenType::LAngleRAngle, TokenType::PlusMinus, TokenType::CustomOperator})) {
     throw std::runtime_error("Expect operator symbol.");
   }
   
   Token operatorSymbol = previous();
-  
-  // Handle multi-character operators
-  if (operatorSymbol.type == TokenType::Star && check(TokenType::Star)) {
-    advance(); // consume second *
-    operatorSymbol.lexeme = "**";
-  } else if (operatorSymbol.type == TokenType::LAngle && check(TokenType::RAngle)) {
-    advance(); // consume >
-    operatorSymbol.lexeme = "<>";
-  }
   
   std::optional<Token> precedenceGroup;
   if (match({TokenType::Colon})) {
@@ -2852,6 +2854,14 @@ bool miniswift::Parser::isCustomOperator(const std::string& lexeme) {
          lexeme != "%" && lexeme != "<" && lexeme != ">" && lexeme != "=" &&
          lexeme != "!" && lexeme != "&" && lexeme != "|" && lexeme != "^" &&
          lexeme != "~";
+}
+
+// Helper method to check if a token is a custom prefix operator
+bool miniswift::Parser::isCustomPrefixOperator(const std::string& lexeme) {
+  // For now, we'll use a simple registry of known prefix operators
+  // In a real implementation, this would be populated by operator declarations
+  static std::set<std::string> prefixOperators = {"±"};
+  return prefixOperators.find(lexeme) != prefixOperators.end();
 }
 
 } // namespace miniswift

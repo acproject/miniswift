@@ -215,6 +215,8 @@ Token Lexer::scanToken() {
   case '*':
     if (match('='))
       return {TokenType::StarEqual, "*=", line};
+    if (match('*'))
+      return {TokenType::StarStar, "**", line};
     return {TokenType::Star, "*", line};
   case '!':
     if (match('='))
@@ -229,6 +231,8 @@ Token Lexer::scanToken() {
       return {TokenType::LeftShift, "<<", line};
     if (match('='))
       return {TokenType::LessEqual, "<=", line};
+    if (match('>'))
+      return {TokenType::LAngleRAngle, "<>", line};
     return {TokenType::LAngle, "<", line};
   case '>':
     if (match('>'))

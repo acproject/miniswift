@@ -718,10 +718,80 @@ void Interpreter::visit(const OverflowExpr& expr) {
 }
 
 void Interpreter::visit(const CustomOperatorExpr& expr) {
-    // For now, throw an error as custom operators need to be resolved at compile time
-    // In a full implementation, this would look up the custom operator definition
-    // and call the appropriate function
-    throw std::runtime_error("Custom operator '" + expr.op.lexeme + "' not implemented.");
+    // Look up the custom operator function in the environment
+    try {
+        Value operatorFunction = environment->get(expr.op);
+        
+        if (!operatorFunction.isFunction()) {
+            throw std::runtime_error("Custom operator '" + expr.op.lexeme + "' is not a function.");
+        }
+        
+        // Evaluate operands
+        std::vector<Value> arguments;
+        
+        if (expr.left) {
+            // Binary operator: left op right
+            Value left = evaluate(*expr.left);
+            Value right = evaluate(*expr.right);
+            arguments = {left, right};
+        } else {
+            // Prefix operator: op right
+            Value right = evaluate(*expr.right);
+            arguments = {right};
+        }
+        
+        auto callable = operatorFunction.asFunction();
+        
+        if (callable->isFunction) {
+            // Check argument count
+            if (arguments.size() != callable->functionDecl->parameters.size()) {
+                throw std::runtime_error("Expected " + 
+                    std::to_string(callable->functionDecl->parameters.size()) + 
+                    " arguments but got " + std::to_string(arguments.size()) + ".");
+            }
+            
+            // Create new environment for function execution
+            auto previous = environment;
+            environment = std::make_shared<Environment>(callable->closure);
+            
+            // Create new defer stack level for this function
+            deferStack.push(std::vector<std::unique_ptr<Stmt>>());
+            
+            // Bind parameters by position (operator functions don't use external labels)
+            for (size_t i = 0; i < callable->functionDecl->parameters.size(); ++i) {
+                environment->define(
+                    callable->functionDecl->parameters[i].name.lexeme,
+                    arguments[i],
+                    false, // parameters are not const
+                    callable->functionDecl->parameters[i].type.lexeme
+                );
+            }
+            
+            try {
+                // Execute function body
+                callable->functionDecl->body->accept(*this);
+                
+                // Execute deferred statements before function exits
+                executeDeferredStatements();
+                
+                // If no return statement was executed, return nil
+                result = Value();
+            } catch (const ReturnException& returnValue) {
+                // Execute deferred statements before function exits
+                executeDeferredStatements();
+                
+                // Function returned a value
+                result = returnValue.value;
+            }
+            
+            // Restore previous environment
+            environment = previous;
+        } else {
+            throw std::runtime_error("Custom operator '" + expr.op.lexeme + "' is not a function.");
+        }
+    } catch (const std::runtime_error&) {
+        throw std::runtime_error("Custom operator '" + expr.op.lexeme + "' not implemented.");
+    }
 }
 
 void Interpreter::visit(const ResultBuilderExpr& expr) {
@@ -1992,10 +2062,23 @@ void Interpreter::visit(const LabeledCall& expr) {
             // Find the parameter with matching external name
             for (size_t j = 0; j < callable->functionDecl->parameters.size(); ++j) {
                 const auto& param = callable->functionDecl->parameters[j];
-                if (param.externalName.lexeme == label) {
+                // Handle both labeled parameters and unlabeled parameters (with "_")
+                if ((param.externalName.lexeme == label) || 
+                    (param.externalName.lexeme == "_" && label.empty())) {
                     orderedArguments[j] = arguments[i];
                     found = true;
                     break;
+                }
+            }
+            
+            if (!found) {
+                // For unlabeled arguments, try to match by position
+                if (label.empty() && i < callable->functionDecl->parameters.size()) {
+                    const auto& param = callable->functionDecl->parameters[i];
+                    if (param.externalName.lexeme == "_") {
+                        orderedArguments[i] = arguments[i];
+                        found = true;
+                    }
                 }
             }
             

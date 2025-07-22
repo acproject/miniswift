@@ -1,29 +1,36 @@
-// 综合测试 MiniSwift 集合类型功能
+// Comprehensive test for underscore parameter labels and labeled function calls
 
-// 1. 基本数组操作
-var numbers: [Int] = [1, 2, 3, 4, 5];
-print(numbers);
-print(numbers[0]);
-print(numbers[4]);
+// Function with underscore parameter labels
+func multiply(_ x: Int, _ y: Int) -> Int {
+    return x * y
+}
 
-// 2. 字典操作
-var person: [String: String] = ["name": "Alice", "age": "30", "city": "Beijing"];
-print(person);
-print(person["name"]);
-print(person["age"]);
+// Function with mixed parameter labels (some underscore, some labeled)
+func greet(_ name: String, age: Int) -> String {
+    return "Hello \(name), you are \(age) years old"
+}
 
-// 3. 嵌套数组
-var matrix: [[Int]] = [[1, 2, 3], [4, 5, 6], [7, 8, 9]];
-print(matrix);
-print(matrix[0]);
-print(matrix[1][2]);
-print(matrix[2][0]);
+// Function with all labeled parameters
+func calculate(first: Int, second: Int, operation: String) -> Int {
+    if operation == "+" {
+        return first + second
+    } else if operation == "*" {
+        return first * second
+    }
+    return 0
+}
 
-// 4. 混合类型数组（字符串）
-var fruits: [String] = ["apple", "banana", "orange"];
-print(fruits);
-print(fruits[1]);
+// Test underscore parameters (no labels in call)
+let product = multiply(6, 7)
+print("Product: \(product)")
 
-// 5. 空数组
-var emptyArray: [Int] = [];
-print(emptyArray);
+// Test mixed parameters (some labels, some not)
+let greeting = greet("Alice", age: 25)
+print(greeting)
+
+// Test all labeled parameters
+let sum = calculate(first: 10, second: 5, operation: "+")
+print("Sum: \(sum)")
+
+let multiplication = calculate(first: 4, second: 3, operation: "*")
+print("Multiplication: \(multiplication)")

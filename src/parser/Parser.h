@@ -99,6 +99,7 @@ private:
     void consume(TokenType type, const std::string& message);
     Token parseType();
     bool isCustomOperator(const std::string& lexeme);
+    bool isCustomPrefixOperator(const std::string& lexeme);
 
     const std::vector<Token>& tokens;
     int current = 0;

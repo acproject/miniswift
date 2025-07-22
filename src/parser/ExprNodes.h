@@ -465,7 +465,7 @@ struct TypeCast : Expr {
   const CastType castType;
 };
 
-// Custom operator expression: left customOp right
+// Custom operator expression: left customOp right (or customOp right for prefix)
 struct CustomOperatorExpr : Expr {
   CustomOperatorExpr(std::unique_ptr<Expr> left, Token op, std::unique_ptr<Expr> right)
       : left(std::move(left)), op(op), right(std::move(right)) {}
@@ -473,10 +473,11 @@ struct CustomOperatorExpr : Expr {
   void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
 
   std::unique_ptr<Expr> clone() const override {
-    return std::make_unique<CustomOperatorExpr>(left->clone(), op, right->clone());
+    auto leftClone = left ? left->clone() : nullptr;
+    return std::make_unique<CustomOperatorExpr>(std::move(leftClone), op, right->clone());
   }
 
-  const std::unique_ptr<Expr> left;
+  const std::unique_ptr<Expr> left;  // Can be null for prefix operators
   const Token op;
   const std::unique_ptr<Expr> right;
 };

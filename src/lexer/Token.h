@@ -145,6 +145,12 @@ enum class TokenType {
   Right,           // right keyword
   None,            // none keyword
   
+  // Custom Operators
+  StarStar,        // ** (power operator)
+  LAngleRAngle,    // <> (custom operator)
+  PlusMinus,       // ± (custom operator)
+  CustomOperator,  // Generic custom operator token
+  
   // Result Builder Keywords
   ResultBuilder,   // @resultBuilder
 

@@ -67,6 +67,7 @@ public:
     void visit(const IndexAccess& expr) override;
     void visit(const SubscriptAccess& expr) override;
     void visit(const Call& expr) override;
+    void visit(const LabeledCall& expr) override;
     void visit(const Closure& expr) override;
     void visit(const EnumAccess& expr) override;
     void visit(const MemberAccess& expr) override;

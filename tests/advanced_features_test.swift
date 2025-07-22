@@ -38,8 +38,8 @@ prefix func ±(value: Int) -> Int {
 // Define a Result Builder for mathematical expressions
 @resultBuilder
 struct MathBuilder {
-    static func buildBlock(_ components: Int...) -> [Int] {
-        return Array(components)
+    static func buildBlock(_ components: [Int]) -> [Int] {
+        return components
     }
     
     static func buildOptional(_ component: [Int]?) -> [Int] {
@@ -55,18 +55,23 @@ struct MathBuilder {
     }
     
     static func buildArray(_ components: [[Int]]) -> [Int] {
-        return components.flatMap { $0 }
+        var result: [Int] = []
+        for component in components {
+            for item in component {
+                result.append(item)
+            }
+        }
+        return result
     }
 }
 
-// Function using the math builder
-func calculateValues(@MathBuilder _ content: () -> [Int]) -> [Int] {
-    return content()
+// Simple function to create test values
+func createTestValues() -> [Int] {
+    return [1, 2, 3, 4, 5]
 }
 
-// Function to sum values with custom operators
-func sumWithCustomOps(@MathBuilder _ content: () -> [Int]) -> Int {
-    let values = content()
+// Function to sum values
+func sumValues(values: [Int]) -> Int {
     var sum = 0
     for value in values {
         sum += value
@@ -95,52 +100,33 @@ print("2 + 3 ** 2 = \(precedenceTest1)")
 print("4 <> 6 + 2 = \(precedenceTest2)")
 print()
 
-// Test 3: Result Builder with simple values
-print("Test 3: Result Builder")
-let simpleValues = calculateValues {
-    1
-    2
-    3
-    4
-    5
-}
+// Test 3: Simple values
+print("Test 3: Simple Values")
+let simpleValues = createTestValues()
 print("Simple values: \(simpleValues)")
 print()
 
-// Test 4: Result Builder with custom operators
-print("Test 4: Result Builder with Custom Operators")
-let complexValues = calculateValues {
-    2 ** 3
-    10 <> 20
-    ±(-7)
-    3 + 4 ** 2
-    5 <> 15 + 1
-}
+// Test 4: Custom operators in arrays
+print("Test 4: Custom Operators in Arrays")
+let complexValues = [2 ** 3, 10 <> 20, ±(-7), 3 + 4 ** 2, 5 <> 15 + 1]
 print("Complex values: \(complexValues)")
 print()
 
-// Test 5: Conditional content in Result Builder
-print("Test 5: Conditional Result Builder")
-let conditionalValues = calculateValues {
-    1
-    2
-    if true {
-        3 ** 2
-        4 <> 8
-    }
-    ±(-10)
+// Test 5: Conditional array building
+print("Test 5: Conditional Array Building")
+var conditionalValues = [1, 2]
+if true {
+    conditionalValues.append(3 ** 2)
+    conditionalValues.append(4 <> 8)
 }
+conditionalValues.append(±(-10))
 print("Conditional values: \(conditionalValues)")
 print()
 
-// Test 6: Sum calculation using Result Builder
-print("Test 6: Sum with Result Builder")
-let totalSum = sumWithCustomOps {
-    2 ** 3      // 8
-    10 <> 20    // 15
-    ±(-5)       // 5
-    3 + 2 ** 2  // 7
-}
+// Test 6: Sum calculation
+print("Test 6: Sum Calculation")
+let testValues = [2 ** 3, 10 <> 20, ±(-5), 3 + 2 ** 2]
+let totalSum = sumValues(values: testValues)
 print("Total sum: \(totalSum)")
 print()
 

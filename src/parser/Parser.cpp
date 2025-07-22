@@ -338,9 +338,21 @@ std::unique_ptr<Expr> Parser::logicalOr() {
 }
 
 std::unique_ptr<Expr> Parser::logicalAnd() {
-  auto expr = bitwiseOr();
+  auto expr = nilCoalescing();
   
   while (match({TokenType::AmpAmp})) {
+    Token op = previous();
+    auto right = nilCoalescing();
+    expr = std::make_unique<Binary>(std::move(expr), op, std::move(right));
+  }
+  
+  return expr;
+}
+
+std::unique_ptr<Expr> Parser::nilCoalescing() {
+  auto expr = bitwiseOr();
+  
+  while (match({TokenType::QuestionQuestion})) {
     Token op = previous();
     auto right = bitwiseOr();
     expr = std::make_unique<Binary>(std::move(expr), op, std::move(right));
@@ -813,7 +825,7 @@ Token Parser::parseType() {
     Token tupleToken = Token(TokenType::Identifier, tupleType, peek().line);
     
     // Check for optional type suffix (?)
-    if (match({TokenType::Unknown}) && previous().lexeme == "?") {
+    if (match({TokenType::Question})) {
       return Token(TokenType::Identifier, tupleToken.lexeme + "?", tupleToken.line);
     }
     
@@ -870,7 +882,7 @@ Token Parser::parseType() {
       Token dictType = Token(TokenType::Identifier, "[" + firstType.lexeme + ":" + valueType.lexeme + "]", firstType.line);
       
       // Check for optional type suffix (?) after dictionary type
-      if (match({TokenType::Unknown}) && previous().lexeme == "?") {
+      if (match({TokenType::Question})) {
         // Create a synthetic token for optional dictionary type
         return Token(TokenType::Identifier, dictType.lexeme + "?", dictType.line);
       }
@@ -883,7 +895,7 @@ Token Parser::parseType() {
       Token arrayType = Token(TokenType::Identifier, "[" + firstType.lexeme + "]", firstType.line);
       
       // Check for optional type suffix (?) after array type
-      if (match({TokenType::Unknown}) && previous().lexeme == "?") {
+      if (match({TokenType::Question})) {
         // Create a synthetic token for optional array type
         return Token(TokenType::Identifier, arrayType.lexeme + "?", arrayType.line);
       }
@@ -916,7 +928,7 @@ Token Parser::parseType() {
        Token genericToken = Token(TokenType::Identifier, genericType, baseType.line);
        
        // Check for optional type suffix (?)
-       if (match({TokenType::Unknown}) && previous().lexeme == "?") {
+       if (match({TokenType::Question})) {
          return Token(TokenType::Identifier, genericToken.lexeme + "?", genericToken.line);
        }
        
@@ -924,7 +936,7 @@ Token Parser::parseType() {
      }
      
      // Check for optional type suffix (?)
-     if (match({TokenType::Unknown}) && previous().lexeme == "?") {
+     if (match({TokenType::Question})) {
        // Create a synthetic token for optional type
        return Token(TokenType::Identifier, baseType.lexeme + "?", baseType.line);
      }
@@ -1243,17 +1255,27 @@ std::unique_ptr<Stmt> Parser::functionDeclaration() {
   std::vector<Parameter> parameters;
   if (!check(TokenType::RParen)) {
     do {
-      // Parse parameter name (can be identifier, keyword like 'in', or 'self')
+      // Parse parameter name (can be identifier, keyword like 'in', 'self', or underscore)
       Token paramName = Token(TokenType::Identifier, "", peek().line);
+      Token externalName = Token(TokenType::Identifier, "", peek().line);
       
-      if (check(TokenType::Identifier) || check(TokenType::In) || check(TokenType::Self) || check(TokenType::Left) || check(TokenType::Right)) {
+      // Check for underscore as external parameter name
+      if (check(TokenType::Identifier) && peek().lexeme == "_") {
+        advance(); // consume the underscore
+        externalName = previous();
+        
+        // Must have internal parameter name after underscore
+        consume(TokenType::Identifier, "Expect internal parameter name after '_'.");
+        paramName = previous();
+      } else if (check(TokenType::Identifier) || check(TokenType::In) || check(TokenType::Self) || check(TokenType::Left) || check(TokenType::Right)) {
         advance(); // consume the token
         paramName = previous();
+        externalName = paramName; // Default: external name same as internal name
         
         // Check for external parameter name syntax: externalName internalName: Type
         if (check(TokenType::Identifier)) {
           // This is external parameter name, consume the internal parameter name
-          Token externalName = paramName;
+          externalName = paramName;
           consume(TokenType::Identifier, "Expect internal parameter name.");
           paramName = previous(); // Use internal name as the actual parameter name
         }
@@ -1270,7 +1292,19 @@ std::unique_ptr<Stmt> Parser::functionDeclaration() {
       }
       
       Token paramType = parseType();
-      parameters.emplace_back(paramName, paramType, isInout);
+      
+      // Check for variadic parameter (...)
+      bool isVariadic = false;
+      if (match({TokenType::Ellipsis})) {
+        isVariadic = true;
+      }
+      
+      parameters.emplace_back(paramName, externalName, paramType, isInout, isVariadic);
+      
+      // If this is a variadic parameter, it must be the last one
+      if (isVariadic && check(TokenType::Comma)) {
+        throw std::runtime_error("Variadic parameter must be the last parameter.");
+      }
     } while (match({TokenType::Comma}));
   }
   
@@ -1426,21 +1460,26 @@ std::unique_ptr<Expr> Parser::call() {
 
 // Parse function call arguments
 std::unique_ptr<Expr> Parser::finishCall(std::unique_ptr<Expr> callee) {
-  // For now, always parse as function call to avoid confusion with labeled parameters
-  // TODO: Implement proper struct initialization detection that doesn't conflict with labeled function parameters
-  
-  // Parse as regular function call
+  // Parse function call with support for labeled arguments
   std::vector<std::unique_ptr<Expr>> arguments;
+  std::vector<Token> argumentLabels; // Store argument labels for validation
+  bool hasAnyLabels = false;
   
   if (!check(TokenType::RParen)) {
     do {
+      Token argumentLabel = Token(TokenType::Identifier, "", peek().line);
+      bool hasLabel = false;
+      
       // Check for parameter label: label: expression
       // Parameter labels can be identifiers or keywords like 'in'
       if (check(TokenType::Identifier) || check(TokenType::In)) {
         int savedCurrent = current;
         advance(); // consume identifier or keyword
         if (check(TokenType::Colon)) {
-          // This is a parameter label, skip it and parse the expression
+          // This is a parameter label
+          argumentLabel = previous();
+          hasLabel = true;
+          hasAnyLabels = true;
           advance(); // consume ':'
           arguments.push_back(expression());
         } else {
@@ -1452,11 +1491,19 @@ std::unique_ptr<Expr> Parser::finishCall(std::unique_ptr<Expr> callee) {
         // Not an identifier or keyword, parse as expression
         arguments.push_back(expression());
       }
+      
+      argumentLabels.push_back(hasLabel ? argumentLabel : Token(TokenType::Identifier, "", peek().line));
     } while (match({TokenType::Comma}));
   }
   
   consume(TokenType::RParen, "Expect ')' after arguments.");
-  return std::make_unique<Call>(std::move(callee), std::move(arguments));
+  
+  // Create appropriate call expression based on whether we have labels
+  if (hasAnyLabels) {
+    return std::make_unique<LabeledCall>(std::move(callee), std::move(arguments), std::move(argumentLabels));
+  } else {
+    return std::make_unique<Call>(std::move(callee), std::move(arguments));
+  }
 }
 
 // Parse closure: { (parameters) -> ReturnType in body }
@@ -1625,6 +1672,18 @@ std::unique_ptr<Stmt> Parser::structDeclaration() {
       auto accessPair = parseAccessLevelWithSetter();
       memberAccessLevel = accessPair.first;
       memberSetterAccessLevel = accessPair.second;
+    }
+    
+    // Check for attributes like @resultBuilder
+    if (match({TokenType::At})) {
+      if (match({TokenType::ResultBuilder})) {
+        // Parse @resultBuilder struct declaration
+        auto resultBuilderStruct = resultBuilderDeclaration();
+        nestedTypes.push_back(std::move(resultBuilderStruct));
+        continue;
+      } else {
+        throw std::runtime_error("Unknown attribute in struct body.");
+      }
     }
     
     // Check for mutating keyword before func

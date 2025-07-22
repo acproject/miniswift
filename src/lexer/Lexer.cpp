@@ -98,6 +98,9 @@ static void initializeKeywords() {
   keywords["left"] = TokenType::Left;
   keywords["right"] = TokenType::Right;
   keywords["none"] = TokenType::None;
+  
+  // Result Builder Keywords
+  keywords["resultBuilder"] = TokenType::ResultBuilder;
 }
 
 Lexer::Lexer(const std::string &source)

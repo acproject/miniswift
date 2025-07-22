@@ -18,6 +18,7 @@ struct DictionaryLiteral;
 struct TupleLiteral;
 struct IndexAccess;
 struct Call;
+struct LabeledCall;
 struct Closure;
 struct EnumAccess;
 struct MemberAccess;
@@ -58,6 +59,7 @@ public:
   virtual void visit(const IndexAccess &expr) = 0;
   virtual void visit(const SubscriptAccess &expr) = 0;
   virtual void visit(const Call &expr) = 0;
+  virtual void visit(const LabeledCall &expr) = 0;
   virtual void visit(const Closure &expr) = 0;
   virtual void visit(const EnumAccess &expr) = 0;
   virtual void visit(const MemberAccess &expr) = 0;
@@ -280,6 +282,28 @@ struct Call : Expr {
 
   const std::unique_ptr<Expr> callee;
   const std::vector<std::unique_ptr<Expr>> arguments;
+};
+
+// Labeled function call expression: functionName(label1: arg1, label2: arg2)
+struct LabeledCall : Expr {
+  LabeledCall(std::unique_ptr<Expr> callee,
+              std::vector<std::unique_ptr<Expr>> arguments,
+              std::vector<Token> argumentLabels)
+      : callee(std::move(callee)), arguments(std::move(arguments)), argumentLabels(std::move(argumentLabels)) {}
+
+  void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
+
+  std::unique_ptr<Expr> clone() const override {
+    std::vector<std::unique_ptr<Expr>> clonedArguments;
+    for (const auto &arg : arguments) {
+      clonedArguments.push_back(arg->clone());
+    }
+    return std::make_unique<LabeledCall>(callee->clone(), std::move(clonedArguments), argumentLabels);
+  }
+
+  const std::unique_ptr<Expr> callee;
+  const std::vector<std::unique_ptr<Expr>> arguments;
+  const std::vector<Token> argumentLabels;
 };
 
 // String interpolation expression: "Hello \(name)!"

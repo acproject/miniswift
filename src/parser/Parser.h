@@ -47,6 +47,7 @@ private:
     std::unique_ptr<Expr> ternary();
     std::unique_ptr<Expr> logicalOr();
     std::unique_ptr<Expr> logicalAnd();
+    std::unique_ptr<Expr> nilCoalescing();
     std::unique_ptr<Expr> equality();
     std::unique_ptr<Expr> comparison();
     std::unique_ptr<Expr> typeCasting();

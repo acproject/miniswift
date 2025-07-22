@@ -525,7 +525,7 @@ void Interpreter::visit(const Binary& expr) {
     };
     
     // Type checking for non-logical operators
-    if (expr.op.type != TokenType::BangEqual && expr.op.type != TokenType::EqualEqual) {
+    if (expr.op.type != TokenType::BangEqual && expr.op.type != TokenType::EqualEqual && expr.op.type != TokenType::QuestionQuestion) {
         if (isNumeric(left) && isNumeric(right)) {
             // Numeric operations
         } else if (left.type == ValueType::String && right.type == ValueType::String && expr.op.type == TokenType::Plus) {
@@ -604,6 +604,14 @@ void Interpreter::visit(const Binary& expr) {
             return;
         case TokenType::EqualEqual:
             result = Value(left.value == right.value);
+            return;
+        case TokenType::QuestionQuestion:
+            // Nil-coalescing operator: return left if not nil, otherwise return right
+            if (left.type == ValueType::Nil) {
+                result = right;
+            } else {
+                result = left;
+            }
             return;
         default: break; // Should not be reached
     }
@@ -1941,6 +1949,93 @@ void Interpreter::visit(const Call& expr) {
         
         // Restore previous environment
         environment = previous;
+    }
+}
+
+// Execute labeled function call: callee(label1: arg1, label2: arg2)
+void Interpreter::visit(const LabeledCall& expr) {
+    Value callee = evaluate(*expr.callee);
+    
+    if (!callee.isFunction()) {
+        throw std::runtime_error("Can only call functions and closures.");
+    }
+    
+    std::vector<Value> arguments;
+    for (const auto& argument : expr.arguments) {
+        arguments.push_back(evaluate(*argument));
+    }
+    
+    auto callable = callee.asFunction();
+    
+    if (callable->isFunction) {
+        // For labeled calls, we need to match arguments to parameters by label
+        if (arguments.size() != callable->functionDecl->parameters.size()) {
+            throw std::runtime_error("Expected " + 
+                std::to_string(callable->functionDecl->parameters.size()) + 
+                " arguments but got " + std::to_string(arguments.size()) + ".");
+        }
+        
+        // Create new environment for function execution
+        auto previous = environment;
+        environment = std::make_shared<Environment>(callable->closure);
+        
+        // Create new defer stack level for this function
+        deferStack.push(std::vector<std::unique_ptr<Stmt>>());
+        
+        // Bind parameters by matching labels to external parameter names
+        std::vector<Value> orderedArguments(arguments.size());
+        
+        for (size_t i = 0; i < expr.argumentLabels.size(); ++i) {
+            const std::string& label = expr.argumentLabels[i].lexeme;
+            bool found = false;
+            
+            // Find the parameter with matching external name
+            for (size_t j = 0; j < callable->functionDecl->parameters.size(); ++j) {
+                const auto& param = callable->functionDecl->parameters[j];
+                if (param.externalName.lexeme == label) {
+                    orderedArguments[j] = arguments[i];
+                    found = true;
+                    break;
+                }
+            }
+            
+            if (!found) {
+                throw std::runtime_error("No parameter found for argument label '" + label + "'");
+            }
+        }
+        
+        // Bind parameters in the correct order
+        for (size_t i = 0; i < callable->functionDecl->parameters.size(); ++i) {
+            environment->define(
+                callable->functionDecl->parameters[i].name.lexeme,
+                orderedArguments[i],
+                false, // parameters are not const
+                callable->functionDecl->parameters[i].type.lexeme
+            );
+        }
+        
+        try {
+            // Execute function body
+            callable->functionDecl->body->accept(*this);
+            
+            // Execute deferred statements before function exits
+            executeDeferredStatements();
+            
+            // If no return statement was executed, return nil
+            result = Value();
+        } catch (const ReturnException& returnValue) {
+            // Execute deferred statements before function exits
+            executeDeferredStatements();
+            
+            // Function returned a value
+            result = returnValue.value;
+        }
+        
+        // Restore previous environment
+        environment = previous;
+    } else {
+        // Handle closure call - closures don't support labeled arguments for now
+        throw std::runtime_error("Labeled arguments not supported for closures.");
     }
 }
 

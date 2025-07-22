@@ -86,6 +86,18 @@ static void initializeKeywords() {
   keywords["Any"] = TokenType::Any;
   keywords["Void"] = TokenType::Void;
   keywords["Set"] = TokenType::Set;
+  
+  // Custom Operator Keywords
+  keywords["operator"] = TokenType::Operator;
+  keywords["prefix"] = TokenType::Prefix;
+  keywords["infix"] = TokenType::Infix;
+  keywords["postfix"] = TokenType::Postfix;
+  keywords["precedence"] = TokenType::Precedence;
+  keywords["precedencegroup"] = TokenType::PrecedenceGroup;
+  keywords["associativity"] = TokenType::Associativity;
+  keywords["left"] = TokenType::Left;
+  keywords["right"] = TokenType::Right;
+  keywords["none"] = TokenType::None;
 }
 
 Lexer::Lexer(const std::string &source)
@@ -186,14 +198,20 @@ Token Lexer::scanToken() {
     }
     return {TokenType::Dot, ".", line};
   case '-':
+    if (match('='))
+      return {TokenType::MinusEqual, "-=", line};
     if (match('>'))
       return {TokenType::Arrow, "->", line};
     return {TokenType::Minus, "-", line};
   case '+':
+    if (match('='))
+      return {TokenType::PlusEqual, "+=", line};
     return {TokenType::Plus, "+", line};
   case ';':
     return {TokenType::Semicolon, ";", line};
   case '*':
+    if (match('='))
+      return {TokenType::StarEqual, "*=", line};
     return {TokenType::Star, "*", line};
   case '!':
     if (match('='))
@@ -204,14 +222,20 @@ Token Lexer::scanToken() {
       return {TokenType::EqualEqual, "==", line};
     return {TokenType::Equal, "=", line};
   case '<':
+    if (match('<'))
+      return {TokenType::LeftShift, "<<", line};
     if (match('='))
       return {TokenType::LessEqual, "<=", line};
     return {TokenType::LAngle, "<", line};
   case '>':
+    if (match('>'))
+      return {TokenType::RightShift, ">>", line};
     if (match('='))
       return {TokenType::GreaterEqual, ">=", line};
     return {TokenType::RAngle, ">", line};
   case '/':
+    if (match('='))
+      return {TokenType::SlashEqual, "/=", line};
     if (match('/')) {
       while (peek() != '\n' && current < source.length())
         advance();
@@ -219,15 +243,27 @@ Token Lexer::scanToken() {
     }
     return {TokenType::Slash, "/", line};
   case '%':
+    if (match('='))
+      return {TokenType::PercentEqual, "%=", line};
     return {TokenType::Percent, "%", line};
   case '&':
     if (match('&'))
       return {TokenType::AmpAmp, "&&", line};
-    return {TokenType::Amp, "&", line};
+    if (match('+'))
+      return {TokenType::OverflowPlus, "&+", line};
+    if (match('-'))
+      return {TokenType::OverflowMinus, "&-", line};
+    if (match('*'))
+      return {TokenType::OverflowStar, "&*", line};
+    return {TokenType::BitwiseAnd, "&", line};
   case '|':
     if (match('|'))
       return {TokenType::PipePipe, "||", line};
-    return {TokenType::Unknown, "|", line};
+    return {TokenType::BitwiseOr, "|", line};
+  case '^':
+    return {TokenType::BitwiseXor, "^", line};
+  case '~':
+    return {TokenType::BitwiseNot, "~", line};
   case '?':
     if (match('?'))
       return {TokenType::QuestionQuestion, "??", line};
@@ -235,7 +271,7 @@ Token Lexer::scanToken() {
       return {TokenType::QuestionDot, "?.", line};
     if (match('['))
       return {TokenType::QuestionLSquare, "?[", line};
-    return {TokenType::Unknown, "?", line};
+    return {TokenType::Question, "?", line};
   case '@':
     return {TokenType::At, "@", line};
   case ':':

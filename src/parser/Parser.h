@@ -38,8 +38,13 @@ private:
     std::unique_ptr<Stmt> deferStatement();
     std::unique_ptr<Stmt> guardStatement();
     std::unique_ptr<Stmt> switchStatement();
+    // Advanced operator parsing methods
+    std::unique_ptr<Stmt> customOperatorDeclaration();
+    std::unique_ptr<Stmt> operatorPrecedenceDeclaration();
+    std::unique_ptr<Stmt> resultBuilderDeclaration();
     std::unique_ptr<Expr> expression();
     std::unique_ptr<Expr> assignment();
+    std::unique_ptr<Expr> ternary();
     std::unique_ptr<Expr> logicalOr();
     std::unique_ptr<Expr> logicalAnd();
     std::unique_ptr<Expr> equality();
@@ -49,6 +54,13 @@ private:
     std::unique_ptr<Expr> range();
     std::unique_ptr<Expr> term();
     std::unique_ptr<Expr> factor();
+    // Bitwise and overflow operator parsing methods
+    std::unique_ptr<Expr> bitwiseOr();
+    std::unique_ptr<Expr> bitwiseXor();
+    std::unique_ptr<Expr> bitwiseAnd();
+    std::unique_ptr<Expr> bitwiseShift();
+    std::unique_ptr<Expr> overflowArithmetic();
+    std::unique_ptr<Expr> customOperatorExpression();
     std::unique_ptr<Expr> unary();
     std::unique_ptr<Expr> tryExpression();
     std::unique_ptr<Expr> call();
@@ -85,6 +97,7 @@ private:
     Token previous();
     void consume(TokenType type, const std::string& message);
     Token parseType();
+    bool isCustomOperator(const std::string& lexeme);
 
     const std::vector<Token>& tokens;
     int current = 0;

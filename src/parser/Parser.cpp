@@ -100,6 +100,40 @@ std::vector<std::unique_ptr<Stmt>> Parser::declaration() {
     result.push_back(subscriptDeclaration());
     return result;
   }
+  // Advanced operator declarations
+  if (match({TokenType::Operator})) {
+    std::vector<std::unique_ptr<Stmt>> result;
+    result.push_back(customOperatorDeclaration());
+    return result;
+  }
+  if (match({TokenType::Infix, TokenType::Prefix, TokenType::Postfix})) {
+    // Check if this is an operator function (prefix func) or operator declaration (prefix operator)
+    if (check(TokenType::Func)) {
+      // This is an operator function declaration like "prefix func ±"
+      advance(); // consume 'func'
+      std::vector<std::unique_ptr<Stmt>> result;
+      result.push_back(functionDeclaration());
+      return result;
+    } else {
+      // This is an operator declaration like "prefix operator ±"
+      std::vector<std::unique_ptr<Stmt>> result;
+      result.push_back(customOperatorDeclaration());
+      return result;
+    }
+  }
+  if (match({TokenType::PrecedenceGroup})) {
+    std::vector<std::unique_ptr<Stmt>> result;
+    result.push_back(operatorPrecedenceDeclaration());
+    return result;
+  }
+  // Result Builder declaration (with @resultBuilder attribute)
+  if (match({TokenType::At})) {
+    if (match({TokenType::ResultBuilder})) {
+      std::vector<std::unique_ptr<Stmt>> result;
+      result.push_back(resultBuilderDeclaration());
+      return result;
+    }
+  }
   if (match({TokenType::Var, TokenType::Let})) {
     bool isConst = previous().type == TokenType::Let;
     std::vector<Token> names;
@@ -209,9 +243,10 @@ std::unique_ptr<Stmt> Parser::expressionStatement() {
 std::unique_ptr<Expr> Parser::expression() { return assignment(); }
 
 std::unique_ptr<Expr> Parser::assignment() {
-  auto expr = logicalOr();
+  auto expr = ternary();
 
-  if (match({TokenType::Equal})) {
+  if (match({TokenType::Equal, TokenType::PlusEqual, TokenType::MinusEqual, 
+             TokenType::StarEqual, TokenType::SlashEqual, TokenType::PercentEqual})) {
     Token equals = previous();
     auto value = assignment();
 
@@ -220,12 +255,73 @@ std::unique_ptr<Expr> Parser::assignment() {
         dynamic_cast<MemberAccess *>(expr.get()) ||
         dynamic_cast<IndexAccess *>(expr.get()) ||
         dynamic_cast<SubscriptAccess *>(expr.get())) {
+      
+      // For compound assignment operators, create equivalent binary operation
+      if (equals.type != TokenType::Equal) {
+        Token binaryOp = equals;
+        // Convert compound assignment to binary operator
+        switch (equals.type) {
+          case TokenType::PlusEqual:
+            binaryOp.type = TokenType::Plus;
+            binaryOp.lexeme = "+";
+            break;
+          case TokenType::MinusEqual:
+            binaryOp.type = TokenType::Minus;
+            binaryOp.lexeme = "-";
+            break;
+          case TokenType::StarEqual:
+            binaryOp.type = TokenType::Star;
+            binaryOp.lexeme = "*";
+            break;
+          case TokenType::SlashEqual:
+            binaryOp.type = TokenType::Slash;
+            binaryOp.lexeme = "/";
+            break;
+          case TokenType::PercentEqual:
+            binaryOp.type = TokenType::Percent;
+            binaryOp.lexeme = "%";
+            break;
+          default:
+            break;
+        }
+        
+        // Create a copy of the left expression for the binary operation
+        std::unique_ptr<Expr> leftCopy;
+        if (auto varExpr = dynamic_cast<VarExpr*>(expr.get())) {
+          leftCopy = std::make_unique<VarExpr>(varExpr->name);
+        } else if (auto memberExpr = dynamic_cast<MemberAccess*>(expr.get())) {
+          // For member access, we need to clone the object and member
+          // This is a simplified approach - in a full implementation, 
+          // you'd need proper expression cloning
+          throw std::runtime_error("Compound assignment to member access not yet supported");
+        } else {
+          throw std::runtime_error("Compound assignment to this expression type not yet supported");
+        }
+        
+        // Create binary expression: left op right
+        auto binaryExpr = std::make_unique<Binary>(std::move(leftCopy), binaryOp, std::move(value));
+        return std::make_unique<Assign>(std::move(expr), std::move(binaryExpr));
+      }
+      
       return std::make_unique<Assign>(std::move(expr), std::move(value));
     }
 
     throw std::runtime_error("Invalid assignment target.");
   }
 
+  return expr;
+}
+
+std::unique_ptr<Expr> Parser::ternary() {
+  auto expr = logicalOr();
+  
+  if (match({TokenType::Question})) {
+    auto thenBranch = expression();
+    consume(TokenType::Colon, "Expect ':' after then branch of ternary expression.");
+    auto elseBranch = ternary();
+    expr = std::make_unique<Ternary>(std::move(expr), std::move(thenBranch), std::move(elseBranch));
+  }
+  
   return expr;
 }
 
@@ -242,12 +338,51 @@ std::unique_ptr<Expr> Parser::logicalOr() {
 }
 
 std::unique_ptr<Expr> Parser::logicalAnd() {
-  auto expr = equality();
+  auto expr = bitwiseOr();
   
   while (match({TokenType::AmpAmp})) {
     Token op = previous();
-    auto right = equality();
+    auto right = bitwiseOr();
     expr = std::make_unique<Binary>(std::move(expr), op, std::move(right));
+  }
+  
+  return expr;
+}
+
+// Bitwise OR: expr | expr
+std::unique_ptr<Expr> Parser::bitwiseOr() {
+  auto expr = bitwiseXor();
+  
+  while (match({TokenType::BitwiseOr})) {
+    Token op = previous();
+    auto right = bitwiseXor();
+    expr = std::make_unique<BitwiseExpr>(std::move(expr), op, std::move(right));
+  }
+  
+  return expr;
+}
+
+// Bitwise XOR: expr ^ expr
+std::unique_ptr<Expr> Parser::bitwiseXor() {
+  auto expr = bitwiseAnd();
+  
+  while (match({TokenType::BitwiseXor})) {
+    Token op = previous();
+    auto right = bitwiseAnd();
+    expr = std::make_unique<BitwiseExpr>(std::move(expr), op, std::move(right));
+  }
+  
+  return expr;
+}
+
+// Bitwise AND: expr & expr
+std::unique_ptr<Expr> Parser::bitwiseAnd() {
+  auto expr = equality();
+  
+  while (match({TokenType::BitwiseAnd})) {
+    Token op = previous();
+    auto right = equality();
+    expr = std::make_unique<BitwiseExpr>(std::move(expr), op, std::move(right));
   }
   
   return expr;
@@ -264,13 +399,26 @@ std::unique_ptr<Expr> Parser::equality() {
 }
 
 std::unique_ptr<Expr> Parser::comparison() {
-  auto expr = typeCasting();
+  auto expr = bitwiseShift();
   while (match({TokenType::RAngle, TokenType::GreaterEqual, TokenType::LAngle,
                 TokenType::LessEqual})) {
     Token op = previous();
-    auto right = typeCasting();
+    auto right = bitwiseShift();
     expr = std::make_unique<Binary>(std::move(expr), op, std::move(right));
   }
+  return expr;
+}
+
+// Bitwise shift: expr << expr, expr >> expr
+std::unique_ptr<Expr> Parser::bitwiseShift() {
+  auto expr = typeCasting();
+  
+  while (match({TokenType::LeftShift, TokenType::RightShift})) {
+    Token op = previous();
+    auto right = typeCasting();
+    expr = std::make_unique<BitwiseExpr>(std::move(expr), op, std::move(right));
+  }
+  
   return expr;
 }
 
@@ -328,22 +476,51 @@ std::unique_ptr<Expr> Parser::range() {
 }
 
 std::unique_ptr<Expr> Parser::term() {
-  auto expr = factor();
+  auto expr = overflowArithmetic();
+  
   while (match({TokenType::Minus, TokenType::Plus})) {
     Token op = previous();
+    auto right = overflowArithmetic();
+    expr = std::make_unique<Binary>(std::move(expr), op, std::move(right));
+  }
+  
+  return expr;
+}
+
+// Overflow arithmetic: expr &+ expr, expr &- expr, expr &* expr
+std::unique_ptr<Expr> Parser::overflowArithmetic() {
+  auto expr = factor();
+  
+  while (match({TokenType::OverflowPlus, TokenType::OverflowMinus, TokenType::OverflowStar})) {
+    Token op = previous();
     auto right = factor();
+    expr = std::make_unique<OverflowExpr>(std::move(expr), op, std::move(right));
+  }
+  
+  return expr;
+}
+
+std::unique_ptr<Expr> Parser::factor() {
+  auto expr = customOperatorExpression();
+  while (match({TokenType::Slash, TokenType::Star})) {
+    Token op = previous();
+    auto right = customOperatorExpression();
     expr = std::make_unique<Binary>(std::move(expr), op, std::move(right));
   }
   return expr;
 }
 
-std::unique_ptr<Expr> Parser::factor() {
+// Custom operator expression
+std::unique_ptr<Expr> Parser::customOperatorExpression() {
   auto expr = unary();
-  while (match({TokenType::Slash, TokenType::Star})) {
-    Token op = previous();
+  
+  // Check for custom operators (identified by specific token patterns)
+  while (check(TokenType::Identifier) && isCustomOperator(peek().lexeme)) {
+    Token op = advance();
     auto right = unary();
-    expr = std::make_unique<Binary>(std::move(expr), op, std::move(right));
+    expr = std::make_unique<CustomOperatorExpr>(std::move(expr), op, std::move(right));
   }
+  
   return expr;
 }
 
@@ -446,7 +623,7 @@ std::unique_ptr<Expr> Parser::primary() {
     return arrayLiteral();
   }
 
-  if (match({TokenType::Identifier, TokenType::String, TokenType::Int, TokenType::Bool, TokenType::Double, TokenType::Int8, TokenType::Int16, TokenType::Int32, TokenType::Int64, TokenType::UInt, TokenType::UInt8, TokenType::UInt16, TokenType::UInt64, TokenType::Float, TokenType::Character, TokenType::Any, TokenType::Void, TokenType::Set})) {
+  if (match({TokenType::Identifier, TokenType::String, TokenType::Int, TokenType::Bool, TokenType::Double, TokenType::Int8, TokenType::Int16, TokenType::Int32, TokenType::Int64, TokenType::UInt, TokenType::UInt8, TokenType::UInt16, TokenType::UInt64, TokenType::Float, TokenType::Character, TokenType::Any, TokenType::Void, TokenType::Set, TokenType::Left, TokenType::Right})) {
     Token identifier = previous();
     
     std::unique_ptr<Expr> expr;
@@ -1033,11 +1210,33 @@ std::unique_ptr<Stmt> Parser::forStatement() {
 
 // Parse function declaration: func name(parameters) -> ReturnType { body }
 std::unique_ptr<Stmt> Parser::functionDeclaration() {
-  consume(TokenType::Identifier, "Expect function name.");
-  Token name = previous();
+  // Function name can be an identifier or an operator
+  Token functionName(TokenType::Identifier, "", peek().line);
+  bool isOperatorFunction = false;
   
-  // Parse optional generic parameter clause
-  GenericParameterClause genericParams = parseGenericParameterClause();
+  if (match({TokenType::Identifier})) {
+    functionName = previous();
+  } else if (match({TokenType::Star, TokenType::Plus, TokenType::Minus, TokenType::Slash, 
+                   TokenType::Percent, TokenType::LAngle, TokenType::RAngle, TokenType::Bang, 
+                   TokenType::Equal, TokenType::BitwiseAnd, TokenType::BitwiseOr, 
+                   TokenType::BitwiseXor, TokenType::BitwiseNot})) {
+    functionName = previous();
+    isOperatorFunction = true;
+    // Handle multi-character operators like **
+    if (functionName.type == TokenType::Star && check(TokenType::Star)) {
+      advance(); // consume second *
+      functionName.lexeme = "**";
+    } else if (functionName.type == TokenType::LAngle && check(TokenType::RAngle)) {
+      advance(); // consume >
+      functionName.lexeme = "<>";
+    }
+  } else {
+    throw std::runtime_error("Expect function name.");
+  }
+  
+  // Parse optional generic parameter clause (only for regular functions, not operators)
+  GenericParameterClause genericParams = isOperatorFunction ? 
+    GenericParameterClause(std::vector<TypeParameter>()) : parseGenericParameterClause();
   
   consume(TokenType::LParen, "Expect '(' after function name.");
   
@@ -1046,7 +1245,8 @@ std::unique_ptr<Stmt> Parser::functionDeclaration() {
     do {
       // Parse parameter name (can be identifier, keyword like 'in', or 'self')
       Token paramName = Token(TokenType::Identifier, "", peek().line);
-      if (check(TokenType::Identifier) || check(TokenType::In) || check(TokenType::Self)) {
+      
+      if (check(TokenType::Identifier) || check(TokenType::In) || check(TokenType::Self) || check(TokenType::Left) || check(TokenType::Right)) {
         advance(); // consume the token
         paramName = previous();
         
@@ -1082,7 +1282,7 @@ std::unique_ptr<Stmt> Parser::functionDeclaration() {
     canThrow = true;
   }
   
-  Token returnType = Token(TokenType::Identifier, "Void", name.line);
+  Token returnType = Token(TokenType::Identifier, "Void", functionName.line);
   if (match({TokenType::Arrow})) {
     returnType = parseType();
   }
@@ -1093,7 +1293,7 @@ std::unique_ptr<Stmt> Parser::functionDeclaration() {
   consume(TokenType::LBrace, "Expect '{' before function body.");
   auto body = blockStatement();
   
-  return std::make_unique<FunctionStmt>(name, std::move(parameters), returnType, std::move(body), 
+  return std::make_unique<FunctionStmt>(functionName, std::move(parameters), returnType, std::move(body), 
                                         AccessLevel::INTERNAL, std::move(genericParams), std::move(whereClause), false, canThrow);
 }
 
@@ -2468,6 +2668,131 @@ std::unique_ptr<Expr> Parser::errorLiteral() {
   consume(TokenType::RParen, "Expect ')' after error literal.");
   
   return std::make_unique<ErrorLiteral>(errorType.lexeme, message.lexeme, std::move(arguments));
+}
+
+// Custom operator declaration parsing
+std::unique_ptr<miniswift::Stmt> miniswift::Parser::customOperatorDeclaration() {
+  Token operatorType = previous(); // infix, prefix, or postfix
+  consume(TokenType::Operator, "Expect 'operator' keyword.");
+  
+  // Accept various operator symbols
+  if (!match({TokenType::Identifier, TokenType::Star, TokenType::Plus, TokenType::Minus, 
+            TokenType::Slash, TokenType::Percent, TokenType::LAngle, TokenType::RAngle,
+            TokenType::Bang, TokenType::Equal, TokenType::BitwiseAnd, TokenType::BitwiseOr,
+            TokenType::BitwiseXor, TokenType::BitwiseNot})) {
+    throw std::runtime_error("Expect operator symbol.");
+  }
+  
+  Token operatorSymbol = previous();
+  
+  // Handle multi-character operators
+  if (operatorSymbol.type == TokenType::Star && check(TokenType::Star)) {
+    advance(); // consume second *
+    operatorSymbol.lexeme = "**";
+  } else if (operatorSymbol.type == TokenType::LAngle && check(TokenType::RAngle)) {
+    advance(); // consume >
+    operatorSymbol.lexeme = "<>";
+  }
+  
+  std::optional<Token> precedenceGroup;
+  if (match({TokenType::Colon})) {
+    consume(TokenType::Identifier, "Expect precedence group name.");
+    precedenceGroup = previous();
+  }
+  
+  match({TokenType::Semicolon}); // Optional semicolon
+  return std::make_unique<CustomOperatorStmt>(operatorSymbol, operatorType);
+}
+
+// Operator precedence declaration parsing
+std::unique_ptr<miniswift::Stmt> miniswift::Parser::operatorPrecedenceDeclaration() {
+  consume(TokenType::Identifier, "Expect precedence group name.");
+  Token groupName = previous();
+  
+  consume(TokenType::LBrace, "Expect '{' after precedence group name.");
+  
+  std::string associativity = "none";
+  int precedence = 100;
+  std::vector<Token> higherThan;
+  std::vector<Token> lowerThan;
+  
+  while (!check(TokenType::RBrace) && !isAtEnd()) {
+    if (match({TokenType::Identifier})) {
+      Token property = previous();
+      if (property.lexeme == "associativity") {
+        consume(TokenType::Colon, "Expect ':' after 'associativity'.");
+        consume(TokenType::Identifier, "Expect associativity value.");
+        associativity = previous().lexeme;
+      } else if (property.lexeme == "precedence") {
+        consume(TokenType::Colon, "Expect ':' after 'precedence'.");
+        consume(TokenType::IntegerLiteral, "Expect precedence value.");
+        precedence = std::stoi(previous().lexeme);
+      } else if (property.lexeme == "higherThan") {
+        consume(TokenType::Colon, "Expect ':' after 'higherThan'.");
+        consume(TokenType::Identifier, "Expect precedence group name.");
+        higherThan.push_back(previous());
+      } else if (property.lexeme == "lowerThan") {
+        consume(TokenType::Colon, "Expect ':' after 'lowerThan'.");
+        consume(TokenType::Identifier, "Expect precedence group name.");
+        lowerThan.push_back(previous());
+      } else {
+        // Skip unknown property
+        advance();
+      }
+    } else {
+      // Skip non-identifier tokens
+      advance();
+    }
+    match({TokenType::Semicolon}); // Optional semicolon
+  }
+  
+  consume(TokenType::RBrace, "Expect '}' after precedence group body.");
+  
+  // Create Token objects for the constructor
+  Token associativityToken(TokenType::Identifier, associativity, 0);
+  
+  return std::make_unique<OperatorPrecedenceStmt>(groupName, associativityToken, precedence, higherThan, lowerThan);
+}
+
+// Result Builder declaration parsing
+std::unique_ptr<miniswift::Stmt> miniswift::Parser::resultBuilderDeclaration() {
+  consume(TokenType::Struct, "Expect 'struct' after '@resultBuilder'.");
+  consume(TokenType::Identifier, "Expect Result Builder name.");
+  Token builderName = previous();
+  
+  consume(TokenType::LBrace, "Expect '{' after Result Builder name.");
+  
+  std::vector<std::unique_ptr<FunctionStmt>> methods;
+  
+  while (!check(TokenType::RBrace) && !isAtEnd()) {
+    if (match({TokenType::Static})) {
+      if (match({TokenType::Func})) {
+        auto method = functionDeclaration();
+        // Cast Stmt to FunctionStmt
+        auto funcStmt = std::unique_ptr<FunctionStmt>(static_cast<FunctionStmt*>(method.release()));
+        methods.push_back(std::move(funcStmt));
+      } else {
+        throw std::runtime_error("Expect 'func' after 'static' in Result Builder.");
+      }
+    } else {
+      throw std::runtime_error("Expect 'static func' in Result Builder body.");
+    }
+  }
+  
+  consume(TokenType::RBrace, "Expect '}' after Result Builder body.");
+  return std::make_unique<ResultBuilderStmt>(builderName, std::move(methods));
+}
+
+// Helper method to check if a token is a custom operator
+bool miniswift::Parser::isCustomOperator(const std::string& lexeme) {
+  // Custom operators typically contain special characters
+  // This is a simplified check - in a real implementation, you'd maintain
+  // a registry of declared custom operators
+  return lexeme.find_first_of("+-*/%<>=!&|^~") != std::string::npos &&
+         lexeme != "+" && lexeme != "-" && lexeme != "*" && lexeme != "/" &&
+         lexeme != "%" && lexeme != "<" && lexeme != ">" && lexeme != "=" &&
+         lexeme != "!" && lexeme != "&" && lexeme != "|" && lexeme != "^" &&
+         lexeme != "~";
 }
 
 } // namespace miniswift

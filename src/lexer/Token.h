@@ -110,7 +110,43 @@ enum class TokenType {
   QuestionQuestion,
   QuestionDot,
   QuestionLSquare, // ?[
+  Question, // ?
   Arrow, // ->
+  
+  // Compound Assignment Operators
+  PlusEqual,    // +=
+  MinusEqual,   // -=
+  StarEqual,    // *=
+  SlashEqual,   // /=
+  PercentEqual, // %=
+  
+  // Bitwise Operators
+  BitwiseAnd,      // &
+  BitwiseOr,       // |
+  BitwiseXor,      // ^
+  BitwiseNot,      // ~
+  LeftShift,       // <<
+  RightShift,      // >>
+  
+  // Overflow Operators
+  OverflowPlus,    // &+
+  OverflowMinus,   // &-
+  OverflowStar,    // &*
+  
+  // Custom Operator Keywords
+  Operator,        // operator keyword
+  Prefix,          // prefix keyword
+  Infix,           // infix keyword
+  Postfix,         // postfix keyword
+  Precedence,      // precedence keyword
+  PrecedenceGroup, // precedencegroup keyword
+  Associativity,   // associativity keyword
+  Left,            // left keyword
+  Right,           // right keyword
+  None,            // none keyword
+  
+  // Result Builder Keywords
+  ResultBuilder,   // @resultBuilder
 
   // Punctuation
   LParen,

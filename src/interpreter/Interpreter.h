@@ -48,8 +48,14 @@ public:
     void visit(const GuardStmt& stmt) override;
     void visit(const GuardLetStmt& stmt) override;
     void visit(const SwitchStmt& stmt) override;
+    
+    // Advanced statement declarations
+    void visit(const CustomOperatorStmt& stmt) override;
+    void visit(const OperatorPrecedenceStmt& stmt) override;
+    void visit(const ResultBuilderStmt& stmt) override;
 
     void visit(const Binary& expr) override;
+    void visit(const Ternary& expr) override;
     void visit(const Grouping& expr) override;
     void visit(const Literal& expr) override;
     void visit(const Unary& expr) override;
@@ -81,6 +87,12 @@ public:
     void visit(const TryExpr& expr) override;
     void visit(const ResultTypeExpr& expr) override;
     void visit(const ErrorLiteral& expr) override;
+    
+    // Advanced operator expressions
+    void visit(const BitwiseExpr& expr) override;
+    void visit(const OverflowExpr& expr) override;
+    void visit(const CustomOperatorExpr& expr) override;
+    void visit(const ResultBuilderExpr& expr) override;
 
 public:
     // Public methods for property system

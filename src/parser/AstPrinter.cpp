@@ -11,6 +11,16 @@ void AstPrinter::visit(const Binary& expr) {
     parenthesize(expr.op.lexeme, {expr.left.get(), expr.right.get()});
 }
 
+void AstPrinter::visit(const Ternary& expr) {
+    result += "(ternary ";
+    expr.condition->accept(*this);
+    result += " ? ";
+    expr.thenBranch->accept(*this);
+    result += " : ";
+    expr.elseBranch->accept(*this);
+    result += ")";
+}
+
 void AstPrinter::visit(const Grouping& expr) {
     parenthesize("group", {expr.expression.get()});
 }

@@ -7,6 +7,7 @@
 namespace miniswift {
 // Forward declarations
 struct Binary;
+struct Ternary;
 struct Grouping;
 struct Literal;
 struct Unary;
@@ -33,12 +34,19 @@ struct TypeCast;
 struct TryExpr;
 struct ResultTypeExpr;
 struct ErrorLiteral;
+// Advanced operator expressions
+struct CustomOperatorExpr;
+struct BitwiseExpr;
+struct OverflowExpr;
+// Result Builder expressions
+struct ResultBuilderExpr;
 
 // Visitor interface for expressions
 class ExprVisitor {
 public:
   virtual ~ExprVisitor() = default;
   virtual void visit(const Binary &expr) = 0;
+  virtual void visit(const Ternary &expr) = 0;
   virtual void visit(const Grouping &expr) = 0;
   virtual void visit(const Literal &expr) = 0;
   virtual void visit(const Unary &expr) = 0;
@@ -65,6 +73,12 @@ public:
   virtual void visit(const TryExpr &expr) = 0;
   virtual void visit(const ResultTypeExpr &expr) = 0;
   virtual void visit(const ErrorLiteral &expr) = 0;
+  // Advanced operator expressions
+  virtual void visit(const CustomOperatorExpr &expr) = 0;
+  virtual void visit(const BitwiseExpr &expr) = 0;
+  virtual void visit(const OverflowExpr &expr) = 0;
+  // Result Builder expressions
+  virtual void visit(const ResultBuilderExpr &expr) = 0;
 };
 
 // Base class for all expression nodes
@@ -89,6 +103,21 @@ struct Binary : Expr {
   const std::unique_ptr<Expr> left;
   const Token op;
   const std::unique_ptr<Expr> right;
+};
+
+struct Ternary : Expr {
+  Ternary(std::unique_ptr<Expr> condition, std::unique_ptr<Expr> thenBranch, std::unique_ptr<Expr> elseBranch)
+      : condition(std::move(condition)), thenBranch(std::move(thenBranch)), elseBranch(std::move(elseBranch)) {}
+
+  void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
+
+  std::unique_ptr<Expr> clone() const override {
+    return std::make_unique<Ternary>(condition->clone(), thenBranch->clone(), elseBranch->clone());
+  }
+
+  const std::unique_ptr<Expr> condition;
+  const std::unique_ptr<Expr> thenBranch;
+  const std::unique_ptr<Expr> elseBranch;
 };
 
 struct VarExpr : Expr {
@@ -410,6 +439,73 @@ struct TypeCast : Expr {
   const std::unique_ptr<Expr> expression;
   const Token targetType;
   const CastType castType;
+};
+
+// Custom operator expression: left customOp right
+struct CustomOperatorExpr : Expr {
+  CustomOperatorExpr(std::unique_ptr<Expr> left, Token op, std::unique_ptr<Expr> right)
+      : left(std::move(left)), op(op), right(std::move(right)) {}
+
+  void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
+
+  std::unique_ptr<Expr> clone() const override {
+    return std::make_unique<CustomOperatorExpr>(left->clone(), op, right->clone());
+  }
+
+  const std::unique_ptr<Expr> left;
+  const Token op;
+  const std::unique_ptr<Expr> right;
+};
+
+// Bitwise operation expression: left & right, left | right, etc.
+struct BitwiseExpr : Expr {
+  BitwiseExpr(std::unique_ptr<Expr> left, Token op, std::unique_ptr<Expr> right)
+      : left(std::move(left)), op(op), right(std::move(right)) {}
+
+  void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
+
+  std::unique_ptr<Expr> clone() const override {
+    return std::make_unique<BitwiseExpr>(left->clone(), op, right->clone());
+  }
+
+  const std::unique_ptr<Expr> left;
+  const Token op;
+  const std::unique_ptr<Expr> right;
+};
+
+// Overflow operation expression: left &+ right, left &- right, etc.
+struct OverflowExpr : Expr {
+  OverflowExpr(std::unique_ptr<Expr> left, Token op, std::unique_ptr<Expr> right)
+      : left(std::move(left)), op(op), right(std::move(right)) {}
+
+  void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
+
+  std::unique_ptr<Expr> clone() const override {
+    return std::make_unique<OverflowExpr>(left->clone(), op, right->clone());
+  }
+
+  const std::unique_ptr<Expr> left;
+  const Token op;
+  const std::unique_ptr<Expr> right;
+};
+
+// Result Builder expression: @BuilderType { ... }
+struct ResultBuilderExpr : Expr {
+  ResultBuilderExpr(Token builderType, std::vector<std::unique_ptr<Expr>> components)
+      : builderType(builderType), components(std::move(components)) {}
+
+  void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
+
+  std::unique_ptr<Expr> clone() const override {
+    std::vector<std::unique_ptr<Expr>> clonedComponents;
+    for (const auto &component : components) {
+      clonedComponents.push_back(component->clone());
+    }
+    return std::make_unique<ResultBuilderExpr>(builderType, std::move(clonedComponents));
+  }
+
+  const Token builderType;
+  const std::vector<std::unique_ptr<Expr>> components;
 };
 
 }; // namespace miniswift

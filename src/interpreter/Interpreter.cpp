@@ -609,6 +609,123 @@ void Interpreter::visit(const Binary& expr) {
     }
 }
 
+void Interpreter::visit(const Ternary& expr) {
+    Value condition = evaluate(*expr.condition);
+    
+    if (isTruthy(condition)) {
+        result = evaluate(*expr.thenBranch);
+    } else {
+        result = evaluate(*expr.elseBranch);
+    }
+}
+
+void Interpreter::visit(const BitwiseExpr& expr) {
+    Value left = evaluate(*expr.left);
+    Value right = evaluate(*expr.right);
+    
+    // Helper function to convert value to integer for bitwise operations
+    auto toInt = [](const Value& val) -> int {
+        switch (val.type) {
+            case ValueType::Int: return std::get<int>(val.value);
+            case ValueType::Int8: return static_cast<int>(std::get<int8_t>(val.value));
+            case ValueType::Int16: return static_cast<int>(std::get<int16_t>(val.value));
+            case ValueType::Int32: return std::get<int>(val.value);
+            case ValueType::Int64: return static_cast<int>(std::get<int64_t>(val.value));
+            case ValueType::UInt: return static_cast<int>(std::get<uint32_t>(val.value));
+            case ValueType::UInt8: return static_cast<int>(std::get<uint8_t>(val.value));
+            case ValueType::UInt16: return static_cast<int>(std::get<uint16_t>(val.value));
+            case ValueType::UInt64: return static_cast<int>(std::get<uint64_t>(val.value));
+            default: return 0;
+        }
+    };
+    
+    int leftVal = toInt(left);
+    int rightVal = toInt(right);
+    
+    switch (expr.op.type) {
+        case TokenType::BitwiseAnd:
+            result = Value(leftVal & rightVal);
+            break;
+        case TokenType::BitwiseOr:
+            result = Value(leftVal | rightVal);
+            break;
+        case TokenType::BitwiseXor:
+            result = Value(leftVal ^ rightVal);
+            break;
+        case TokenType::LeftShift:
+            result = Value(leftVal << rightVal);
+            break;
+        case TokenType::RightShift:
+            result = Value(leftVal >> rightVal);
+            break;
+        default:
+            throw std::runtime_error("Unknown bitwise operator.");
+    }
+}
+
+void Interpreter::visit(const OverflowExpr& expr) {
+    Value left = evaluate(*expr.left);
+    Value right = evaluate(*expr.right);
+    
+    // Helper function to convert value to integer
+    auto toInt = [](const Value& val) -> int {
+        switch (val.type) {
+            case ValueType::Int: return std::get<int>(val.value);
+            case ValueType::Int8: return static_cast<int>(std::get<int8_t>(val.value));
+            case ValueType::Int16: return static_cast<int>(std::get<int16_t>(val.value));
+            case ValueType::Int32: return std::get<int>(val.value);
+            case ValueType::Int64: return static_cast<int>(std::get<int64_t>(val.value));
+            case ValueType::UInt: return static_cast<int>(std::get<uint32_t>(val.value));
+            case ValueType::UInt8: return static_cast<int>(std::get<uint8_t>(val.value));
+            case ValueType::UInt16: return static_cast<int>(std::get<uint16_t>(val.value));
+            case ValueType::UInt64: return static_cast<int>(std::get<uint64_t>(val.value));
+            default: return 0;
+        }
+    };
+    
+    int leftVal = toInt(left);
+    int rightVal = toInt(right);
+    
+    // Overflow arithmetic operations (wrapping behavior)
+    switch (expr.op.type) {
+        case TokenType::OverflowPlus: {
+            // Use unsigned arithmetic to get wrapping behavior
+            unsigned int result_val = static_cast<unsigned int>(leftVal) + static_cast<unsigned int>(rightVal);
+            result = Value(static_cast<int>(result_val));
+            break;
+        }
+        case TokenType::OverflowMinus: {
+            unsigned int result_val = static_cast<unsigned int>(leftVal) - static_cast<unsigned int>(rightVal);
+            result = Value(static_cast<int>(result_val));
+            break;
+        }
+        case TokenType::OverflowStar: {
+            unsigned int result_val = static_cast<unsigned int>(leftVal) * static_cast<unsigned int>(rightVal);
+            result = Value(static_cast<int>(result_val));
+            break;
+        }
+        default:
+            throw std::runtime_error("Unknown overflow operator.");
+    }
+}
+
+void Interpreter::visit(const CustomOperatorExpr& expr) {
+    // For now, throw an error as custom operators need to be resolved at compile time
+    // In a full implementation, this would look up the custom operator definition
+    // and call the appropriate function
+    throw std::runtime_error("Custom operator '" + expr.op.lexeme + "' not implemented.");
+}
+
+void Interpreter::visit(const ResultBuilderExpr& expr) {
+    // Result builder expressions would be transformed at compile time
+    // For now, just evaluate the components and return the first one
+    if (!expr.components.empty()) {
+        result = evaluate(*expr.components[0]);
+    } else {
+        result = Value(); // nil
+    }
+}
+
 void Interpreter::visit(const Grouping& expr) {
     result = evaluate(*expr.expression);
 }
@@ -3259,6 +3376,50 @@ std::string Interpreter::valueTypeToString(ValueType type) {
         case ValueType::Nil: return "Nil";
         default: return "Unknown";
     }
+}
+
+// Advanced statement implementations
+void Interpreter::visit(const CustomOperatorStmt& stmt) {
+    // Custom operator declarations are handled at compile time
+    // For now, we just store the operator information
+    // In a full implementation, this would register the operator with the parser
+    std::cout << "Custom operator declared: " << stmt.operatorType.lexeme 
+              << " " << stmt.operatorSymbol.lexeme << std::endl;
+}
+
+void Interpreter::visit(const OperatorPrecedenceStmt& stmt) {
+    // Operator precedence declarations are handled at compile time
+    // For now, we just print the precedence information
+    std::cout << "Precedence group declared: " << stmt.precedenceGroupName.lexeme 
+              << " (associativity: " << stmt.associativity.lexeme 
+              << ", precedence: " << stmt.precedenceLevel;
+    
+    if (!stmt.higherThan.empty()) {
+        std::cout << ", higherThan: ";
+        for (size_t i = 0; i < stmt.higherThan.size(); ++i) {
+            if (i > 0) std::cout << ", ";
+            std::cout << stmt.higherThan[i].lexeme;
+        }
+    }
+    
+    if (!stmt.lowerThan.empty()) {
+        std::cout << ", lowerThan: ";
+        for (size_t i = 0; i < stmt.lowerThan.size(); ++i) {
+            if (i > 0) std::cout << ", ";
+            std::cout << stmt.lowerThan[i].lexeme;
+        }
+    }
+    
+    std::cout << ")" << std::endl;
+}
+
+void Interpreter::visit(const ResultBuilderStmt& stmt) {
+    // Result builder declarations are handled at compile time
+    // For now, we just print the builder information
+    std::cout << "Result builder declared: " << stmt.name.lexeme << std::endl;
+    
+    // In a full implementation, this would register the result builder
+    // and its transformation methods
 }
 
 } // namespace miniswift

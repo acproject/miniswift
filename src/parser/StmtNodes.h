@@ -38,6 +38,11 @@ struct GuardStmt;
 struct GuardLetStmt;
 // Switch statement
 struct SwitchStmt;
+// Advanced operator statements
+struct CustomOperatorStmt;
+struct OperatorPrecedenceStmt;
+// Result Builder statements
+struct ResultBuilderStmt;
 
 // Visitor for Stmt
 class StmtVisitor {
@@ -69,6 +74,11 @@ public:
   virtual void visit(const GuardStmt &stmt) = 0;
   virtual void visit(const GuardLetStmt &stmt) = 0;
   virtual void visit(const SwitchStmt &stmt) = 0;
+  // Advanced operator statements
+  virtual void visit(const CustomOperatorStmt &stmt) = 0;
+  virtual void visit(const OperatorPrecedenceStmt &stmt) = 0;
+  // Result Builder statements
+  virtual void visit(const ResultBuilderStmt &stmt) = 0;
 };
 
 // Base class for Stmt
@@ -84,7 +94,7 @@ struct ExprStmt : Stmt {
   explicit ExprStmt(std::unique_ptr<Expr> expression)
       : expression(std::move(expression)) {}
 
-  void accept(StmtVisitor &visitor) const override { visitor.visit(*this); }
+  void accept(miniswift::StmtVisitor &visitor) const override { visitor.visit(*this); }
 
   std::unique_ptr<Stmt> clone() const override {
     return std::make_unique<ExprStmt>(expression->clone());
@@ -855,6 +865,64 @@ struct SwitchStmt : Stmt {
       );
     }
     return std::make_unique<SwitchStmt>(expression->clone(), std::move(clonedCases));
+  }
+};
+
+// Custom operator declaration: operator +++ { associativity left precedence 140 }
+struct CustomOperatorStmt : Stmt {
+  Token operatorSymbol;  // The operator symbol (e.g., +++, +-)
+  Token operatorType;    // prefix, infix, or postfix
+  
+  CustomOperatorStmt(Token operatorSymbol, Token operatorType)
+      : operatorSymbol(operatorSymbol), operatorType(operatorType) {}
+      
+  void accept(miniswift::StmtVisitor &visitor) const override { visitor.visit(*this); }
+  
+  std::unique_ptr<miniswift::Stmt> clone() const override {
+    return std::make_unique<CustomOperatorStmt>(operatorSymbol, operatorType);
+  }
+};
+
+// Operator precedence declaration: precedencegroup MyPrecedence { associativity: left higherThan: AdditionPrecedence }
+struct OperatorPrecedenceStmt : Stmt {
+  miniswift::Token precedenceGroupName;  // Name of the precedence group
+  miniswift::Token associativity;        // left, right, or none
+  int precedenceLevel;        // Numeric precedence level
+  std::vector<miniswift::Token> higherThan;  // Precedence groups this is higher than
+  std::vector<miniswift::Token> lowerThan;   // Precedence groups this is lower than
+  
+  OperatorPrecedenceStmt(miniswift::Token precedenceGroupName, miniswift::Token associativity, int precedenceLevel,
+                        std::vector<miniswift::Token> higherThan = {}, std::vector<miniswift::Token> lowerThan = {})
+      : precedenceGroupName(precedenceGroupName), associativity(associativity),
+        precedenceLevel(precedenceLevel), higherThan(std::move(higherThan)),
+        lowerThan(std::move(lowerThan)) {}
+        
+  void accept(miniswift::StmtVisitor &visitor) const override { visitor.visit(*this); }
+  
+  std::unique_ptr<miniswift::Stmt> clone() const override {
+    return std::make_unique<OperatorPrecedenceStmt>(precedenceGroupName, associativity,
+                                                   precedenceLevel, higherThan, lowerThan);
+  }
+};
+
+// Result Builder declaration: @resultBuilder struct DrawingBuilder { ... }
+struct ResultBuilderStmt : Stmt {
+  miniswift::Token name;  // Name of the result builder
+  std::vector<std::unique_ptr<FunctionStmt>> buildMethods;  // buildBlock, buildIf, etc.
+  AccessLevel accessLevel;
+  
+  ResultBuilderStmt(miniswift::Token name, std::vector<std::unique_ptr<FunctionStmt>> buildMethods,
+                   AccessLevel accessLevel = AccessLevel::INTERNAL)
+      : name(name), buildMethods(std::move(buildMethods)), accessLevel(accessLevel) {}
+      
+  void accept(miniswift::StmtVisitor &visitor) const override { visitor.visit(*this); }
+  
+  std::unique_ptr<miniswift::Stmt> clone() const override {
+    std::vector<std::unique_ptr<FunctionStmt>> clonedMethods;
+    for (const auto &method : buildMethods) {
+      clonedMethods.push_back(std::unique_ptr<FunctionStmt>(static_cast<FunctionStmt*>(method->clone().release())));
+    }
+    return std::make_unique<ResultBuilderStmt>(name, std::move(clonedMethods), accessLevel);
   }
 };
 

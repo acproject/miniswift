@@ -2,6 +2,7 @@
 #define MINISWIFT_GENERIC_NODES_H
 
 #include "../lexer/Token.h"
+#include "Parameter.h"
 #include <vector>
 #include <memory>
 #include <string>
@@ -72,12 +73,12 @@ struct WhereClause {
 struct GenericFunctionSignature {
     Token name;
     GenericParameterClause genericParams;    // <T, U, V>
-    std::vector<struct Parameter> parameters; // Function parameters
+    std::vector<Parameter> parameters; // Function parameters
     Token returnType;                        // Return type (can be generic)
     WhereClause whereClause;                 // where clause constraints
     
     GenericFunctionSignature(Token name, GenericParameterClause genericParams,
-                           std::vector<struct Parameter> params, Token returnType,
+                           std::vector<Parameter> params, Token returnType,
                            WhereClause whereClause = WhereClause({}))
         : name(name), genericParams(std::move(genericParams)),
           parameters(std::move(params)), returnType(returnType),

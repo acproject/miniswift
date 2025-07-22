@@ -123,26 +123,8 @@ struct ClassInstance {
 // Keep ClassValue as alias for backward compatibility
 using ClassValue = ClassInstance;
 
-// Enum value type
-struct EnumValue {
-    std::string enumName;
-    std::string caseName;
-    std::vector<Value> associatedValues;
-    
-    EnumValue(const std::string& enumName, const std::string& caseName)
-        : enumName(enumName), caseName(caseName) {}
-    
-    EnumValue(const std::string& enumName, const std::string& caseName, std::vector<Value> values)
-        : enumName(enumName), caseName(caseName), associatedValues(std::move(values)) {}
-    
-    bool operator==(const EnumValue& other) const {
-        return enumName == other.enumName && caseName == other.caseName && associatedValues == other.associatedValues;
-    }
-    
-    bool operator!=(const EnumValue& other) const {
-        return !(*this == other);
-    }
-};
+// Forward declaration for EnumValue
+struct EnumValue;
 
 // Callable type (for both functions and closures)
 struct Callable {
@@ -232,7 +214,7 @@ enum class ValueType {
 
 struct Value {
     ValueType type;
-    std::variant<std::monostate, bool, int, double, std::string, Array, Dictionary, Tuple, std::shared_ptr<Function>, EnumValue, StructValue, std::shared_ptr<ClassValue>, std::shared_ptr<ConstructorValue>, std::shared_ptr<DestructorValue>, OptionalValue, ErrorValue, std::shared_ptr<ValueResult>, 
+    std::variant<std::monostate, bool, int, double, std::string, Array, Dictionary, Tuple, std::shared_ptr<Function>, std::shared_ptr<EnumValue>, StructValue, std::shared_ptr<ClassValue>, std::shared_ptr<ConstructorValue>, std::shared_ptr<DestructorValue>, OptionalValue, ErrorValue, std::shared_ptr<ValueResult>, 
                  int8_t, int16_t, int64_t, uint32_t, uint8_t, uint16_t, uint64_t, float, char> value;
 
     Value() : type(ValueType::Nil), value(std::monostate{}) {}
@@ -244,7 +226,7 @@ struct Value {
     Value(Dictionary v) : type(ValueType::Dictionary), value(v) {}
     Value(Tuple v) : type(ValueType::Tuple), value(v) {}
     Value(std::shared_ptr<Function> v) : type(ValueType::Function), value(v) {}
-    Value(EnumValue v) : type(ValueType::Enum), value(v) {}
+    Value(std::shared_ptr<EnumValue> v) : type(ValueType::Enum), value(v) {}
     Value(StructValue v) : type(ValueType::Struct), value(v) {}
     Value(std::shared_ptr<ClassValue> v) : type(ValueType::Class), value(v) {}
     Value(std::shared_ptr<ConstructorValue> v) : type(ValueType::Constructor), value(v) {}
@@ -365,8 +347,8 @@ struct Value {
     std::shared_ptr<Function>& asClosure() { return std::get<std::shared_ptr<Function>>(value); }
     const std::shared_ptr<Function>& asClosure() const { return std::get<std::shared_ptr<Function>>(value); }
     
-    EnumValue& asEnum() { return std::get<EnumValue>(value); }
-    const EnumValue& asEnum() const { return std::get<EnumValue>(value); }
+    std::shared_ptr<EnumValue>& asEnum() { return std::get<std::shared_ptr<EnumValue>>(value); }
+    const std::shared_ptr<EnumValue>& asEnum() const { return std::get<std::shared_ptr<EnumValue>>(value); }
     
     StructValue& asStruct() { return std::get<StructValue>(value); }
     const StructValue& asStruct() const { return std::get<StructValue>(value); }
@@ -452,8 +434,11 @@ struct Value {
                 return std::get<Tuple>(value) == std::get<Tuple>(other.value);
             case ValueType::Function:
                 return std::get<std::shared_ptr<Function>>(value) == std::get<std::shared_ptr<Function>>(other.value);
-            case ValueType::Enum:
-                return std::get<EnumValue>(value) == std::get<EnumValue>(other.value);
+            case ValueType::Enum: {
+                 auto thisEnum = std::get<std::shared_ptr<EnumValue>>(value);
+                 auto otherEnum = std::get<std::shared_ptr<EnumValue>>(other.value);
+                 return thisEnum == otherEnum; // Pointer comparison for now
+             }
             case ValueType::Struct:
                 return std::get<StructValue>(value) == std::get<StructValue>(other.value);
             case ValueType::Class:
@@ -510,6 +495,29 @@ struct Value {
         return !(*this == other);
     }
 };
+
+// Enum value type (defined after Value to avoid circular dependency)
+struct EnumValue {
+    std::string enumName;
+    std::string caseName;
+    std::vector<Value> associatedValues;
+    
+    EnumValue(const std::string& enumName, const std::string& caseName)
+        : enumName(enumName), caseName(caseName) {}
+    
+    EnumValue(const std::string& enumName, const std::string& caseName, std::vector<Value> values)
+        : enumName(enumName), caseName(caseName), associatedValues(std::move(values)) {}
+    
+    bool operator==(const EnumValue& other) const {
+        return enumName == other.enumName && caseName == other.caseName && associatedValues == other.associatedValues;
+    }
+    
+    bool operator!=(const EnumValue& other) const {
+        return !(*this == other);
+    }
+};
+
+
 
 // Forward declaration for helper function
 bool compareOptionalValues(const OptionalValue& lhs, const OptionalValue& rhs);

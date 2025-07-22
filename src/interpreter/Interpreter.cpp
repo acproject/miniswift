@@ -92,12 +92,12 @@ void Interpreter::printValueInline(const Value& val) {
             break;
         case ValueType::Enum: {
             const auto& enumVal = val.asEnum();
-            std::cout << enumVal.enumName << "." << enumVal.caseName;
-            if (!enumVal.associatedValues.empty()) {
+            std::cout << enumVal->enumName << "." << enumVal->caseName;
+            if (!enumVal->associatedValues.empty()) {
                 std::cout << "(";
-                for (size_t i = 0; i < enumVal.associatedValues.size(); ++i) {
+                for (size_t i = 0; i < enumVal->associatedValues.size(); ++i) {
                     if (i > 0) std::cout << ", ";
-                    printValueInline(enumVal.associatedValues[i]);
+                    printValueInline(enumVal->associatedValues[i]);
                 }
                 std::cout << ")";
             }
@@ -1330,7 +1330,7 @@ std::string Interpreter::valueToString(const Value& val) {
             return val.isClosure() ? "<closure>" : "<function>";
         case ValueType::Enum: {
             const auto& enumVal = val.asEnum();
-            return enumVal.enumName + "." + enumVal.caseName;
+            return enumVal->enumName + "." + enumVal->caseName;
         }
         case ValueType::Struct: {
             const auto& structVal = val.asStruct();
@@ -1435,12 +1435,12 @@ void Interpreter::printValue(const Value& val) {
             break;
         case ValueType::Enum: {
             const auto& enumVal = val.asEnum();
-            std::cout << enumVal.enumName << "." << enumVal.caseName;
-            if (!enumVal.associatedValues.empty()) {
+            std::cout << enumVal->enumName << "." << enumVal->caseName;
+            if (!enumVal->associatedValues.empty()) {
                 std::cout << "(";
-                for (size_t i = 0; i < enumVal.associatedValues.size(); ++i) {
+                for (size_t i = 0; i < enumVal->associatedValues.size(); ++i) {
                     if (i > 0) std::cout << ", ";
-                    printValue(enumVal.associatedValues[i]);
+                    printValue(enumVal->associatedValues[i]);
                 }
                 std::cout << ")";
             }
@@ -2266,7 +2266,7 @@ void Interpreter::visit(const EnumAccess& expr) {
     
     // Create enum value
     EnumValue enumValue(enumTypeName, expr.caseName.lexeme, std::move(associatedValues));
-    result = Value(enumValue);
+    result = Value(std::make_shared<EnumValue>(enumValue));
 }
 
 // Execute struct declaration: struct Name { members }
@@ -3475,7 +3475,7 @@ void Interpreter::visit(const TypeCheck& expr) {
     } else if (value.type == ValueType::Enum) {
         // For enum types, check enum name
         const auto& enumVal = value.asEnum();
-        isOfType = (enumVal.enumName == targetTypeName);
+        isOfType = (enumVal->enumName == targetTypeName);
     }
     
     result = Value(isOfType);
@@ -3587,7 +3587,7 @@ Value Interpreter::performTypeCast(const Value& value, const std::string& target
         }
     } else if (value.type == ValueType::Enum) {
         const auto& enumVal = value.asEnum();
-        if (enumVal.enumName == targetType) {
+        if (enumVal->enumName == targetType) {
             return value;
         }
     }

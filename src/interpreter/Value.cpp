@@ -176,7 +176,7 @@ bool compareOptionalValues(const OptionalValue& lhs, const OptionalValue& rhs) {
         case ValueType::Function:
             return std::get<std::shared_ptr<Function>>(leftVal.value) == std::get<std::shared_ptr<Function>>(rightVal.value);
         case ValueType::Enum:
-            return std::get<EnumValue>(leftVal.value) == std::get<EnumValue>(rightVal.value);
+            return std::get<std::shared_ptr<EnumValue>>(leftVal.value) == std::get<std::shared_ptr<EnumValue>>(rightVal.value);
         case ValueType::Struct:
             return std::get<StructValue>(leftVal.value) == std::get<StructValue>(rightVal.value);
         case ValueType::Class:

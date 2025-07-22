@@ -1868,11 +1868,8 @@ void Interpreter::visit(const EnumStmt& stmt) {
         if (!previousContext.empty()) {
             environment->assign(Token(TokenType::Identifier, "__nested_context__", 0), Value(previousContext));
         } else {
-            try {
-                environment->assign(Token(TokenType::Identifier, "__nested_context__", 0), Value());
-            } catch (...) {
-                // Ignore if __nested_context__ doesn't exist
-            }
+            // Clear the nested context by setting it to empty string
+            environment->assign(Token(TokenType::Identifier, "__nested_context__", 0), Value(std::string()));
         }
     }
     
@@ -1989,11 +1986,8 @@ void Interpreter::visit(const StructStmt& stmt) {
         if (!previousContext.empty()) {
             environment->assign(Token(TokenType::Identifier, "__nested_context__", 0), Value(previousContext));
         } else {
-            try {
-                environment->assign(Token(TokenType::Identifier, "__nested_context__", 0), Value());
-            } catch (...) {
-                // Ignore if __nested_context__ doesn't exist
-            }
+            // Clear the nested context by setting it to empty string
+            environment->assign(Token(TokenType::Identifier, "__nested_context__", 0), Value(std::string()));
         }
     }
     
@@ -2091,11 +2085,8 @@ void Interpreter::visit(const ClassStmt& stmt) {
         if (!previousContext.empty()) {
             environment->assign(Token(TokenType::Identifier, "__nested_context__", 0), Value(previousContext));
         } else {
-            try {
-                environment->assign(Token(TokenType::Identifier, "__nested_context__", 0), Value());
-            } catch (...) {
-                // Ignore if __nested_context__ doesn't exist
-            }
+            // Clear the nested context by setting it to empty string
+            environment->assign(Token(TokenType::Identifier, "__nested_context__", 0), Value(std::string()));
         }
     }
     

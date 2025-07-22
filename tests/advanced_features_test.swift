@@ -89,8 +89,7 @@ let average = 10 <> 20
 let absolute = ±(-15)
 print("2 ** 3 = \(power)")
 print("10 <> 20 = \(average)")
-print("±(-15) = \(absolute)")
-print()
+print("±(-15) = \(absolute)\n")
 
 // Test 2: Operator precedence
 print("Test 2: Operator Precedence")

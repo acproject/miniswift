@@ -910,7 +910,7 @@ void Interpreter::visit(const StringInterpolation& expr) {
                     break;
                 
                 default:
-                    result_str += "<object>";
+                    result_str += valueToString(value);
                     break;
             }
         } else {
@@ -1312,8 +1312,16 @@ std::string Interpreter::valueToString(const Value& val) {
             return std::get<std::string>(val.value);
         case ValueType::Nil:
             return "nil";
-        case ValueType::Array:
-            return "<array>";
+        case ValueType::Array: {
+            const auto& arr = val.asArray();
+            std::string result = "[";
+            for (size_t i = 0; i < arr->size(); ++i) {
+                if (i > 0) result += ", ";
+                result += valueToString((*arr)[i]);
+            }
+            result += "]";
+            return result;
+        }
         case ValueType::Dictionary:
             return "<dictionary>";
         case ValueType::Tuple:
@@ -1750,8 +1758,10 @@ void Interpreter::visit(const ReturnStmt& stmt) {
 
 // Execute function call: callee(arguments)
 void Interpreter::visit(const Call& expr) {
+    
     // Check if callee is MemberAccess
     if (auto memberAccess = dynamic_cast<const MemberAccess*>(expr.callee.get())) {
+        std::cout << "DEBUG: Found MemberAccess callee" << std::endl;
         
         // First check if this is a nested type constructor call
         if (auto varExpr = dynamic_cast<const VarExpr*>(memberAccess->object.get())) {
@@ -1788,6 +1798,26 @@ void Interpreter::visit(const Call& expr) {
         
         // Handle method calls on objects (including extension methods)
         Value object = evaluate(*memberAccess->object);
+        
+        // Check for built-in array methods
+        if (object.isArray()) {
+            if (memberAccess->member.lexeme == "append") {
+                if (expr.arguments.size() != 1) {
+                    throw std::runtime_error("Array.append expects exactly 1 argument.");
+                }
+                
+                Value argument = evaluate(*expr.arguments[0]);
+                auto array = object.asArray();
+                array->push_back(argument);
+                result = Value(); // append returns void
+                return;
+            }
+            // Add other array methods here if needed
+            // For arrays, we don't call getMemberValue for unknown methods
+            // as it will throw "Array has no member" error
+            throw std::runtime_error("Array has no member '" + memberAccess->member.lexeme + "'");
+        }
+        
         Value method = getMemberValue(object, memberAccess->member.lexeme);
         
         if (method.isFunction()) {
@@ -2024,6 +2054,25 @@ void Interpreter::visit(const Call& expr) {
 
 // Execute labeled function call: callee(label1: arg1, label2: arg2)
 void Interpreter::visit(const LabeledCall& expr) {
+    // Check if callee is MemberAccess for special method handling
+    if (auto memberAccess = dynamic_cast<const MemberAccess*>(expr.callee.get())) {
+        // Handle array append method
+        if (memberAccess->member.lexeme == "append") {
+            Value object = evaluate(*memberAccess->object);
+            if (object.isArray()) {
+                if (expr.arguments.size() != 1) {
+                    throw std::runtime_error("Array append expects exactly 1 argument.");
+                }
+                Value newElement = evaluate(*expr.arguments[0]);
+                 auto& arrayValue = object.asArrayRef();
+                 arrayValue.push_back(newElement);
+                result = Value(); // append returns void
+                return;
+            }
+        }
+        // For other member access, fall through to normal evaluation
+    }
+    
     Value callee = evaluate(*expr.callee);
     
     if (!callee.isFunction()) {
@@ -2842,6 +2891,17 @@ Value Interpreter::getMemberValue(const Value& object, const std::string& member
         }
         
         throw std::runtime_error("Class '" + classValue->className + "' has no member '" + memberName + "'");
+    } else if (object.isArray()) {
+        // Handle built-in array properties
+        if (memberName == "count") {
+            // Return array size as a computed property
+            return Value(static_cast<int>(object.asArrayRef().size()));
+        } else if (memberName == "isEmpty") {
+            // Return whether array is empty
+            return Value(object.asArrayRef().empty());
+        } else {
+            throw std::runtime_error("Array has no member '" + memberName + "'");
+        }
     } else {
         throw std::runtime_error("Only structs and classes have members");
     }

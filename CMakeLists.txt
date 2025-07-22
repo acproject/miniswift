@@ -61,6 +61,12 @@ set(OOP_SOURCES
     src/interpreter/OOP/Optional.cpp
 )
 
+set(MEMORY_SOURCES
+    src/interpreter/Memory/ARC.cpp
+    src/interpreter/Memory/MemorySafety.cpp
+    src/interpreter/Memory/MemoryManager.cpp
+)
+
 set(MAIN_SOURCES
     src/main.cpp
 )
@@ -72,6 +78,7 @@ set(ALL_SOURCES
     ${PARSER_SOURCES}
     ${INTERPRETER_SOURCES}
     ${OOP_SOURCES}
+    ${MEMORY_SOURCES}
 )
 
 # Create the executable

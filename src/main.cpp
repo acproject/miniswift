@@ -1,12 +1,18 @@
 #include "interpreter/Interpreter.h"
 #include "lexer/Lexer.h"
 #include "parser/Parser.h"
+#include "semantic/SemanticAnalyzer.h"
+#include "codegen/LLVMCodeGenerator.h"
+#include <llvm/Support/raw_ostream.h>
 #include <fstream>
 #include <iostream>
 #include <sstream>
+#include <memory>
 
 static miniswift::Interpreter interpreter;
 bool hadError = false;
+bool enableSemanticAnalysis = false;
+bool enableLLVMCodeGen = false;
 
 void run(const std::string &source) {
   bool currentError = false;
@@ -27,11 +33,69 @@ void run(const std::string &source) {
   if (currentError)
     return;
 
-  // Try to interpret, catch runtime errors
-  try {
-    interpreter.interpret(statements);
-  } catch (const std::exception &e) {
-    std::cerr << "RUNTIME ERROR: " << e.what() << std::endl;
+  // Perform semantic analysis if enabled
+  if (enableSemanticAnalysis) {
+    try {
+      auto semanticAnalyzer = std::make_shared<miniswift::SemanticAnalyzer>();
+      auto analysisResult = semanticAnalyzer->analyze(statements);
+      
+      if (!analysisResult.errors.empty()) {
+        std::cerr << "SEMANTIC ERRORS:" << std::endl;
+        for (const auto& error : analysisResult.errors) {
+          std::cerr << "  " << error.message << " at line " << error.line << std::endl;
+        }
+        return;
+      }
+      
+      if (!analysisResult.warnings.empty()) {
+        std::cerr << "SEMANTIC WARNINGS:" << std::endl;
+        for (const auto& warning : analysisResult.warnings) {
+          std::cerr << "  " << warning << std::endl;
+        }
+      }
+      
+      std::cout << "Semantic analysis completed successfully." << std::endl;
+      
+      // Generate LLVM IR if enabled
+      if (enableLLVMCodeGen && analysisResult.typedAST) {
+        try {
+          auto codeGenerator = std::make_shared<miniswift::LLVMCodeGenerator>();
+          auto codeGenResult = codeGenerator->generateCode(*analysisResult.typedAST);
+          
+          if (!codeGenResult.errors.empty()) {
+            std::cerr << "CODE GENERATION ERRORS:" << std::endl;
+            for (const auto& error : codeGenResult.errors) {
+              std::cerr << "  " << error.message << std::endl;
+            }
+            return;
+          }
+          
+          std::cout << "LLVM IR generation completed successfully." << std::endl;
+          
+          // Print generated IR
+          if (codeGenResult.module) {
+            std::cout << "Generated LLVM IR:" << std::endl;
+            std::string irString;
+            llvm::raw_string_ostream irStream(irString);
+            codeGenResult.module->print(irStream, nullptr);
+            std::cout << irString << std::endl;
+          }
+          
+        } catch (const std::exception& e) {
+          std::cerr << "CODE GENERATION ERROR: " << e.what() << std::endl;
+        }
+      }
+      
+    } catch (const std::exception& e) {
+      std::cerr << "SEMANTIC ANALYSIS ERROR: " << e.what() << std::endl;
+    }
+  } else {
+    // Traditional interpretation
+    try {
+      interpreter.interpret(statements);
+    } catch (const std::exception &e) {
+      std::cerr << "RUNTIME ERROR: " << e.what() << std::endl;
+    }
   }
 }
 
@@ -47,16 +111,58 @@ void runFile(const std::string &path) {
   run(content);
 }
 
+void printUsage() {
+  std::cout << "Usage: miniswift [options] [script]" << std::endl;
+  std::cout << "Options:" << std::endl;
+  std::cout << "  -s, --semantic    Enable semantic analysis" << std::endl;
+  std::cout << "  -l, --llvm        Enable LLVM code generation (requires -s)" << std::endl;
+  std::cout << "  -h, --help        Show this help message" << std::endl;
+}
+
 int main(int argc, char *argv[]) {
-  if (argc > 2) {
-    std::cout << "Usage: miniswift [script]" << std::endl;
-    return 64;
-  } else if (argc == 2) {
-    runFile(argv[1]);
+  std::string scriptFile;
+  
+  // Parse command line arguments
+  for (int i = 1; i < argc; ++i) {
+    std::string arg = argv[i];
+    
+    if (arg == "-s" || arg == "--semantic") {
+      enableSemanticAnalysis = true;
+    } else if (arg == "-l" || arg == "--llvm") {
+      enableLLVMCodeGen = true;
+      enableSemanticAnalysis = true; // LLVM code gen requires semantic analysis
+    } else if (arg == "-h" || arg == "--help") {
+      printUsage();
+      return 0;
+    } else if (arg[0] != '-') {
+      if (!scriptFile.empty()) {
+        std::cerr << "Error: Multiple script files specified" << std::endl;
+        printUsage();
+        return 64;
+      }
+      scriptFile = arg;
+    } else {
+      std::cerr << "Error: Unknown option " << arg << std::endl;
+      printUsage();
+      return 64;
+    }
+  }
+  
+  if (!scriptFile.empty()) {
+    runFile(scriptFile);
   } else {
     std::string line;
-    std::cout << "MiniSwift Interactive Mode (输入 'exit' 或 'quit' 退出)"
-              << std::endl;
+    std::cout << "MiniSwift Interactive Mode";
+    if (enableSemanticAnalysis) {
+      std::cout << " (Semantic Analysis Enabled";
+      if (enableLLVMCodeGen) {
+        std::cout << " + LLVM Code Generation";
+      }
+      std::cout << ")";
+    }
+    std::cout << std::endl;
+    std::cout << "输入 'exit' 或 'quit' 退出" << std::endl;
+    
     while (true) {
       std::cout << "> ";
       if (!std::getline(std::cin, line))

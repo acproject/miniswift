@@ -50,11 +50,11 @@ struct GenericParameterClause {
 };
 
 // Generic type representation (e.g., Array<Int>, Dictionary<String, Int>)
-struct GenericType {
+struct GenericTypeReference {
     Token baseName;                           // Base type name (Array, Dictionary, etc.)
     std::vector<Token> typeArguments;        // Type arguments (Int, String, etc.)
     
-    GenericType(Token base, std::vector<Token> args)
+    GenericTypeReference(Token base, std::vector<Token> args)
         : baseName(base), typeArguments(std::move(args)) {}
 };
 

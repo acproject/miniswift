@@ -2676,7 +2676,7 @@ TypeConstraint Parser::parseTypeConstraint() {
 }
 
 // Parse generic type: Array<String> or Dictionary<String, Int>
-GenericType Parser::parseGenericType() {
+GenericTypeReference Parser::parseGenericType() {
   consume(TokenType::Identifier, "Expect generic type name.");
   Token typeName = previous();
 
@@ -2692,7 +2692,7 @@ GenericType Parser::parseGenericType() {
     consume(TokenType::RAngle, "Expect '>' after generic type arguments.");
   }
 
-  return GenericType(typeName, std::move(typeArguments));
+  return GenericTypeReference(typeName, std::move(typeArguments));
 }
 
 // Parse generic type instantiation: MyStruct<Int, String>

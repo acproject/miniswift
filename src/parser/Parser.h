@@ -90,7 +90,7 @@ private:
     TypeParameter parseTypeParameter();
     WhereClause parseWhereClause();
     TypeConstraint parseTypeConstraint();
-    GenericType parseGenericType();
+    GenericTypeReference parseGenericType();
     GenericTypeInstantiation parseGenericTypeInstantiation();
 
     // Access control parsing methods

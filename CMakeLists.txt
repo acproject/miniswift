@@ -220,8 +220,10 @@ set(ALL_SOURCES
 # Create the executable
 add_executable(miniswift ${ALL_SOURCES})
 
-# Add dependency on zstd external project
-add_dependencies(miniswift zstd_external)
+# Add dependency on zstd (现在通过ZSTD_TARGET处理)
+if(TARGET ${ZSTD_TARGET})
+    add_dependencies(miniswift ${ZSTD_TARGET})
+endif()
 
 # 应用LLVM编译标志
 target_compile_options(miniswift PRIVATE ${LLVM_CXXFLAGS})

@@ -46,6 +46,11 @@ struct OperatorPrecedenceStmt;
 struct ResultBuilderStmt;
 // Concurrency statements
 struct ActorStmt;
+// Macro statements
+struct MacroStmt;
+struct ExternalMacroStmt;
+struct FreestandingMacroStmt;
+struct AttachedMacroStmt;
 
 // Visitor for Stmt
 class StmtVisitor {
@@ -84,6 +89,11 @@ public:
   virtual void visit(const ResultBuilderStmt &stmt) = 0;
   // Concurrency statements
   virtual void visit(const ActorStmt &stmt) = 0;
+  // Macro statements
+  virtual void visit(const MacroStmt &stmt) = 0;
+  virtual void visit(const ExternalMacroStmt &stmt) = 0;
+  virtual void visit(const FreestandingMacroStmt &stmt) = 0;
+  virtual void visit(const AttachedMacroStmt &stmt) = 0;
 };
 
 // Base class for Stmt
@@ -952,6 +962,142 @@ struct ActorStmt : Stmt {
                                        std::vector<std::unique_ptr<FunctionStmt>>(),
                                        std::vector<std::unique_ptr<InitStmt>>(),
                                        accessLevel, isGlobalActor);
+  }
+};
+
+// Macro declaration: macro name(parameters) -> ReturnType = #externalMacro(module: "ModuleName", type: "TypeName")
+struct MacroStmt : Stmt {
+  Token name;                                        // Macro name
+  std::vector<Parameter> parameters;                 // Macro parameters
+  Token returnType;                                  // Return type
+  std::unique_ptr<Expr> implementation;              // Macro implementation (can be external reference)
+  AccessLevel accessLevel;                          // Access level
+  bool isFreestanding;                              // Whether this is a freestanding macro
+  std::vector<Token> roles;                         // Macro roles (e.g., expression, declaration)
+  
+  MacroStmt(Token name, 
+            std::vector<Parameter> parameters = {},
+            Token returnType = Token(),
+            std::unique_ptr<Expr> implementation = nullptr,
+            AccessLevel accessLevel = AccessLevel::INTERNAL,
+            bool isFreestanding = true,
+            std::vector<Token> roles = {})
+      : name(name), parameters(std::move(parameters)),
+        returnType(returnType), implementation(std::move(implementation)),
+        accessLevel(accessLevel), isFreestanding(isFreestanding),
+        roles(std::move(roles)) {}
+        
+  void accept(StmtVisitor &visitor) const override { visitor.visit(*this); }
+  
+  std::unique_ptr<Stmt> clone() const override {
+    std::vector<Parameter> clonedParams;
+    for (const auto &param : parameters) {
+      clonedParams.push_back(param);
+    }
+    return std::make_unique<MacroStmt>(name, std::move(clonedParams),
+                                       returnType, 
+                                       implementation ? implementation->clone() : nullptr,
+                                       accessLevel, isFreestanding, roles);
+  }
+};
+
+// External macro declaration: macro name(parameters) -> ReturnType = #externalMacro(module: "ModuleName", type: "TypeName")
+struct ExternalMacroStmt : Stmt {
+  Token name;                                        // Macro name
+  std::vector<Parameter> parameters;                 // Macro parameters
+  Token returnType;                                  // Return type
+  std::string moduleName;                           // External module name
+  std::string typeName;                             // External type name
+  AccessLevel accessLevel;                          // Access level
+  std::vector<Token> roles;                         // Macro roles
+  
+  ExternalMacroStmt(Token name, 
+                    std::vector<Parameter> parameters,
+                    Token returnType,
+                    std::string moduleName,
+                    std::string typeName,
+                    AccessLevel accessLevel = AccessLevel::INTERNAL,
+                    std::vector<Token> roles = {})
+      : name(name), parameters(std::move(parameters)),
+        returnType(returnType), moduleName(std::move(moduleName)),
+        typeName(std::move(typeName)), accessLevel(accessLevel),
+        roles(std::move(roles)) {}
+        
+  void accept(StmtVisitor &visitor) const override { visitor.visit(*this); }
+  
+  std::unique_ptr<Stmt> clone() const override {
+    std::vector<Parameter> clonedParams;
+    for (const auto &param : parameters) {
+      clonedParams.push_back(param);
+    }
+    return std::make_unique<ExternalMacroStmt>(name, std::move(clonedParams),
+                                               returnType, moduleName, typeName,
+                                               accessLevel, roles);
+  }
+};
+
+// Freestanding macro declaration: @freestanding(expression) macro name(parameters) -> ReturnType
+struct FreestandingMacroStmt : Stmt {
+  Token name;                                        // Macro name
+  std::vector<Parameter> parameters;                 // Macro parameters
+  Token returnType;                                  // Return type
+  std::unique_ptr<Expr> body;                       // Macro body implementation
+  AccessLevel accessLevel;                          // Access level
+  Token role;                                       // Macro role (expression, declaration, etc.)
+  
+  FreestandingMacroStmt(Token name, 
+                        std::vector<Parameter> parameters,
+                        Token returnType,
+                        std::unique_ptr<Expr> body,
+                        AccessLevel accessLevel = AccessLevel::INTERNAL,
+                        Token role = Token())
+      : name(name), parameters(std::move(parameters)),
+        returnType(returnType), body(std::move(body)),
+        accessLevel(accessLevel), role(role) {}
+        
+  void accept(StmtVisitor &visitor) const override { visitor.visit(*this); }
+  
+  std::unique_ptr<Stmt> clone() const override {
+    std::vector<Parameter> clonedParams;
+    for (const auto &param : parameters) {
+      clonedParams.push_back(param);
+    }
+    return std::make_unique<FreestandingMacroStmt>(name, std::move(clonedParams),
+                                                    returnType, 
+                                                    body ? body->clone() : nullptr,
+                                                    accessLevel, role);
+  }
+};
+
+// Attached macro declaration: @attached(member) macro name(parameters)
+struct AttachedMacroStmt : Stmt {
+  Token name;                                        // Macro name
+  std::vector<Parameter> parameters;                 // Macro parameters
+  std::unique_ptr<Expr> body;                       // Macro body implementation
+  AccessLevel accessLevel;                          // Access level
+  Token attachmentKind;                             // Attachment kind (member, memberAttribute, etc.)
+  std::vector<Token> names;                         // Names introduced by the macro
+  
+  AttachedMacroStmt(Token name, 
+                    std::vector<Parameter> parameters,
+                    std::unique_ptr<Expr> body,
+                    AccessLevel accessLevel = AccessLevel::INTERNAL,
+                    Token attachmentKind = Token(),
+                    std::vector<Token> names = {})
+      : name(name), parameters(std::move(parameters)),
+        body(std::move(body)), accessLevel(accessLevel),
+        attachmentKind(attachmentKind), names(std::move(names)) {}
+        
+  void accept(StmtVisitor &visitor) const override { visitor.visit(*this); }
+  
+  std::unique_ptr<Stmt> clone() const override {
+    std::vector<Parameter> clonedParams;
+    for (const auto &param : parameters) {
+      clonedParams.push_back(param);
+    }
+    return std::make_unique<AttachedMacroStmt>(name, std::move(clonedParams),
+                                               body ? body->clone() : nullptr,
+                                               accessLevel, attachmentKind, names);
   }
 };
 

@@ -43,6 +43,11 @@ private:
     std::unique_ptr<Stmt> customOperatorDeclaration();
     std::unique_ptr<Stmt> operatorPrecedenceDeclaration();
     std::unique_ptr<Stmt> resultBuilderDeclaration();
+    // Macro parsing methods
+    std::unique_ptr<Stmt> macroDeclaration();
+    std::unique_ptr<Stmt> externalMacroDeclaration();
+    std::unique_ptr<Stmt> freestandingMacroDeclaration();
+    std::unique_ptr<Stmt> attachedMacroDeclaration();
     std::unique_ptr<Expr> expression();
     std::unique_ptr<Expr> assignment();
     std::unique_ptr<Expr> ternary();

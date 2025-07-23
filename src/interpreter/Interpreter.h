@@ -54,6 +54,12 @@ public:
     void visit(const OperatorPrecedenceStmt& stmt) override;
     void visit(const ResultBuilderStmt& stmt) override;
     void visit(const ActorStmt& stmt) override;
+    
+    // Macro statements
+    void visit(const MacroStmt& stmt) override;
+    void visit(const ExternalMacroStmt& stmt) override;
+    void visit(const FreestandingMacroStmt& stmt) override;
+    void visit(const AttachedMacroStmt& stmt) override;
 
     void visit(const Binary& expr) override;
     void visit(const Ternary& expr) override;
@@ -103,6 +109,11 @@ public:
     // Opaque and Boxed Protocol Types
     void visit(const OpaqueTypeExpr& expr) override;
     void visit(const BoxedProtocolTypeExpr& expr) override;
+    
+    // Macro expressions
+    void visit(const MacroExpansionExpr& expr) override;
+    void visit(const FreestandingMacroExpr& expr) override;
+    void visit(const AttachedMacroExpr& expr) override;
 
 public:
     // Public methods for property system

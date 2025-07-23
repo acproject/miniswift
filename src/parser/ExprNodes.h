@@ -47,6 +47,10 @@ struct TaskExpr;
 // Opaque and Boxed Protocol Types
 struct OpaqueTypeExpr;
 struct BoxedProtocolTypeExpr;
+// Macro expressions
+struct MacroExpansionExpr;
+struct FreestandingMacroExpr;
+struct AttachedMacroExpr;
 
 // Visitor interface for expressions
 class ExprVisitor {
@@ -92,6 +96,10 @@ public:
   virtual void visit(const TaskExpr &expr) = 0;
   virtual void visit(const OpaqueTypeExpr &expr) = 0;
   virtual void visit(const BoxedProtocolTypeExpr &expr) = 0;
+  // Macro expressions
+  virtual void visit(const MacroExpansionExpr &expr) = 0;
+  virtual void visit(const FreestandingMacroExpr &expr) = 0;
+  virtual void visit(const AttachedMacroExpr &expr) = 0;
 };
 
 // Base class for all expression nodes
@@ -608,6 +616,65 @@ struct BoxedProtocolTypeExpr : Expr {
 
   const Token anyKeyword;
   const Token protocolName;
+};
+
+// Macro expansion expression: #macroName(arguments)
+struct MacroExpansionExpr : Expr {
+  MacroExpansionExpr(Token macroName, std::vector<std::unique_ptr<Expr>> arguments)
+      : macroName(macroName), arguments(std::move(arguments)) {}
+
+  void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
+
+  std::unique_ptr<Expr> clone() const override {
+    std::vector<std::unique_ptr<Expr>> clonedArguments;
+    for (const auto &arg : arguments) {
+      clonedArguments.push_back(arg->clone());
+    }
+    return std::make_unique<MacroExpansionExpr>(macroName, std::move(clonedArguments));
+  }
+
+  const Token macroName;
+  const std::vector<std::unique_ptr<Expr>> arguments;
+};
+
+// Freestanding macro expression: #macroName(arguments)
+struct FreestandingMacroExpr : Expr {
+  FreestandingMacroExpr(Token hashToken, Token macroName, std::vector<std::unique_ptr<Expr>> arguments)
+      : hashToken(hashToken), macroName(macroName), arguments(std::move(arguments)) {}
+
+  void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
+
+  std::unique_ptr<Expr> clone() const override {
+    std::vector<std::unique_ptr<Expr>> clonedArguments;
+    for (const auto &arg : arguments) {
+      clonedArguments.push_back(arg->clone());
+    }
+    return std::make_unique<FreestandingMacroExpr>(hashToken, macroName, std::move(clonedArguments));
+  }
+
+  const Token hashToken;
+  const Token macroName;
+  const std::vector<std::unique_ptr<Expr>> arguments;
+};
+
+// Attached macro expression: @macroName(arguments)
+struct AttachedMacroExpr : Expr {
+  AttachedMacroExpr(Token atToken, Token macroName, std::vector<std::unique_ptr<Expr>> arguments)
+      : atToken(atToken), macroName(macroName), arguments(std::move(arguments)) {}
+
+  void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
+
+  std::unique_ptr<Expr> clone() const override {
+    std::vector<std::unique_ptr<Expr>> clonedArguments;
+    for (const auto &arg : arguments) {
+      clonedArguments.push_back(arg->clone());
+    }
+    return std::make_unique<AttachedMacroExpr>(atToken, macroName, std::move(clonedArguments));
+  }
+
+  const Token atToken;
+  const Token macroName;
+  const std::vector<std::unique_ptr<Expr>> arguments;
 };
 
 }; // namespace miniswift

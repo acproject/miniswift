@@ -169,6 +169,23 @@ enum class TokenType {
   Some,            // some keyword for opaque types
   // Note: Any is already defined above in Special Types section
 
+  // Macro System Keywords
+  Macro,           // macro keyword
+  ExternalMacro,   // externalMacro keyword
+  FreestandingMacro, // freestanding macro role
+  AttachedMacro,   // attached macro role
+  Member,          // member role
+  Peer,            // peer role
+  Accessor,        // accessor role
+  MemberAttribute, // memberAttribute role
+  Conformance,     // conformance role
+  CodeItem,        // codeItem role
+  Declaration,     // declaration role
+  Expression,      // expression role
+  
+  // Macro Punctuation
+  Hash,            // # for freestanding macros
+  
   // Punctuation
   LParen,
   RParen,
@@ -205,6 +222,7 @@ enum class TokenType {
 };
 
 struct Token {
+  Token() : type(TokenType::Unknown), lexeme(""), line(0) {}
   Token(TokenType type, const std::string &lexeme, int line)
       : type(type), lexeme(lexeme), line(line) {}
   TokenType type;

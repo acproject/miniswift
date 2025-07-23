@@ -142,6 +142,27 @@ std::vector<std::unique_ptr<Stmt>> Parser::declaration() {
       result.push_back(resultBuilderDeclaration());
       return result;
     }
+    if (match({TokenType::FreestandingMacro})) {
+      std::vector<std::unique_ptr<Stmt>> result;
+      result.push_back(freestandingMacroDeclaration());
+      return result;
+    }
+    if (match({TokenType::AttachedMacro})) {
+      std::vector<std::unique_ptr<Stmt>> result;
+      result.push_back(attachedMacroDeclaration());
+      return result;
+    }
+  }
+  // Macro declarations
+  if (match({TokenType::Macro})) {
+    std::vector<std::unique_ptr<Stmt>> result;
+    result.push_back(macroDeclaration());
+    return result;
+  }
+  if (match({TokenType::ExternalMacro})) {
+    std::vector<std::unique_ptr<Stmt>> result;
+    result.push_back(externalMacroDeclaration());
+    return result;
   }
   if (match({TokenType::Var, TokenType::Let})) {
     bool isConst = previous().type == TokenType::Let;
@@ -788,6 +809,25 @@ std::unique_ptr<Expr> Parser::primary() {
       consume(TokenType::RParen, "Expect ')' after expression.");
       return std::make_unique<Grouping>(std::move(firstExpr));
     }
+  }
+
+  // Handle macro expressions: #macroName(arguments)
+  if (match({TokenType::Hash})) {
+    consume(TokenType::Identifier, "Expect macro name after '#'.");
+    Token macroName = previous();
+    
+    consume(TokenType::LParen, "Expect '(' after macro name.");
+    std::vector<std::unique_ptr<Expr>> arguments;
+    
+    if (!check(TokenType::RParen)) {
+      do {
+        arguments.push_back(expression());
+      } while (match({TokenType::Comma}));
+    }
+    
+    consume(TokenType::RParen, "Expect ')' after macro arguments.");
+    
+    return std::make_unique<MacroExpansionExpr>(macroName, std::move(arguments));
   }
 
   // Handle range operators: start..<end or start...end
@@ -3076,6 +3116,197 @@ std::unique_ptr<Expr> Parser::taskExpression() {
   );
   
   return std::make_unique<TaskExpr>(taskKeyword, TaskExpr::TaskType::Regular, std::move(taskBody));
+}
+
+// Parse macro declaration: macro Name(parameters) -> ReturnType = #externalMacro(module: "Module", type: "Type")
+std::unique_ptr<Stmt> Parser::macroDeclaration() {
+  consume(TokenType::Identifier, "Expect macro name.");
+  Token name = previous();
+  
+  // Parse parameter list
+  consume(TokenType::LParen, "Expect '(' after macro name.");
+  std::vector<Parameter> parameters;
+  if (!check(TokenType::RParen)) {
+    do {
+      consume(TokenType::Identifier, "Expect parameter name.");
+      Token paramName = previous();
+      consume(TokenType::Colon, "Expect ':' after parameter name.");
+      Token paramType = parseType();
+      parameters.emplace_back(paramName, paramType);
+    } while (match({TokenType::Comma}));
+  }
+  consume(TokenType::RParen, "Expect ')' after parameters.");
+  
+  // Parse return type
+  Token returnType(TokenType::Void, "Void", peek().line);
+  if (match({TokenType::Arrow})) {
+    returnType = parseType();
+  }
+  
+  // Parse macro body (either = #externalMacro or { body })
+  std::unique_ptr<Expr> body = nullptr;
+  if (match({TokenType::Equal})) {
+    body = expression();
+  } else if (match({TokenType::LBrace})) {
+    // Parse macro body as block
+    auto blockBody = blockStatement();
+    // Convert block to expression (simplified)
+    body = std::make_unique<Literal>(Token(TokenType::String, "block", peek().line));
+  }
+  
+  return std::make_unique<MacroStmt>(name, std::move(parameters), returnType, std::move(body));
+}
+
+// Parse external macro declaration: externalMacro Name(parameters) -> ReturnType
+std::unique_ptr<Stmt> Parser::externalMacroDeclaration() {
+  consume(TokenType::Identifier, "Expect external macro name.");
+  Token name = previous();
+  
+  // Parse parameter list
+  consume(TokenType::LParen, "Expect '(' after external macro name.");
+  std::vector<Parameter> parameters;
+  if (!check(TokenType::RParen)) {
+    do {
+      consume(TokenType::Identifier, "Expect parameter name.");
+      Token paramName = previous();
+      consume(TokenType::Colon, "Expect ':' after parameter name.");
+      Token paramType = parseType();
+      parameters.emplace_back(paramName, paramType);
+    } while (match({TokenType::Comma}));
+  }
+  consume(TokenType::RParen, "Expect ')' after parameters.");
+  
+  // Parse return type
+  Token returnType(TokenType::Void, "Void", peek().line);
+  if (match({TokenType::Arrow})) {
+    returnType = parseType();
+  }
+  
+  // Parse module and type information
+  std::string moduleName;
+  std::string typeName;
+  if (match({TokenType::LParen})) {
+    if (match({TokenType::Identifier}) && previous().lexeme == "module") {
+      consume(TokenType::Colon, "Expect ':' after 'module'.");
+      consume(TokenType::String, "Expect module name string.");
+      moduleName = previous().lexeme;
+      if (match({TokenType::Comma})) {
+        if (match({TokenType::Identifier}) && previous().lexeme == "type") {
+          consume(TokenType::Colon, "Expect ':' after 'type'.");
+          consume(TokenType::String, "Expect type name string.");
+          typeName = previous().lexeme;
+        }
+      }
+    }
+    consume(TokenType::RParen, "Expect ')' after external macro info.");
+  }
+  
+  return std::make_unique<ExternalMacroStmt>(name, std::move(parameters), returnType, moduleName, typeName);
+}
+
+// Parse freestanding macro declaration: @freestanding(expression) macro Name
+std::unique_ptr<Stmt> Parser::freestandingMacroDeclaration() {
+  consume(TokenType::LParen, "Expect '(' after '@freestanding'.");
+  consume(TokenType::Identifier, "Expect macro role.");
+  Token role = previous();
+  consume(TokenType::RParen, "Expect ')' after macro role.");
+  
+  consume(TokenType::Macro, "Expect 'macro' after '@freestanding(...)'.");
+  consume(TokenType::Identifier, "Expect freestanding macro name.");
+  Token name = previous();
+  
+  // Parse parameter list
+  consume(TokenType::LParen, "Expect '(' after freestanding macro name.");
+  std::vector<Parameter> parameters;
+  if (!check(TokenType::RParen)) {
+    do {
+      consume(TokenType::Identifier, "Expect parameter name.");
+      Token paramName = previous();
+      consume(TokenType::Colon, "Expect ':' after parameter name.");
+      Token paramType = parseType();
+      parameters.emplace_back(paramName, paramType);
+    } while (match({TokenType::Comma}));
+  }
+  consume(TokenType::RParen, "Expect ')' after parameters.");
+  
+  // Parse return type
+  Token returnType(TokenType::Void, "Void", peek().line);
+  if (match({TokenType::Arrow})) {
+    returnType = parseType();
+  }
+  
+  // Parse macro body
+  std::unique_ptr<Expr> body = nullptr;
+  if (match({TokenType::Equal})) {
+    body = expression();
+  }
+  
+  Token roleToken(TokenType::Identifier, role.lexeme, peek().line);
+  return std::make_unique<FreestandingMacroStmt>(name, std::move(parameters), returnType, std::move(body), AccessLevel::INTERNAL, roleToken);
+}
+
+// Parse attached macro declaration: @attached(member) macro Name
+std::unique_ptr<Stmt> Parser::attachedMacroDeclaration() {
+  consume(TokenType::LParen, "Expect '(' after '@attached'.");
+  consume(TokenType::Identifier, "Expect macro role.");
+  Token role = previous();
+  
+  // Parse optional names list for member/memberAttribute roles
+  std::vector<std::string> names;
+  if (match({TokenType::Comma})) {
+    if (match({TokenType::Identifier}) && previous().lexeme == "names") {
+      consume(TokenType::Colon, "Expect ':' after 'names'.");
+      consume(TokenType::LBrace, "Expect '{' after 'names:'.");
+      if (!check(TokenType::RBrace)) {
+        do {
+          consume(TokenType::Identifier, "Expect name identifier.");
+          names.push_back(previous().lexeme);
+        } while (match({TokenType::Comma}));
+      }
+      consume(TokenType::RBrace, "Expect '}' after names list.");
+    }
+  }
+  
+  consume(TokenType::RParen, "Expect ')' after macro role.");
+  
+  consume(TokenType::Macro, "Expect 'macro' after '@attached(...)'.");
+  consume(TokenType::Identifier, "Expect attached macro name.");
+  Token name = previous();
+  
+  // Parse parameter list
+  consume(TokenType::LParen, "Expect '(' after attached macro name.");
+  std::vector<Parameter> parameters;
+  if (!check(TokenType::RParen)) {
+    do {
+      consume(TokenType::Identifier, "Expect parameter name.");
+      Token paramName = previous();
+      consume(TokenType::Colon, "Expect ':' after parameter name.");
+      Token paramType = parseType();
+      parameters.emplace_back(paramName, paramType);
+    } while (match({TokenType::Comma}));
+  }
+  consume(TokenType::RParen, "Expect ')' after parameters.");
+  
+  // Parse return type
+  Token returnType(TokenType::Void, "Void", peek().line);
+  if (match({TokenType::Arrow})) {
+    returnType = parseType();
+  }
+  
+  // Parse macro body
+  std::unique_ptr<Expr> body = nullptr;
+  if (match({TokenType::Equal})) {
+    body = expression();
+  }
+  
+  // Convert string vector to Token vector
+  std::vector<Token> nameTokens;
+  for (const auto& nameStr : names) {
+    nameTokens.emplace_back(TokenType::Identifier, nameStr, peek().line);
+  }
+  
+  Token attachmentKind(TokenType::Identifier, role.lexeme, peek().line);
+  return std::make_unique<AttachedMacroStmt>(name, std::move(parameters), std::move(body), AccessLevel::INTERNAL, attachmentKind, std::move(nameTokens));
 }
 
 } // namespace miniswift

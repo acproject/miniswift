@@ -3774,4 +3774,62 @@ void Interpreter::visit(const BoxedProtocolTypeExpr& expr) {
     std::cout << "Created boxed protocol type: " << protocolName << std::endl;
 }
 
+// Macro statement implementations
+void Interpreter::visit(const MacroStmt& stmt) {
+    // Store macro definition in environment
+    // For now, we'll store it as a placeholder value
+    environment->define(stmt.name.lexeme, Value("<macro:" + stmt.name.lexeme + ">"), false, "Macro");
+    std::cout << "Macro declared: " << stmt.name.lexeme << std::endl;
+}
+
+void Interpreter::visit(const ExternalMacroStmt& stmt) {
+    // Store external macro definition in environment
+    // External macros are placeholders that would be resolved at compile time
+    environment->define(stmt.name.lexeme, Value("<external_macro:" + stmt.name.lexeme + ">"), false, "ExternalMacro");
+    std::cout << "External macro declared: " << stmt.name.lexeme 
+              << " (module: " << stmt.moduleName << ", type: " << stmt.typeName << ")" << std::endl;
+}
+
+void Interpreter::visit(const FreestandingMacroStmt& stmt) {
+    // Store freestanding macro definition in environment
+    environment->define(stmt.name.lexeme, Value("<freestanding_macro:" + stmt.name.lexeme + ">"), false, "FreestandingMacro");
+    std::cout << "Freestanding macro declared: " << stmt.name.lexeme 
+              << " (role: " << stmt.role.lexeme << ")" << std::endl;
+}
+
+void Interpreter::visit(const AttachedMacroStmt& stmt) {
+    // Store attached macro definition in environment
+    environment->define(stmt.name.lexeme, Value("<attached_macro:" + stmt.name.lexeme + ">"), false, "AttachedMacro");
+    std::cout << "Attached macro declared: " << stmt.name.lexeme 
+              << " (role: " << stmt.attachmentKind.lexeme << ")" << std::endl;
+}
+
+// Macro expression implementations
+void Interpreter::visit(const MacroExpansionExpr& expr) {
+    // For now, macro expansion will just return a placeholder value
+    // In a real implementation, this would involve:
+    // 1. Looking up the macro definition
+    // 2. Expanding the macro with the given arguments
+    // 3. Evaluating the expanded code
+    
+    std::cout << "Expanding macro: " << expr.macroName.lexeme << std::endl;
+    
+    // Simple placeholder implementation
+    result = Value("<macro_expansion:" + expr.macroName.lexeme + ">");
+}
+
+void Interpreter::visit(const FreestandingMacroExpr& expr) {
+    // Freestanding macro expressions are expanded at compile time
+    // For interpreter mode, we'll provide a simple placeholder
+    std::cout << "Expanding freestanding macro: " << expr.macroName.lexeme << std::endl;
+    result = Value("<freestanding_macro:" + expr.macroName.lexeme + ">");
+}
+
+void Interpreter::visit(const AttachedMacroExpr& expr) {
+    // Attached macro expressions modify the declaration they're attached to
+    // For interpreter mode, we'll provide a simple placeholder
+    std::cout << "Expanding attached macro: " << expr.macroName.lexeme << std::endl;
+    result = Value("<attached_macro:" + expr.macroName.lexeme + ">");
+}
+
 } // namespace miniswift

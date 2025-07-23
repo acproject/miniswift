@@ -114,6 +114,12 @@ static void initializeKeywords() {
   
   // Opaque and Boxed Protocol Types
   keywords["some"] = TokenType::Some;
+  
+  // Macro Keywords
+  keywords["macro"] = TokenType::Macro;
+  keywords["externalMacro"] = TokenType::ExternalMacro;
+  keywords["freestanding"] = TokenType::FreestandingMacro;
+  keywords["attached"] = TokenType::AttachedMacro;
 }
 
 Lexer::Lexer(const std::string &source)
@@ -294,6 +300,8 @@ Token Lexer::scanToken() {
     return {TokenType::Question, "?", line};
   case '@':
     return {TokenType::At, "@", line};
+  case '#':
+    return {TokenType::Hash, "#", line};
   case ':':
     return {TokenType::Colon, ":", line};
   case '"':

@@ -2,6 +2,7 @@
 #define MINISWIFT_EXPR_NODES_H
 
 #include "../lexer/Token.h"
+#include <memory>
 #include <vector>
 
 namespace miniswift {
@@ -127,13 +128,16 @@ struct Binary : Expr {
 };
 
 struct Ternary : Expr {
-  Ternary(std::unique_ptr<Expr> condition, std::unique_ptr<Expr> thenBranch, std::unique_ptr<Expr> elseBranch)
-      : condition(std::move(condition)), thenBranch(std::move(thenBranch)), elseBranch(std::move(elseBranch)) {}
+  Ternary(std::unique_ptr<Expr> condition, std::unique_ptr<Expr> thenBranch,
+          std::unique_ptr<Expr> elseBranch)
+      : condition(std::move(condition)), thenBranch(std::move(thenBranch)),
+        elseBranch(std::move(elseBranch)) {}
 
   void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
 
   std::unique_ptr<Expr> clone() const override {
-    return std::make_unique<Ternary>(condition->clone(), thenBranch->clone(), elseBranch->clone());
+    return std::make_unique<Ternary>(condition->clone(), thenBranch->clone(),
+                                     elseBranch->clone());
   }
 
   const std::unique_ptr<Expr> condition;
@@ -308,7 +312,8 @@ struct LabeledCall : Expr {
   LabeledCall(std::unique_ptr<Expr> callee,
               std::vector<std::unique_ptr<Expr>> arguments,
               std::vector<Token> argumentLabels)
-      : callee(std::move(callee)), arguments(std::move(arguments)), argumentLabels(std::move(argumentLabels)) {}
+      : callee(std::move(callee)), arguments(std::move(arguments)),
+        argumentLabels(std::move(argumentLabels)) {}
 
   void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
 
@@ -317,7 +322,8 @@ struct LabeledCall : Expr {
     for (const auto &arg : arguments) {
       clonedArguments.push_back(arg->clone());
     }
-    return std::make_unique<LabeledCall>(callee->clone(), std::move(clonedArguments), argumentLabels);
+    return std::make_unique<LabeledCall>(
+        callee->clone(), std::move(clonedArguments), argumentLabels);
   }
 
   const std::unique_ptr<Expr> callee;
@@ -328,11 +334,14 @@ struct LabeledCall : Expr {
 // String interpolation expression: "Hello \(name)!"
 struct StringInterpolation : Expr {
   struct InterpolationPart {
-    std::string text;  // String literal part
-    std::unique_ptr<Expr> expression;  // Expression to interpolate (null for text parts)
-    
-    InterpolationPart(std::string t) : text(std::move(t)), expression(nullptr) {}
-    InterpolationPart(std::unique_ptr<Expr> expr) : expression(std::move(expr)) {}
+    std::string text; // String literal part
+    std::unique_ptr<Expr>
+        expression; // Expression to interpolate (null for text parts)
+
+    InterpolationPart(std::string t)
+        : text(std::move(t)), expression(nullptr) {}
+    InterpolationPart(std::unique_ptr<Expr> expr)
+        : expression(std::move(expr)) {}
   };
 
   explicit StringInterpolation(std::vector<InterpolationPart> parts)
@@ -360,8 +369,7 @@ struct Super : Expr {
   Token keyword; // The 'super' token
   Token method;  // The method or property name
 
-  Super(Token keyword, Token method)
-      : keyword(keyword), method(method) {}
+  Super(Token keyword, Token method) : keyword(keyword), method(method) {}
 
   void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
 
@@ -372,7 +380,8 @@ struct Super : Expr {
 
 // Subscript access expression: object[index1, index2, ...]
 struct SubscriptAccess : Expr {
-  SubscriptAccess(std::unique_ptr<Expr> object, std::vector<std::unique_ptr<Expr>> indices)
+  SubscriptAccess(std::unique_ptr<Expr> object,
+                  std::vector<std::unique_ptr<Expr>> indices)
       : object(std::move(object)), indices(std::move(indices)) {}
 
   void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
@@ -382,43 +391,50 @@ struct SubscriptAccess : Expr {
     for (const auto &index : indices) {
       clonedIndices.push_back(index->clone());
     }
-    return std::make_unique<SubscriptAccess>(object->clone(), std::move(clonedIndices));
+    return std::make_unique<SubscriptAccess>(object->clone(),
+                                             std::move(clonedIndices));
   }
 
   const std::unique_ptr<Expr> object;
   const std::vector<std::unique_ptr<Expr>> indices;
 };
 
-// Optional chaining expression: object?.property or object?.method() or object?[index]
+// Optional chaining expression: object?.property or object?.method() or
+// object?[index]
 struct OptionalChaining : Expr {
   enum class ChainType {
-    Property,    // object?.property
-    Method,      // object?.method()
-    Subscript    // object?[index]
+    Property, // object?.property
+    Method,   // object?.method()
+    Subscript // object?[index]
   };
-  
-  OptionalChaining(std::unique_ptr<Expr> object, ChainType chainType, std::unique_ptr<Expr> accessor)
-      : object(std::move(object)), chainType(chainType), accessor(std::move(accessor)) {}
+
+  OptionalChaining(std::unique_ptr<Expr> object, ChainType chainType,
+                   std::unique_ptr<Expr> accessor)
+      : object(std::move(object)), chainType(chainType),
+        accessor(std::move(accessor)) {}
 
   void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
 
   std::unique_ptr<Expr> clone() const override {
-    return std::make_unique<OptionalChaining>(object->clone(), chainType, accessor->clone());
+    return std::make_unique<OptionalChaining>(object->clone(), chainType,
+                                              accessor->clone());
   }
 
-  const std::unique_ptr<Expr> object;     // The optional object being chained
-  const ChainType chainType;              // Type of chaining (property, method, subscript)
-  const std::unique_ptr<Expr> accessor;   // The property/method/subscript being accessed
+  const std::unique_ptr<Expr> object; // The optional object being chained
+  const ChainType chainType; // Type of chaining (property, method, subscript)
+  const std::unique_ptr<Expr>
+      accessor; // The property/method/subscript being accessed
 };
 
 // Range expression: start..<end or start...end
 struct Range : Expr {
   enum class RangeType {
-    HalfOpen,  // start..<end
-    Closed     // start...end
+    HalfOpen, // start..<end
+    Closed    // start...end
   };
-  
-  Range(std::unique_ptr<Expr> start, std::unique_ptr<Expr> end, RangeType rangeType)
+
+  Range(std::unique_ptr<Expr> start, std::unique_ptr<Expr> end,
+        RangeType rangeType)
       : start(std::move(start)), end(std::move(end)), rangeType(rangeType) {}
 
   void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
@@ -440,7 +456,8 @@ struct GenericTypeInstantiationExpr : Expr {
   void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
 
   std::unique_ptr<Expr> clone() const override {
-    return std::make_unique<GenericTypeInstantiationExpr>(typeName, typeArguments);
+    return std::make_unique<GenericTypeInstantiationExpr>(typeName,
+                                                          typeArguments);
   }
 
   const Token typeName;
@@ -465,18 +482,21 @@ struct TypeCheck : Expr {
 // Type casting expression: value as Type or value as? Type or value as! Type
 struct TypeCast : Expr {
   enum class CastType {
-    Forced,      // as!
-    Optional,    // as?
-    Safe         // as
+    Forced,   // as!
+    Optional, // as?
+    Safe      // as
   };
-  
-  TypeCast(std::unique_ptr<Expr> expression, Token targetType, CastType castType)
-      : expression(std::move(expression)), targetType(targetType), castType(castType) {}
+
+  TypeCast(std::unique_ptr<Expr> expression, Token targetType,
+           CastType castType)
+      : expression(std::move(expression)), targetType(targetType),
+        castType(castType) {}
 
   void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
 
   std::unique_ptr<Expr> clone() const override {
-    return std::make_unique<TypeCast>(expression->clone(), targetType, castType);
+    return std::make_unique<TypeCast>(expression->clone(), targetType,
+                                      castType);
   }
 
   const std::unique_ptr<Expr> expression;
@@ -484,19 +504,22 @@ struct TypeCast : Expr {
   const CastType castType;
 };
 
-// Custom operator expression: left customOp right (or customOp right for prefix)
+// Custom operator expression: left customOp right (or customOp right for
+// prefix)
 struct CustomOperatorExpr : Expr {
-  CustomOperatorExpr(std::unique_ptr<Expr> left, Token op, std::unique_ptr<Expr> right)
+  CustomOperatorExpr(std::unique_ptr<Expr> left, Token op,
+                     std::unique_ptr<Expr> right)
       : left(std::move(left)), op(op), right(std::move(right)) {}
 
   void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
 
   std::unique_ptr<Expr> clone() const override {
     auto leftClone = left ? left->clone() : nullptr;
-    return std::make_unique<CustomOperatorExpr>(std::move(leftClone), op, right->clone());
+    return std::make_unique<CustomOperatorExpr>(std::move(leftClone), op,
+                                                right->clone());
   }
 
-  const std::unique_ptr<Expr> left;  // Can be null for prefix operators
+  const std::unique_ptr<Expr> left; // Can be null for prefix operators
   const Token op;
   const std::unique_ptr<Expr> right;
 };
@@ -519,7 +542,8 @@ struct BitwiseExpr : Expr {
 
 // Overflow operation expression: left &+ right, left &- right, etc.
 struct OverflowExpr : Expr {
-  OverflowExpr(std::unique_ptr<Expr> left, Token op, std::unique_ptr<Expr> right)
+  OverflowExpr(std::unique_ptr<Expr> left, Token op,
+               std::unique_ptr<Expr> right)
       : left(std::move(left)), op(op), right(std::move(right)) {}
 
   void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
@@ -535,7 +559,8 @@ struct OverflowExpr : Expr {
 
 // Result Builder expression: @BuilderType { ... }
 struct ResultBuilderExpr : Expr {
-  ResultBuilderExpr(Token builderType, std::vector<std::unique_ptr<Expr>> components)
+  ResultBuilderExpr(Token builderType,
+                    std::vector<std::unique_ptr<Expr>> components)
       : builderType(builderType), components(std::move(components)) {}
 
   void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
@@ -545,7 +570,8 @@ struct ResultBuilderExpr : Expr {
     for (const auto &component : components) {
       clonedComponents.push_back(component->clone());
     }
-    return std::make_unique<ResultBuilderExpr>(builderType, std::move(clonedComponents));
+    return std::make_unique<ResultBuilderExpr>(builderType,
+                                               std::move(clonedComponents));
   }
 
   const Token builderType;
@@ -570,12 +596,13 @@ struct AwaitExpr : Expr {
 // Task expression: Task { ... } or Task.detached { ... }
 struct TaskExpr : Expr {
   enum class TaskType {
-    Regular,   // Task { ... }
-    Detached   // Task.detached { ... }
+    Regular, // Task { ... }
+    Detached // Task.detached { ... }
   };
-  
+
   TaskExpr(Token taskKeyword, TaskType taskType, std::unique_ptr<Expr> closure)
-      : taskKeyword(taskKeyword), taskType(taskType), closure(std::move(closure)) {}
+      : taskKeyword(taskKeyword), taskType(taskType),
+        closure(std::move(closure)) {}
 
   void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
 
@@ -620,7 +647,8 @@ struct BoxedProtocolTypeExpr : Expr {
 
 // Macro expansion expression: #macroName(arguments)
 struct MacroExpansionExpr : Expr {
-  MacroExpansionExpr(Token macroName, std::vector<std::unique_ptr<Expr>> arguments)
+  MacroExpansionExpr(Token macroName,
+                     std::vector<std::unique_ptr<Expr>> arguments)
       : macroName(macroName), arguments(std::move(arguments)) {}
 
   void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
@@ -630,7 +658,8 @@ struct MacroExpansionExpr : Expr {
     for (const auto &arg : arguments) {
       clonedArguments.push_back(arg->clone());
     }
-    return std::make_unique<MacroExpansionExpr>(macroName, std::move(clonedArguments));
+    return std::make_unique<MacroExpansionExpr>(macroName,
+                                                std::move(clonedArguments));
   }
 
   const Token macroName;
@@ -639,8 +668,10 @@ struct MacroExpansionExpr : Expr {
 
 // Freestanding macro expression: #macroName(arguments)
 struct FreestandingMacroExpr : Expr {
-  FreestandingMacroExpr(Token hashToken, Token macroName, std::vector<std::unique_ptr<Expr>> arguments)
-      : hashToken(hashToken), macroName(macroName), arguments(std::move(arguments)) {}
+  FreestandingMacroExpr(Token hashToken, Token macroName,
+                        std::vector<std::unique_ptr<Expr>> arguments)
+      : hashToken(hashToken), macroName(macroName),
+        arguments(std::move(arguments)) {}
 
   void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
 
@@ -649,7 +680,8 @@ struct FreestandingMacroExpr : Expr {
     for (const auto &arg : arguments) {
       clonedArguments.push_back(arg->clone());
     }
-    return std::make_unique<FreestandingMacroExpr>(hashToken, macroName, std::move(clonedArguments));
+    return std::make_unique<FreestandingMacroExpr>(hashToken, macroName,
+                                                   std::move(clonedArguments));
   }
 
   const Token hashToken;
@@ -659,8 +691,10 @@ struct FreestandingMacroExpr : Expr {
 
 // Attached macro expression: @macroName(arguments)
 struct AttachedMacroExpr : Expr {
-  AttachedMacroExpr(Token atToken, Token macroName, std::vector<std::unique_ptr<Expr>> arguments)
-      : atToken(atToken), macroName(macroName), arguments(std::move(arguments)) {}
+  AttachedMacroExpr(Token atToken, Token macroName,
+                    std::vector<std::unique_ptr<Expr>> arguments)
+      : atToken(atToken), macroName(macroName),
+        arguments(std::move(arguments)) {}
 
   void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
 
@@ -669,7 +703,8 @@ struct AttachedMacroExpr : Expr {
     for (const auto &arg : arguments) {
       clonedArguments.push_back(arg->clone());
     }
-    return std::make_unique<AttachedMacroExpr>(atToken, macroName, std::move(clonedArguments));
+    return std::make_unique<AttachedMacroExpr>(atToken, macroName,
+                                               std::move(clonedArguments));
   }
 
   const Token atToken;

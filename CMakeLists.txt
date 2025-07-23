@@ -245,13 +245,14 @@ endif()
 
 # 添加LLVM的libunwind库和C++运行时库
 target_link_libraries(miniswift PRIVATE "${LLVM_ROOT}/lib/libunwind.a")
-# 静态链接C++运行时库以避免动态库依赖问题
-target_link_options(miniswift PRIVATE "-static-libgcc" "-static-libstdc++")
-# 设置RPATH以便找到系统库
+# 使用LLVM_ROOT中的C++标准库和异常处理库，避免与系统库冲突
+target_link_libraries(miniswift PRIVATE "${LLVM_ROOT}/lib/libc++.a" "${LLVM_ROOT}/lib/libc++abi.a")
+# 设置RPATH以便找到LLVM和系统库
 set_target_properties(miniswift PROPERTIES
     BUILD_RPATH "${LLVM_ROOT}/lib"
     INSTALL_RPATH "${LLVM_ROOT}/lib"
     BUILD_WITH_INSTALL_RPATH TRUE
+    MACOSX_RPATH TRUE
 )
 
 # Link libraries with LLVM 20

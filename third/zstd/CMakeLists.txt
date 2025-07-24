@@ -12,12 +12,27 @@ if(WIN32)
     
     if(zstd_FOUND)
         message(STATUS "找到vcpkg安装的zstd")
+        
+        # 检查可用的zstd目标
+        if(TARGET zstd::libzstd_static)
+            message(STATUS "使用zstd::libzstd_static目标")
+            set(ZSTD_TARGET_NAME zstd::libzstd_static)
+        elseif(TARGET zstd::libzstd_shared)
+            message(STATUS "使用zstd::libzstd_shared目标")
+            set(ZSTD_TARGET_NAME zstd::libzstd_shared)
+        elseif(TARGET zstd::zstd)
+            message(STATUS "使用zstd::zstd目标")
+            set(ZSTD_TARGET_NAME zstd::zstd)
+        else()
+            message(FATAL_ERROR "未找到可用的zstd目标")
+        endif()
+        
         # 创建导入目标
         add_library(zstd_target INTERFACE)
-        target_link_libraries(zstd_target INTERFACE zstd::libzstd_static)
+        target_link_libraries(zstd_target INTERFACE ${ZSTD_TARGET_NAME})
         
         # 设置变量供父项目使用
-        set(ZSTD_LIBRARY zstd::libzstd_static PARENT_SCOPE)
+        set(ZSTD_LIBRARY ${ZSTD_TARGET_NAME} PARENT_SCOPE)
         set(ZSTD_INCLUDE_DIR "" PARENT_SCOPE)  # vcpkg会自动处理包含路径
     else()
         message(WARNING "未找到vcpkg安装的zstd，请确保已通过vcpkg安装zstd包")

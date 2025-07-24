@@ -124,8 +124,14 @@ include_directories("${ZSTD_INCLUDE_DIR}")
 
 # Platform-specific LLVM flags
 if(WIN32)
-    # Windows-specific flags - use -D prefix for clang on Windows
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DLLVM_DISABLE_ABI_BREAKING_CHECKS_ENFORCING=1")
+    # Windows-specific flags - use appropriate format based on compiler
+    if(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
+        # MSVC uses /D format
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /DLLVM_DISABLE_ABI_BREAKING_CHECKS_ENFORCING=1")
+    else()
+        # Clang/GCC use -D format
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DLLVM_DISABLE_ABI_BREAKING_CHECKS_ENFORCING=1")
+    endif()
     # Set target architecture for Windows
     if(CMAKE_GENERATOR_PLATFORM)
         # Use the platform specified by the generator
@@ -155,12 +161,16 @@ message(STATUS "LLVM definitions: ${LLVM_DEFINITIONS}")
 include_directories(${LLVM_INCLUDE_DIRS})
 separate_arguments(LLVM_DEFINITIONS_LIST NATIVE_COMMAND ${LLVM_DEFINITIONS})
 
-# Filter out problematic flags on Windows when using Clang
-if(WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    # Remove any /D flags and replace with -D flags
-    string(REPLACE "/D" "-D" LLVM_DEFINITIONS_LIST "${LLVM_DEFINITIONS_LIST}")
-    # Filter out the problematic flag if it exists
-    list(FILTER LLVM_DEFINITIONS_LIST EXCLUDE REGEX "/DLLVM_DISABLE_ABI_BREAKING_CHECKS_ENFORCING")
+# Handle compiler-specific flag formats on Windows
+if(WIN32)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
+        # MSVC: convert -D to /D format
+        string(REPLACE "-D" "/D" LLVM_DEFINITIONS_LIST "${LLVM_DEFINITIONS_LIST}")
+    elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        # Clang: convert /D to -D format and filter problematic flags
+        string(REPLACE "/D" "-D" LLVM_DEFINITIONS_LIST "${LLVM_DEFINITIONS_LIST}")
+        list(FILTER LLVM_DEFINITIONS_LIST EXCLUDE REGEX "/DLLVM_DISABLE_ABI_BREAKING_CHECKS_ENFORCING")
+    endif()
 endif()
 
 add_definitions(${LLVM_DEFINITIONS_LIST})

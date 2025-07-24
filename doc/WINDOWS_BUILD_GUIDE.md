@@ -173,16 +173,46 @@ cmake .. -DLLVM_DIR="C:\Program Files\LLVM\lib\cmake\llvm"
 
 ### 2. 编译器标志错误
 
-如果遇到类似 `clang++: error: no such file or directory: '/DLLVM_DISABLE_ABI_BREAKING_CHECKS_ENFORCING=1'` 的错误，这是因为编译器标志格式不正确。
-
-**解决方案**: 确保 CMakeLists.txt 中使用 `-D` 前缀而不是 `/D`：
-```cmake
-# 正确的方式
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DLLVM_DISABLE_ABI_BREAKING_CHECKS_ENFORCING=1")
-
-# 错误的方式
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /DLLVM_DISABLE_ABI_BREAKING_CHECKS_ENFORCING=1")
+**错误信息：**
 ```
+clang++: error: no such file or directory: '/DLLVM_DISABLE_ABI_BREAKING_CHECKS_ENFORCING=1'
+```
+
+**可能原因：**
+编译器标志格式不正确。在 Windows 平台上：
+- MSVC 编译器使用 `/D` 前缀定义宏
+- Clang 编译器使用 `-D` 前缀定义宏
+- CMake 可能混合了不同编译器的标志格式
+
+**解决方案：**
+
+1. **确保使用正确的编译器：**
+   - **推荐使用 MSVC 编译器**（Visual Studio 2022）
+   - 避免混合使用不同的编译器工具链
+   - 确保 CMake 检测到正确的编译器
+
+2. **检查编译器检测：**
+   ```cmd
+   # 在 CMake 配置时查看输出
+   cmake .. -G "Visual Studio 17 2022" -A x64
+   # 应该显示：
+   # -- The CXX compiler identification is MSVC
+   ```
+
+3. **清理构建目录：**
+   ```cmd
+   rmdir /s build
+   mkdir build
+   cd build
+   ```
+
+4. **强制使用 MSVC 编译器：**
+   ```cmd
+   cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_CXX_COMPILER="cl.exe"
+   ```
+
+5. **如果必须使用 Clang：**
+   确保项目配置能正确处理 Clang 标志格式（项目已支持自动检测）
 
 ### 3. zstd 库链接错误
 
@@ -191,7 +221,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /DLLVM_DISABLE_ABI_BREAKING_CHECKS_ENFOR
 **可能原因**:
 1. vcpkg 没有正确安装 zstd 库
 2. CMake 没有找到 vcpkg 工具链
-3. zstd 库的目标名称不匹配
+3. zstd 库的目标名称不匹配（不同版本的 vcpkg 可能使用不同的目标名称）
 4. vcpkg 未正确集成到 Visual Studio
 
 **解决方案**:
@@ -208,28 +238,34 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /DLLVM_DISABLE_ABI_BREAKING_CHECKS_ENFOR
 
 2. **安装 zstd：**
    ```cmd
-   # 安装静态库版本（推荐）
-   vcpkg install zstd:x64-windows-static
-   
-   # 或者安装动态库版本
+   # 安装 x64 版本（推荐）
    vcpkg install zstd:x64-windows
+   
+   # 验证安装
+   vcpkg list zstd
    ```
 
-3. **确保 CMake 使用了正确的 vcpkg 工具链：**
+3. **检查 zstd 目标：**
+   项目现在会自动检测可用的 zstd 目标名称：
+   - `zstd::libzstd_static`（静态库）
+   - `zstd::libzstd_shared`（动态库）
+   - `zstd::zstd`（通用目标）
+
+4. **确保 CMake 使用了正确的 vcpkg 工具链：**
    ```cmd
-   cmake .. -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows-static
+   cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_TOOLCHAIN_FILE="C:\vcpkg\scripts\buildsystems\vcpkg.cmake"
    ```
 
-4. **检查 vcpkg 集成状态：**
+5. **检查 vcpkg 集成状态：**
    ```cmd
    vcpkg integrate list
    vcpkg list zstd
    ```
 
-5. **验证 zstd 安装：**
+6. **如果仍然失败，尝试重新安装：**
    ```cmd
-   # 检查已安装的包
-   vcpkg list | findstr zstd
+   vcpkg remove zstd:x64-windows
+   vcpkg install zstd:x64-windows
    ```
 
 ### 4. vcpkg 依赖安装失败

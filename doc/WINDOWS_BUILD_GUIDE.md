@@ -127,15 +127,28 @@ echo print("Hello, World!") | miniswift.exe
 cmake .. -DLLVM_DIR="C:\Program Files\LLVM\lib\cmake\llvm"
 ```
 
-### 2. vcpkg 依赖安装失败
+### 2. 编译器标志错误
+
+如果遇到类似 `clang++: error: no such file or directory: '/DLLVM_DISABLE_ABI_BREAKING_CHECKS_ENFORCING=1'` 的错误，这是因为编译器标志格式不正确。
+
+**解决方案**: 确保 CMakeLists.txt 中使用 `-D` 前缀而不是 `/D`：
+```cmake
+# 正确的方式
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DLLVM_DISABLE_ABI_BREAKING_CHECKS_ENFORCING=1")
+
+# 错误的方式
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /DLLVM_DISABLE_ABI_BREAKING_CHECKS_ENFORCING=1")
+```
+
+### 3. vcpkg 依赖安装失败
 
 确保 vcpkg 已正确安装并集成到 Visual Studio。检查网络连接，某些依赖可能需要从网络下载。
 
-### 3. 链接错误
+### 4. 链接错误
 
 确保使用了正确的 vcpkg triplet (`x64-windows-static`) 并且所有依赖都使用相同的运行时库。
 
-### 4. 编译器版本不兼容
+### 5. 编译器版本不兼容
 
 确保 Visual Studio、LLVM 和 vcpkg 使用的编译器版本兼容。推荐使用 Visual Studio 2019 或 2022。
 

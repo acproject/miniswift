@@ -124,8 +124,8 @@ include_directories("${ZSTD_INCLUDE_DIR}")
 
 # Platform-specific LLVM flags
 if(WIN32)
-    # Windows-specific flags
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /DLLVM_DISABLE_ABI_BREAKING_CHECKS_ENFORCING=1")
+    # Windows-specific flags - use -D prefix for clang on Windows
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DLLVM_DISABLE_ABI_BREAKING_CHECKS_ENFORCING=1")
     # Set target architecture for Windows
     if(CMAKE_GENERATOR_PLATFORM)
         # Use the platform specified by the generator
@@ -192,11 +192,7 @@ if(TARGET ${ZSTD_TARGET})
 endif()
 
 # Link with LLVM libraries
-if(WIN32)
-message("Do noting")
-else ()
-    target_link_libraries(miniswift PRIVATE ${MINIMAL_LLVM_LIBS})
-endif ()
+target_link_libraries(miniswift PRIVATE ${MINIMAL_LLVM_LIBS})
 # Add platform-specific system libraries
 if(APPLE)
     # macOS frameworks and libraries

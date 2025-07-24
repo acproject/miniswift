@@ -140,15 +140,40 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DLLVM_DISABLE_ABI_BREAKING_CHECKS_ENFOR
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /DLLVM_DISABLE_ABI_BREAKING_CHECKS_ENFORCING=1")
 ```
 
-### 3. vcpkg 依赖安装失败
+### 3. zstd 库链接错误
+
+如果遇到类似 `Target "miniswift" links to: zstd::libzstd_static but the target was not found` 的错误，这通常是因为：
+
+**可能原因**:
+1. vcpkg 没有正确安装 zstd 库
+2. CMake 没有找到 vcpkg 工具链
+3. zstd 库的目标名称不匹配
+
+**解决方案**:
+1. 确保已通过 vcpkg 安装 zstd：
+   ```cmd
+   vcpkg install zstd:x64-windows-static
+   ```
+
+2. 确保 CMake 使用了正确的 vcpkg 工具链：
+   ```cmd
+   cmake .. -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows-static
+   ```
+
+3. 检查 vcpkg 集成状态：
+   ```cmd
+   vcpkg integrate list
+   ```
+
+### 4. vcpkg 依赖安装失败
 
 确保 vcpkg 已正确安装并集成到 Visual Studio。检查网络连接，某些依赖可能需要从网络下载。
 
-### 4. 链接错误
+### 5. 链接错误
 
 确保使用了正确的 vcpkg triplet (`x64-windows-static`) 并且所有依赖都使用相同的运行时库。
 
-### 5. 编译器版本不兼容
+### 6. 编译器版本不兼容
 
 确保 Visual Studio、LLVM 和 vcpkg 使用的编译器版本兼容。推荐使用 Visual Studio 2019 或 2022。
 

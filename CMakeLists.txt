@@ -169,7 +169,13 @@ else()
 endif()
 
 # Combine LLVM libraries with our zstd library
-set(MINIMAL_LLVM_LIBS ${llvm_libs} "${ZSTD_LIBRARY}")
+if(WIN32)
+    # On Windows, use the target directly
+    set(MINIMAL_LLVM_LIBS ${llvm_libs} ${ZSTD_LIBRARY})
+else()
+    # On other platforms, use the library path
+    set(MINIMAL_LLVM_LIBS ${llvm_libs} "${ZSTD_LIBRARY}")
+endif()
 
 # Combine all sources
 set(ALL_SOURCES

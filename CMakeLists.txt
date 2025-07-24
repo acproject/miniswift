@@ -192,8 +192,11 @@ if(TARGET ${ZSTD_TARGET})
 endif()
 
 # Link with LLVM libraries
-target_link_libraries(miniswift PRIVATE ${MINIMAL_LLVM_LIBS})
-
+if(WIN32)
+message("Do noting")
+else ()
+    target_link_libraries(miniswift PRIVATE ${MINIMAL_LLVM_LIBS})
+endif ()
 # Add platform-specific system libraries
 if(APPLE)
     # macOS frameworks and libraries

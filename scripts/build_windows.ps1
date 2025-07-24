@@ -139,12 +139,18 @@ if ($vcpkgToolchain -and (Get-Command vcpkg -ErrorAction SilentlyContinue)) {
 Write-Host "配置项目..." -ForegroundColor Yellow
 $cmakeArgs = @(
     "..",
+    "-G", "Visual Studio 17 2022",
+    "-A", "x64",
     "-DCMAKE_BUILD_TYPE=$BuildType"
 )
 
 if ($vcpkgToolchain) {
+    Write-Host "使用 vcpkg: $vcpkgToolchain" -ForegroundColor Yellow
     $cmakeArgs += "-DCMAKE_TOOLCHAIN_FILE=$vcpkgToolchain"
     $cmakeArgs += "-DVCPKG_TARGET_TRIPLET=x64-windows-static"
+} else {
+    Write-Host "⚠ 警告: 未找到 vcpkg，将尝试不使用 vcpkg 构建" -ForegroundColor Yellow
+    Write-Host "如需使用 vcpkg，请安装并设置 VCPKG_ROOT 环境变量" -ForegroundColor Yellow
 }
 
 try {

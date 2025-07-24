@@ -67,11 +67,21 @@ if defined CMAKE_TOOLCHAIN_FILE (
 )
 
 REM 配置项目
-echo 配置项目...
-if defined CMAKE_TOOLCHAIN_FILE (
-    cmake .. -DCMAKE_BUILD_TYPE=%CMAKE_BUILD_TYPE% -DCMAKE_TOOLCHAIN_FILE="%CMAKE_TOOLCHAIN_FILE%" -DVCPKG_TARGET_TRIPLET=x64-windows-static
+echo Configuring CMake...
+REM 检查是否设置了VCPKG_ROOT环境变量
+if defined VCPKG_ROOT (
+    echo Using vcpkg from: %VCPKG_ROOT%
+    cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=%CMAKE_BUILD_TYPE% -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
 ) else (
-    cmake .. -DCMAKE_BUILD_TYPE=%CMAKE_BUILD_TYPE%
+    echo VCPKG_ROOT not set, trying default vcpkg location...
+    if exist "C:\vcpkg\scripts\buildsystems\vcpkg.cmake" (
+        echo Using vcpkg from: C:\vcpkg
+        cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=%CMAKE_BUILD_TYPE% -DCMAKE_TOOLCHAIN_FILE="C:\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
+    ) else (
+        echo Warning: vcpkg not found. Please install vcpkg and set VCPKG_ROOT environment variable.
+        echo Continuing without vcpkg...
+        cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=%CMAKE_BUILD_TYPE%
+    )
 )
 
 if %ERRORLEVEL% neq 0 (

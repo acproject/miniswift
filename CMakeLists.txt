@@ -154,6 +154,15 @@ message(STATUS "LLVM definitions: ${LLVM_DEFINITIONS}")
 # Set up LLVM
 include_directories(${LLVM_INCLUDE_DIRS})
 separate_arguments(LLVM_DEFINITIONS_LIST NATIVE_COMMAND ${LLVM_DEFINITIONS})
+
+# Filter out problematic flags on Windows when using Clang
+if(WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    # Remove any /D flags and replace with -D flags
+    string(REPLACE "/D" "-D" LLVM_DEFINITIONS_LIST "${LLVM_DEFINITIONS_LIST}")
+    # Filter out the problematic flag if it exists
+    list(FILTER LLVM_DEFINITIONS_LIST EXCLUDE REGEX "/DLLVM_DISABLE_ABI_BREAKING_CHECKS_ENFORCING")
+endif()
+
 add_definitions(${LLVM_DEFINITIONS_LIST})
 
 # Find the libraries that correspond to the LLVM components

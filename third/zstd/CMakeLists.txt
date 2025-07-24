@@ -5,18 +5,25 @@ project(zstd_build)
 # 检测操作系统
 if(WIN32)
     # Windows平台使用vcpkg管理zstd
-    message(STATUS "Windows平台检测到，使用vcpkg管理zstd依赖")
+    message(STATUS "Windows平台检测到，尝试使用vcpkg管理zstd依赖")
     
     # 查找vcpkg安装的zstd
-    find_package(zstd CONFIG REQUIRED)
+    find_package(zstd CONFIG)
     
-    # 创建导入目标
-    add_library(zstd_target INTERFACE)
-    target_link_libraries(zstd_target INTERFACE zstd::libzstd_static)
-    
-    # 设置变量供父项目使用
-    set(ZSTD_LIBRARY zstd::libzstd_static PARENT_SCOPE)
-    set(ZSTD_INCLUDE_DIR "" PARENT_SCOPE)  # vcpkg会自动处理包含路径
+    if(zstd_FOUND)
+        message(STATUS "找到vcpkg安装的zstd")
+        # 创建导入目标
+        add_library(zstd_target INTERFACE)
+        target_link_libraries(zstd_target INTERFACE zstd::libzstd_static)
+        
+        # 设置变量供父项目使用
+        set(ZSTD_LIBRARY zstd::libzstd_static PARENT_SCOPE)
+        set(ZSTD_INCLUDE_DIR "" PARENT_SCOPE)  # vcpkg会自动处理包含路径
+    else()
+        message(WARNING "未找到vcpkg安装的zstd，请确保已通过vcpkg安装zstd包")
+        message(STATUS "请运行: vcpkg install zstd:x64-windows")
+        message(FATAL_ERROR "zstd依赖未找到，无法继续构建")
+    endif()
     
 else()
     # 非Windows平台使用源码编译

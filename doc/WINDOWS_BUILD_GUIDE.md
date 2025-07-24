@@ -38,62 +38,106 @@
 choco install llvm
 ```
 
-### 4. 安装 vcpkg (推荐)
+### 4. 安装 vcpkg（包管理器）
 
-1. 克隆 vcpkg 仓库：
-   ```cmd
-   git clone https://github.com/Microsoft/vcpkg.git C:\vcpkg
-   cd C:\vcpkg
-   .\bootstrap-vcpkg.bat
-   ```
+**vcpkg** 是 Microsoft 推荐的 C++ 包管理器，用于管理第三方库依赖。
 
-2. 集成到 Visual Studio：
-   ```cmd
-   .\vcpkg integrate install
-   ```
-
-3. 设置环境变量：
-   ```cmd
-   set CMAKE_TOOLCHAIN_FILE=C:\vcpkg\scripts\buildsystems\vcpkg.cmake
-   ```
-
-### 5. 安装依赖
-
-使用 vcpkg 安装 zstd：
 ```cmd
-vcpkg install zstd:x64-windows-static
+# 克隆 vcpkg 到推荐位置
+git clone https://github.com/Microsoft/vcpkg.git C:\vcpkg
+cd C:\vcpkg
+
+# 运行引导脚本
+.\bootstrap-vcpkg.bat
+
+# 集成到 Visual Studio（重要！）
+.\vcpkg integrate install
+```
+
+**设置环境变量：**
+1. 打开系统环境变量设置
+2. 添加新的环境变量：
+   - 变量名：`VCPKG_ROOT`
+   - 变量值：`C:\vcpkg`
+3. 将 `C:\vcpkg` 添加到 PATH 环境变量
+
+**验证安装：**
+```cmd
+vcpkg version
+vcpkg integrate list
+```
+
+### 5. 安装 zstd 库
+
+使用 vcpkg 安装 zstd 压缩库：
+
+```cmd
+# 安装 x64 版本（推荐）
+vcpkg install zstd:x64-windows
+
+# 验证安装
+vcpkg list zstd
 ```
 
 ## 构建项目
 
 ### 方法 1: 使用构建脚本 (推荐)
 
-1. 打开命令提示符或 PowerShell
-2. 导航到项目根目录
-3. 运行构建脚本：
-   ```cmd
-   scripts\build_windows.bat
-   ```
+项目提供了自动化构建脚本，会自动检测和配置 vcpkg：
 
-   或者构建 Debug 版本：
-   ```cmd
-   scripts\build_windows.bat debug
-   ```
+**使用批处理脚本：**
+```cmd
+git clone <repository-url>
+cd miniswift
+.\scripts\build_windows.bat
+```
+
+**构建 Debug 版本：**
+```cmd
+.\scripts\build_windows.bat debug
+```
+
+**使用 PowerShell 脚本：**
+```powershell
+git clone <repository-url>
+cd miniswift
+.\scripts\build_windows.ps1
+```
 
 ### 方法 2: 手动构建
 
-1. 创建构建目录：
+如果需要手动控制构建过程：
+
+1. 克隆项目：
+   ```cmd
+   git clone <repository-url>
+   cd miniswift
+   ```
+
+2. 创建构建目录：
    ```cmd
    mkdir build_windows
    cd build_windows
    ```
 
-2. 配置项目：
+3. 配置项目：
+   
+   **如果已正确设置 VCPKG_ROOT 环境变量：**
    ```cmd
-   cmake .. -DCMAKE_TOOLCHAIN_FILE=C:\vcpkg\scripts\buildsystems\vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows-static
+   cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
+   ```
+   
+   **如果 vcpkg 安装在默认位置：**
+   ```cmd
+   cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_TOOLCHAIN_FILE="C:\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
+   ```
+   
+   **不使用 vcpkg（不推荐）：**
+   ```cmd
+   cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release
    ```
 
-3. 构建项目：
+4. 构建项目：
    ```cmd
    cmake --build . --config Release --parallel
    ```
@@ -148,21 +192,44 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /DLLVM_DISABLE_ABI_BREAKING_CHECKS_ENFOR
 1. vcpkg 没有正确安装 zstd 库
 2. CMake 没有找到 vcpkg 工具链
 3. zstd 库的目标名称不匹配
+4. vcpkg 未正确集成到 Visual Studio
 
 **解决方案**:
-1. 确保已通过 vcpkg 安装 zstd：
+1. **确保 vcpkg 已正确安装和集成：**
    ```cmd
-   vcpkg install zstd:x64-windows-static
+   # 克隆 vcpkg（如果尚未安装）
+   git clone https://github.com/Microsoft/vcpkg.git C:\vcpkg
+   cd C:\vcpkg
+   .\bootstrap-vcpkg.bat
+   
+   # 集成到 Visual Studio
+   .\vcpkg integrate install
    ```
 
-2. 确保 CMake 使用了正确的 vcpkg 工具链：
+2. **安装 zstd：**
+   ```cmd
+   # 安装静态库版本（推荐）
+   vcpkg install zstd:x64-windows-static
+   
+   # 或者安装动态库版本
+   vcpkg install zstd:x64-windows
+   ```
+
+3. **确保 CMake 使用了正确的 vcpkg 工具链：**
    ```cmd
    cmake .. -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows-static
    ```
 
-3. 检查 vcpkg 集成状态：
+4. **检查 vcpkg 集成状态：**
    ```cmd
    vcpkg integrate list
+   vcpkg list zstd
+   ```
+
+5. **验证 zstd 安装：**
+   ```cmd
+   # 检查已安装的包
+   vcpkg list | findstr zstd
    ```
 
 ### 4. vcpkg 依赖安装失败

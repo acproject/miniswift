@@ -26,6 +26,8 @@
 
 ### 编译项目
 
+#### Unix/Linux/macOS
+
 ```bash
 # 创建构建目录
 mkdir -p build
@@ -36,9 +38,37 @@ cmake ..
 make
 ```
 
+#### Windows
+
+**方法 1: 使用构建脚本 (推荐)**
+```cmd
+# 运行 Windows 构建脚本
+scripts\build_windows.bat
+
+# 或构建 Debug 版本
+scripts\build_windows.bat debug
+```
+
+**方法 2: 手动构建**
+```cmd
+# 创建构建目录
+mkdir build_windows
+cd build_windows
+
+# 配置项目 (需要预先安装 vcpkg 和 LLVM)
+cmake .. -DCMAKE_TOOLCHAIN_FILE=C:\vcpkg\scripts\buildsystems\vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows-static
+
+# 构建项目
+cmake --build . --config Release --parallel
+```
+
+**详细的 Windows 构建指南请参考**: [WINDOWS_BUILD_GUIDE.md](doc/WINDOWS_BUILD_GUIDE.md)
+
 ### 运行示例
 
 #### 交互式使用
+
+**Unix/Linux/macOS:**
 ```bash
 # 直接运行解释器
 ./build/miniswift
@@ -48,10 +78,28 @@ let name = "World"
 print("Hello \(name)!")
 ```
 
+**Windows:**
+```cmd
+# 直接运行解释器
+build_windows\Release\miniswift.exe
+
+# 输入 Swift 代码
+let name = "World"
+print("Hello \(name)!")
+```
+
 #### 运行文件
+
+**Unix/Linux/macOS:**
 ```bash
 # 从文件读取代码
 cat your_program.swift | ./build/miniswift
+```
+
+**Windows:**
+```cmd
+# 从文件读取代码
+type your_program.swift | build_windows\Release\miniswift.exe
 ```
 
 #### 使用 Playground

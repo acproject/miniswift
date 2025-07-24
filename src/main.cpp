@@ -13,6 +13,7 @@ static miniswift::Interpreter interpreter;
 bool hadError = false;
 bool enableSemanticAnalysis = false;
 bool enableLLVMCodeGen = false;
+bool compileToExecutable = false;
 
 void run(const std::string &source) {
   bool currentError = false;
@@ -75,13 +76,38 @@ void run(const std::string &source) {
           std::cout << "LLVM IR generation completed successfully."
                     << std::endl;
 
-          // Print generated IR
-          if (codeGenResult.module) {
-            std::cout << "Generated LLVM IR:" << std::endl;
-            std::string irString;
-            llvm::raw_string_ostream irStream(irString);
-            codeGenResult.module->print(irStream, nullptr);
-            std::cout << irString << std::endl;
+          // Compile to executable if requested
+          if (compileToExecutable) {
+            std::string outputFile = "output";
+            if (codeGenerator->compileToExecutable(outputFile)) {
+              std::cout << "Compilation to executable completed successfully." << std::endl;
+              std::cout << "Output file: " << outputFile << ".exe" << std::endl;
+            } else {
+              std::cerr << "Failed to compile to executable." << std::endl;
+              // 显示详细的错误信息
+              auto newResult = codeGenerator->generateCode(*analysisResult.typedAST);
+              if (!newResult.errors.empty()) {
+                std::cerr << "COMPILATION ERRORS:" << std::endl;
+                for (const auto &error : newResult.errors) {
+                  std::cerr << "  " << error.message << std::endl;
+                }
+              }
+              if (!newResult.warnings.empty()) {
+                std::cerr << "COMPILATION WARNINGS:" << std::endl;
+                for (const auto &warning : newResult.warnings) {
+                  std::cerr << "  " << warning << std::endl;
+                }
+              }
+            }
+          } else {
+            // Print generated IR only if not compiling
+            if (codeGenResult.module) {
+              std::cout << "Generated LLVM IR:" << std::endl;
+              std::string irString;
+              llvm::raw_string_ostream irStream(irString);
+              codeGenResult.module->print(irStream, nullptr);
+              std::cout << irString << std::endl;
+            }
           }
 
         } catch (const std::exception &e) {
@@ -120,6 +146,7 @@ void printUsage() {
   std::cout << "  -s, --semantic    Enable semantic analysis" << std::endl;
   std::cout << "  -l, --llvm        Enable LLVM code generation (requires -s)"
             << std::endl;
+  std::cout << "  -c, --compile     Compile to executable (requires -l)" << std::endl;
   std::cout << "  -h, --help        Show this help message" << std::endl;
 }
 
@@ -135,6 +162,10 @@ int main(int argc, char *argv[]) {
     } else if (arg == "-l" || arg == "--llvm") {
       enableLLVMCodeGen = true;
       enableSemanticAnalysis = true; // LLVM code gen requires semantic analysis
+    } else if (arg == "-c" || arg == "--compile") {
+      compileToExecutable = true;
+      enableLLVMCodeGen = true;
+      enableSemanticAnalysis = true; // Compilation requires LLVM and semantic analysis
     } else if (arg == "-h" || arg == "--help") {
       printUsage();
       return 0;

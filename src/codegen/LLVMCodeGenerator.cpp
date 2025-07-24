@@ -220,29 +220,45 @@ bool LLVMCodeGenerator::compileToExecutable(const std::string& filename) {
     // 首先编译为目标文件
     std::string objFilename = filename + ".o";
     if (!compileToObjectFile(objFilename)) {
+        reportError("Failed to compile to object file");
         return false;
     }
     
     // 使用系统链接器创建可执行文件
-    // 这里使用简单的系统调用方法
-    // 在实际项目中，可能需要更复杂的链接逻辑
     std::string linkCommand;
     
 #ifdef _WIN32
-    // Windows使用link.exe
-    linkCommand = "link.exe /OUT:" + filename + ".exe " + objFilename + " /SUBSYSTEM:CONSOLE";
-#else
-    // Unix-like系统使用ld或gcc
-    linkCommand = "gcc -o " + filename + " " + objFilename;
-#endif
-    
+    // Windows - 尝试多种链接器
+    // 首先尝试使用clang++（如果可用）
+    linkCommand = "clang++ -o " + filename + ".exe " + objFilename;
+    reportWarning("Attempting to link with clang++: " + linkCommand);
     int result = std::system(linkCommand.c_str());
+    
+    if (result != 0) {
+        // 如果clang++失败，尝试gcc
+        linkCommand = "gcc -o " + filename + ".exe " + objFilename;
+        reportWarning("Clang++ failed, trying gcc: " + linkCommand);
+        result = std::system(linkCommand.c_str());
+        
+        if (result != 0) {
+            // 如果gcc也失败，尝试Visual Studio的link.exe
+            linkCommand = "link.exe /OUT:" + filename + ".exe " + objFilename + " /SUBSYSTEM:CONSOLE";
+            reportWarning("GCC failed, trying Visual Studio linker: " + linkCommand);
+            result = std::system(linkCommand.c_str());
+        }
+    }
+#else
+    // Unix-like系统使用gcc
+    linkCommand = "gcc -o " + filename + " " + objFilename;
+    int result = std::system(linkCommand.c_str());
+#endif
     
     // 清理临时目标文件
     std::remove(objFilename.c_str());
     
     if (result != 0) {
-        reportError("Failed to link executable");
+        reportError("Failed to link executable. Command: " + linkCommand + ". Exit code: " + std::to_string(result));
+        reportError("Make sure you have a C/C++ compiler (clang++, gcc, or Visual Studio) installed and in your PATH.");
         return false;
     }
     
@@ -681,6 +697,11 @@ llvm::Value* LLVMCodeGenerator::generateFunctionCall(const TypedCall& call) {
     const VarExpr* calleeExpr = static_cast<const VarExpr*>(callExpr->callee.get());
     const std::string& functionName = calleeExpr->name.lexeme;
     
+    // 处理内置函数
+    if (functionName == "print") {
+        return generatePrintCall(call);
+    }
+    
     auto funcIt = functions_.find(functionName);
     if (funcIt == functions_.end()) {
         reportError("Undefined function: " + functionName);
@@ -696,6 +717,50 @@ llvm::Value* LLVMCodeGenerator::generateFunctionCall(const TypedCall& call) {
     }
     
     return builder_->CreateCall(function, args, "call");
+}
+
+llvm::Value* LLVMCodeGenerator::generatePrintCall(const TypedCall& call) {
+    // 获取printf函数
+    llvm::Function* printfFunc = module_->getFunction("printf");
+    if (!printfFunc) {
+        reportError("printf function not found");
+        return nullptr;
+    }
+    
+    // 生成参数
+    std::vector<llvm::Value*> args;
+    for (const auto& arg : call.getArguments()) {
+        llvm::Value* argValue = generateExpression(*arg);
+        if (!argValue) continue;
+        
+        // 根据参数类型生成适当的格式字符串和参数
+        llvm::Type* argType = argValue->getType();
+        if (argType->isIntegerTy(64)) {
+            // 整数类型
+            llvm::Value* formatStr = builder_->CreateGlobalStringPtr("%lld\n");
+            args.push_back(formatStr);
+            args.push_back(argValue);
+        } else if (argType->isDoubleTy()) {
+            // 浮点类型
+            llvm::Value* formatStr = builder_->CreateGlobalStringPtr("%.6f\n");
+            args.push_back(formatStr);
+            args.push_back(argValue);
+        } else if (argType->isPointerTy()) {
+            // 字符串类型
+            llvm::Value* formatStr = builder_->CreateGlobalStringPtr("%s\n");
+            args.push_back(formatStr);
+            args.push_back(argValue);
+        } else {
+            reportError("Unsupported argument type for print function");
+            continue;
+        }
+        
+        // 调用printf
+        builder_->CreateCall(printfFunc, args, "print_call");
+        args.clear(); // 清空参数列表，为下一个参数准备
+    }
+    
+    return nullptr; // print函数没有返回值
 }
 
 // 控制流生成

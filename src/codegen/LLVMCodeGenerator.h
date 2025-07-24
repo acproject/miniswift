@@ -187,6 +187,7 @@ private:
     llvm::Value* generateBinaryOperation(const TypedBinary& binary);
     llvm::Value* generateUnaryOperation(const TypedUnary& unary);
     llvm::Value* generateFunctionCall(const TypedCall& call);
+    llvm::Value* generatePrintCall(const TypedCall& call);
     llvm::Value* generateVariableAccess(const TypedVarExpr& varExpr);
     llvm::Value* generateAssignment(const TypedAssign& assign);
     

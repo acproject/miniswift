@@ -216,7 +216,7 @@ void Interpreter::visit(const VarStmt& stmt) {
         value = evaluate(*stmt.initializer);
         
         // Check if the variable type is optional and wrap the value if needed
-        if (stmt.type.lexeme.back() == '?' && value.type != ValueType::Optional) {
+        if (!stmt.type.lexeme.empty() && stmt.type.lexeme.back() == '?' && value.type != ValueType::Optional) {
             value = OptionalManager::createOptional(value);
         }
     }

@@ -25,6 +25,8 @@
 #include <llvm/Transforms/Utils.h>
 #include <iostream>
 #include <optional>
+#include <cstdlib>
+#include <cstdio>
 
 namespace miniswift {
 
@@ -205,6 +207,44 @@ bool LLVMCodeGenerator::compileToAssembly(const std::string& filename) {
     
     pass.run(*module_);
     dest.flush();
+    
+    return true;
+}
+
+bool LLVMCodeGenerator::compileToExecutable(const std::string& filename) {
+    if (!module_) {
+        reportError("No module available for compilation");
+        return false;
+    }
+    
+    // 首先编译为目标文件
+    std::string objFilename = filename + ".o";
+    if (!compileToObjectFile(objFilename)) {
+        return false;
+    }
+    
+    // 使用系统链接器创建可执行文件
+    // 这里使用简单的系统调用方法
+    // 在实际项目中，可能需要更复杂的链接逻辑
+    std::string linkCommand;
+    
+#ifdef _WIN32
+    // Windows使用link.exe
+    linkCommand = "link.exe /OUT:" + filename + ".exe " + objFilename + " /SUBSYSTEM:CONSOLE";
+#else
+    // Unix-like系统使用ld或gcc
+    linkCommand = "gcc -o " + filename + " " + objFilename;
+#endif
+    
+    int result = std::system(linkCommand.c_str());
+    
+    // 清理临时目标文件
+    std::remove(objFilename.c_str());
+    
+    if (result != 0) {
+        reportError("Failed to link executable");
+        return false;
+    }
     
     return true;
 }

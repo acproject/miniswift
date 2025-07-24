@@ -226,7 +226,7 @@ void InstancePropertyContainer::setProperty(Interpreter &interpreter,
   
   // Check if the property type is optional and wrap the value if needed
   const auto& propDef = it->second->getDefinition();
-  if (propDef.type.lexeme.back() == '?' && value.type != ValueType::Optional) {
+  if (!propDef.type.lexeme.empty() && propDef.type.lexeme.back() == '?' && value.type != ValueType::Optional) {
     finalValue = OptionalManager::createOptional(value);
   }
 

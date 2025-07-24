@@ -848,103 +848,128 @@ void SemanticAnalyzer::visit(const ActorStmt& stmt) {
 }
 
 void SemanticAnalyzer::visit(const MacroStmt& stmt) {
+    (void)stmt; // 标记参数为有意未使用
     // 简化实现
 }
 
 void SemanticAnalyzer::visit(const ExternalMacroStmt& stmt) {
+    (void)stmt; // 标记参数为有意未使用
     // 简化实现
 }
 
 void SemanticAnalyzer::visit(const FreestandingMacroStmt& stmt) {
+    (void)stmt; // 标记参数为有意未使用
     // 简化实现
 }
 
 void SemanticAnalyzer::visit(const AttachedMacroStmt& stmt) {
+    (void)stmt; // 标记参数为有意未使用
     // 简化实现
 }
 
 // 添加缺失的表达式visit方法（只添加真正缺失的）
 void SemanticAnalyzer::visit(const SubscriptAccess& expr) {
+    (void)expr; // 标记参数为有意未使用
     // 简化实现
 }
 
 void SemanticAnalyzer::visit(const LabeledCall& expr) {
+    (void)expr; // 标记参数为有意未使用
     // 简化实现
 }
 
 void SemanticAnalyzer::visit(const Closure& expr) {
+    (void)expr; // 标记参数为有意未使用
     // 简化实现
 }
 
 void SemanticAnalyzer::visit(const EnumAccess& expr) {
+    (void)expr; // 标记参数为有意未使用
     // 简化实现
 }
 
 void SemanticAnalyzer::visit(const MemberAccess& expr) {
+    (void)expr; // 标记参数为有意未使用
     // 简化实现
 }
 
 void SemanticAnalyzer::visit(const StructInit& expr) {
+    (void)expr; // 标记参数为有意未使用
     // 简化实现
 }
 
 void SemanticAnalyzer::visit(const Super& expr) {
+    (void)expr; // 标记参数为有意未使用
     // 简化实现
 }
 
 void SemanticAnalyzer::visit(const StringInterpolation& expr) {
+    (void)expr; // 标记参数为有意未使用
     // 简化实现
 }
 
 void SemanticAnalyzer::visit(const OptionalChaining& expr) {
+    (void)expr; // 标记参数为有意未使用
     // 简化实现
 }
 
 void SemanticAnalyzer::visit(const Range& expr) {
+    (void)expr; // 标记参数为有意未使用
     // 简化实现
 }
 
 void SemanticAnalyzer::visit(const GenericTypeInstantiationExpr& expr) {
+    (void)expr; // 标记参数为有意未使用
     // 简化实现
 }
 
 void SemanticAnalyzer::visit(const TypeCheck& expr) {
+    (void)expr; // 标记参数为有意未使用
     // 简化实现
 }
 
 void SemanticAnalyzer::visit(const TypeCast& expr) {
+    (void)expr; // 标记参数为有意未使用
     // 简化实现
 }
 
 void SemanticAnalyzer::visit(const TryExpr& expr) {
+    (void)expr; // 标记参数为有意未使用
     // 简化实现
 }
 
 void SemanticAnalyzer::visit(const ResultTypeExpr& expr) {
+    (void)expr; // 标记参数为有意未使用
     // 简化实现
 }
 
 void SemanticAnalyzer::visit(const ErrorLiteral& expr) {
+    (void)expr; // 标记参数为有意未使用
     // 简化实现
 }
 
 void SemanticAnalyzer::visit(const CustomOperatorExpr& expr) {
+    (void)expr; // 标记参数为有意未使用
     // 简化实现
 }
 
 void SemanticAnalyzer::visit(const BitwiseExpr& expr) {
+    (void)expr; // 标记参数为有意未使用
     // 简化实现
 }
 
 void SemanticAnalyzer::visit(const OverflowExpr& expr) {
+    (void)expr; // 标记参数为有意未使用
     // 简化实现
 }
 
 void SemanticAnalyzer::visit(const ResultBuilderExpr& expr) {
+    (void)expr; // 标记参数为有意未使用
     // 简化实现
 }
 
 void SemanticAnalyzer::visit(const AwaitExpr& expr) {
+    (void)expr; // 标记参数为有意未使用
     // 简化实现
 }
 

@@ -26,6 +26,8 @@ message(STATUS "Target architecture: ${TARGET_ARCH}")
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+# 禁用LTO以避免与LLVM 20.1.0的兼容性问题
+set(CMAKE_INTERPROCEDURAL_OPTIMIZATION OFF)
 
 # Set default build type to Debug if not specified
 if(NOT CMAKE_BUILD_TYPE)
@@ -96,9 +98,10 @@ set(SEMANTIC_SOURCES
     src/semantic/TypedAST.cpp
 )
 
-set(CODEGEN_SOURCES
-    src/codegen/LLVMCodeGenerator.cpp
-)
+# CODEGEN_SOURCES removed - no LLVM code generation
+# set(CODEGEN_SOURCES
+#     src/codegen/LLVMCodeGenerator.cpp
+# )
 
 set(MAIN_SOURCES
     src/main.cpp
@@ -116,87 +119,28 @@ add_subdirectory(third/zstd)
 # ZSTD_LIBRARY 和 ZSTD_TARGET 变量已经可用
 set(ZSTD_INCLUDE_DIR "${THIRD_PARTY_INSTALL_DIR}/include")
 
-# Find LLVM using standard CMake find_package
-find_package(LLVM REQUIRED CONFIG)
-
 # Include zstd directories
 include_directories("${ZSTD_INCLUDE_DIR}")
 
-# Platform-specific LLVM flags
+message(STATUS "Using C compiler: ${CMAKE_C_COMPILER}")
+message(STATUS "Using CXX compiler: ${CMAKE_CXX_COMPILER}")
+message(STATUS "Building without LLVM code generation - interpreter mode only")
+
+# Set up basic compiler flags
 if(WIN32)
-    # Windows-specific flags - use appropriate format based on compiler
+    # Windows-specific flags
     if(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
-        # MSVC uses /D format
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /DLLVM_DISABLE_ABI_BREAKING_CHECKS_ENFORCING=1")
-    else()
-        # Clang/GCC use -D format
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DLLVM_DISABLE_ABI_BREAKING_CHECKS_ENFORCING=1")
-    endif()
-    # Set target architecture for Windows
-    if(CMAKE_GENERATOR_PLATFORM)
-        # Use the platform specified by the generator
-    elseif(TARGET_ARCH STREQUAL "x86_64")
-        set(CMAKE_GENERATOR_PLATFORM "x64")
-    else()
-        set(CMAKE_GENERATOR_PLATFORM "Win32")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /EHsc")
     endif()
 else()
     # Unix-like systems (macOS, Linux)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -frtti -DLLVM_DISABLE_ABI_BREAKING_CHECKS_ENFORCING=1")
-    # Set architecture for macOS
-    if(APPLE)
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -arch ${TARGET_ARCH}")
-        set(CMAKE_OSX_ARCHITECTURES "${TARGET_ARCH}")
-    endif()
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -frtti")
 endif()
 
-message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
-message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
-message(STATUS "Using C compiler: ${CMAKE_C_COMPILER}")
-message(STATUS "Using CXX compiler: ${CMAKE_CXX_COMPILER}")
-message(STATUS "LLVM include directories: ${LLVM_INCLUDE_DIRS}")
-message(STATUS "LLVM definitions: ${LLVM_DEFINITIONS}")
+# Use only zstd library
+set(MINIMAL_LIBS ${ZSTD_LIBRARY})
 
-# Set up LLVM
-include_directories(${LLVM_INCLUDE_DIRS})
-separate_arguments(LLVM_DEFINITIONS_LIST NATIVE_COMMAND ${LLVM_DEFINITIONS})
-
-# Handle compiler-specific flag formats on Windows
-if(WIN32)
-    if(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
-        # MSVC: convert -D to /D format
-        string(REPLACE "-D" "/D" LLVM_DEFINITIONS_LIST "${LLVM_DEFINITIONS_LIST}")
-    elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-        # Clang: convert /D to -D format and filter problematic flags
-        string(REPLACE "/D" "-D" LLVM_DEFINITIONS_LIST "${LLVM_DEFINITIONS_LIST}")
-        list(FILTER LLVM_DEFINITIONS_LIST EXCLUDE REGEX "/DLLVM_DISABLE_ABI_BREAKING_CHECKS_ENFORCING")
-    endif()
-endif()
-
-add_definitions(${LLVM_DEFINITIONS_LIST})
-
-# Find the libraries that correspond to the LLVM components
-# Include target-specific components for the current architecture
-if(TARGET_ARCH STREQUAL "arm64")
-    llvm_map_components_to_libnames(llvm_libs support core irreader executionengine interpreter mcjit nativecodegen AArch64 AArch64AsmParser AArch64CodeGen AArch64Desc AArch64Disassembler AArch64Info)
-elseif(WIN32)
-    # Windows typically uses x86_64, but also include additional Windows-specific components
-    llvm_map_components_to_libnames(llvm_libs support core irreader executionengine interpreter mcjit nativecodegen X86 X86AsmParser X86CodeGen X86Desc X86Disassembler X86Info)
-else()
-    # Other Unix-like systems (Linux, etc.)
-    llvm_map_components_to_libnames(llvm_libs support core irreader executionengine interpreter mcjit nativecodegen X86 X86AsmParser X86CodeGen X86Desc X86Disassembler X86Info)
-endif()
-
-# Combine LLVM libraries with our zstd library
-if(WIN32)
-    # On Windows, use the target directly
-    set(MINIMAL_LLVM_LIBS ${llvm_libs} ${ZSTD_LIBRARY})
-else()
-    # On other platforms, use the library path
-    set(MINIMAL_LLVM_LIBS ${llvm_libs} "${ZSTD_LIBRARY}")
-endif()
-
-# Combine all sources
+# Combine all sources (excluding CODEGEN)
 set(ALL_SOURCES
     ${MAIN_SOURCES}
     ${LEXER_SOURCES}
@@ -205,7 +149,6 @@ set(ALL_SOURCES
     ${OOP_SOURCES}
     ${MEMORY_SOURCES}
     ${SEMANTIC_SOURCES}
-    ${CODEGEN_SOURCES}
 )
 
 # Create the executable
@@ -216,12 +159,12 @@ if(TARGET ${ZSTD_TARGET})
     add_dependencies(miniswift ${ZSTD_TARGET})
 endif()
 
-# Link with LLVM libraries
-target_link_libraries(miniswift PRIVATE ${MINIMAL_LLVM_LIBS})
+# Link with minimal libraries (no LLVM)
+target_link_libraries(miniswift PRIVATE ${MINIMAL_LIBS})
 # Add platform-specific system libraries
 if(APPLE)
-    # macOS frameworks and libraries
-    target_link_libraries(miniswift PRIVATE "-framework CoreFoundation" "-framework Security" "-lz")
+    # macOS frameworks and libraries - no LLVM dependencies
+    # Use standard system libraries
 elseif(WIN32)
     # Windows system libraries
     target_link_libraries(miniswift PRIVATE 

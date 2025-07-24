@@ -60,6 +60,10 @@ else()
     # 设置安装目录
     set(ZSTD_INSTALL_DIR "${CMAKE_CURRENT_BINARY_DIR}/install")
     
+    # 创建必要的目录
+    file(MAKE_DIRECTORY "${ZSTD_INSTALL_DIR}/lib")
+    file(MAKE_DIRECTORY "${ZSTD_INSTALL_DIR}/include")
+    
     # 下载并编译zstd
     ExternalProject_Add(
         zstd_external
@@ -84,6 +88,9 @@ else()
         INTERFACE_INCLUDE_DIRECTORIES "${ZSTD_INSTALL_DIR}/include"
     )
     add_dependencies(zstd_target zstd_external)
+    
+    # 创建LLVM期望的别名目标
+    add_library(zstd::libzstd_static ALIAS zstd_target)
     
     # 设置变量供父项目使用
     set(ZSTD_LIBRARY "${ZSTD_INSTALL_DIR}/lib/libzstd.a" PARENT_SCOPE)

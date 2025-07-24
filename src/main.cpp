@@ -1,11 +1,9 @@
-#include "codegen/LLVMCodeGenerator.h"
 #include "interpreter/Interpreter.h"
 #include "lexer/Lexer.h"
 #include "parser/Parser.h"
 #include "semantic/SemanticAnalyzer.h"
 #include <fstream>
 #include <iostream>
-#include <llvm/Support/raw_ostream.h>
 #include <memory>
 #include <sstream>
 
@@ -58,62 +56,7 @@ void run(const std::string &source) {
 
       std::cout << "Semantic analysis completed successfully." << std::endl;
 
-      // Generate LLVM IR if enabled
-      if (enableLLVMCodeGen && analysisResult.typedAST) {
-        try {
-          auto codeGenerator = std::make_shared<miniswift::LLVMCodeGenerator>();
-          auto codeGenResult =
-              codeGenerator->generateCode(*analysisResult.typedAST);
-
-          if (!codeGenResult.errors.empty()) {
-            std::cerr << "CODE GENERATION ERRORS:" << std::endl;
-            for (const auto &error : codeGenResult.errors) {
-              std::cerr << "  " << error.message << std::endl;
-            }
-            return;
-          }
-
-          std::cout << "LLVM IR generation completed successfully."
-                    << std::endl;
-
-          // Compile to executable if requested
-          if (compileToExecutable) {
-            std::string outputFile = "output";
-            if (codeGenerator->compileToExecutable(outputFile)) {
-              std::cout << "Compilation to executable completed successfully." << std::endl;
-              std::cout << "Output file: " << outputFile << ".exe" << std::endl;
-            } else {
-              std::cerr << "Failed to compile to executable." << std::endl;
-              // 显示详细的错误信息
-              auto newResult = codeGenerator->generateCode(*analysisResult.typedAST);
-              if (!newResult.errors.empty()) {
-                std::cerr << "COMPILATION ERRORS:" << std::endl;
-                for (const auto &error : newResult.errors) {
-                  std::cerr << "  " << error.message << std::endl;
-                }
-              }
-              if (!newResult.warnings.empty()) {
-                std::cerr << "COMPILATION WARNINGS:" << std::endl;
-                for (const auto &warning : newResult.warnings) {
-                  std::cerr << "  " << warning << std::endl;
-                }
-              }
-            }
-          } else {
-            // Print generated IR only if not compiling
-            if (codeGenResult.module) {
-              std::cout << "Generated LLVM IR:" << std::endl;
-              std::string irString;
-              llvm::raw_string_ostream irStream(irString);
-              codeGenResult.module->print(irStream, nullptr);
-              std::cout << irString << std::endl;
-            }
-          }
-
-        } catch (const std::exception &e) {
-          std::cerr << "CODE GENERATION ERROR: " << e.what() << std::endl;
-        }
-      }
+      // LLVM code generation disabled - semantic analysis only
 
     } catch (const std::exception &e) {
       std::cerr << "SEMANTIC ANALYSIS ERROR: " << e.what() << std::endl;
@@ -144,9 +87,12 @@ void printUsage() {
   std::cout << "Usage: miniswift [options] [script]" << std::endl;
   std::cout << "Options:" << std::endl;
   std::cout << "  -s, --semantic    Enable semantic analysis" << std::endl;
-  std::cout << "  -l, --llvm        Enable LLVM code generation (requires -s)"
-            << std::endl;
-  std::cout << "  -c, --compile     Compile to executable (requires -l)" << std::endl;
+  // LLVM options disabled
+  // std::cout << "  -l, --llvm        Enable LLVM code generation (requires
+  // -s)"
+  //           << std::endl;
+  // std::cout << "  -c, --compile     Compile to executable (requires -l)" <<
+  // std::endl;
   std::cout << "  -h, --help        Show this help message" << std::endl;
 }
 
@@ -160,12 +106,12 @@ int main(int argc, char *argv[]) {
     if (arg == "-s" || arg == "--semantic") {
       enableSemanticAnalysis = true;
     } else if (arg == "-l" || arg == "--llvm") {
-      enableLLVMCodeGen = true;
-      enableSemanticAnalysis = true; // LLVM code gen requires semantic analysis
+      std::cerr << "Error: LLVM code generation is disabled in this build"
+                << std::endl;
+      return 64;
     } else if (arg == "-c" || arg == "--compile") {
-      compileToExecutable = true;
-      enableLLVMCodeGen = true;
-      enableSemanticAnalysis = true; // Compilation requires LLVM and semantic analysis
+      std::cerr << "Error: Compilation is disabled in this build" << std::endl;
+      return 64;
     } else if (arg == "-h" || arg == "--help") {
       printUsage();
       return 0;
@@ -189,11 +135,7 @@ int main(int argc, char *argv[]) {
     std::string line;
     std::cout << "MiniSwift Interactive Mode";
     if (enableSemanticAnalysis) {
-      std::cout << " (Semantic Analysis Enabled";
-      if (enableLLVMCodeGen) {
-        std::cout << " + LLVM Code Generation";
-      }
-      std::cout << ")";
+      std::cout << " (Semantic Analysis Enabled)";
     }
     std::cout << std::endl;
     std::cout << "input 'exit' or 'quit' to exit" << std::endl;

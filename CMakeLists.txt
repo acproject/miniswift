@@ -98,10 +98,9 @@ set(SEMANTIC_SOURCES
     src/semantic/TypedAST.cpp
 )
 
-# CODEGEN_SOURCES removed - no LLVM code generation
-# set(CODEGEN_SOURCES
-#     src/codegen/LLVMCodeGenerator.cpp
-# )
+set(CODEGEN_SOURCES
+    src/codegen/LLVMCodeGenerator.cpp
+)
 
 set(MAIN_SOURCES
     src/main.cpp
@@ -124,7 +123,21 @@ include_directories("${ZSTD_INCLUDE_DIR}")
 
 message(STATUS "Using C compiler: ${CMAKE_C_COMPILER}")
 message(STATUS "Using CXX compiler: ${CMAKE_CXX_COMPILER}")
-message(STATUS "Building without LLVM code generation - interpreter mode only")
+# Find LLVM
+find_package(LLVM REQUIRED CONFIG)
+
+message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
+message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
+
+# Set up LLVM
+include_directories(${LLVM_INCLUDE_DIRS})
+separate_arguments(LLVM_DEFINITIONS_LIST NATIVE_COMMAND ${LLVM_DEFINITIONS})
+add_definitions(${LLVM_DEFINITIONS_LIST})
+
+# Find the libraries that correspond to the LLVM components
+llvm_map_components_to_libnames(llvm_libs support core irreader executionengine interpreter mc mcjit bitwriter x86codegen x86asmparser x86desc x86disassembler x86info target)
+
+message(STATUS "Building with LLVM code generation enabled")
 
 # Set up basic compiler flags
 if(WIN32)
@@ -137,10 +150,10 @@ else()
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -frtti")
 endif()
 
-# Use only zstd library
-set(MINIMAL_LIBS ${ZSTD_LIBRARY})
+# Use zstd and LLVM libraries
+set(ALL_LIBS ${ZSTD_LIBRARY} ${llvm_libs})
 
-# Combine all sources (excluding CODEGEN)
+# Combine all sources (including CODEGEN)
 set(ALL_SOURCES
     ${MAIN_SOURCES}
     ${LEXER_SOURCES}
@@ -149,6 +162,7 @@ set(ALL_SOURCES
     ${OOP_SOURCES}
     ${MEMORY_SOURCES}
     ${SEMANTIC_SOURCES}
+    ${CODEGEN_SOURCES}
 )
 
 # Create the executable
@@ -159,8 +173,8 @@ if(TARGET ${ZSTD_TARGET})
     add_dependencies(miniswift ${ZSTD_TARGET})
 endif()
 
-# Link with minimal libraries (no LLVM)
-target_link_libraries(miniswift PRIVATE ${MINIMAL_LIBS})
+# Link with all libraries (including LLVM)
+target_link_libraries(miniswift PRIVATE ${ALL_LIBS})
 # Add platform-specific system libraries
 if(APPLE)
     # macOS frameworks and libraries - no LLVM dependencies

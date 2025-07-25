@@ -21,8 +21,12 @@
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/ExecutionEngine/GenericValue.h>
 #include <llvm/ExecutionEngine/MCJIT.h>
+#include <llvm/ExecutionEngine/Orc/LLJIT.h>
+#include <llvm/ExecutionEngine/Orc/ThreadSafeModule.h>
+#include <llvm/ExecutionEngine/Orc/ExecutionUtils.h>
 #include <llvm/Transforms/Scalar.h>
 #include <llvm/Transforms/Utils.h>
+#include <llvm/Transforms/Utils/Cloning.h>
 #include <iostream>
 #include <optional>
 #include <cstdlib>
@@ -94,33 +98,99 @@ bool LLVMCodeGenerator::initializeJIT() {
         return false;
     }
     
-    std::string errorStr;
-    executionEngine_.reset(llvm::EngineBuilder(std::unique_ptr<llvm::Module>(module_.release()))
-        .setErrorStr(&errorStr)
-        .setEngineKind(llvm::EngineKind::JIT)
-        .create());
-    
-    if (!executionEngine_) {
-        reportError("Failed to create JIT execution engine: " + errorStr);
+    // 使用现代LLVM ORC JIT API
+    auto jitExpected = llvm::orc::LLJITBuilder().create();
+    if (!jitExpected) {
+        std::string errorStr;
+        llvm::raw_string_ostream errorStream(errorStr);
+        errorStream << jitExpected.takeError();
+        reportError("Failed to create LLJIT: " + errorStr);
         return false;
+    }
+    
+    // 保存JIT实例
+    jit_ = std::move(*jitExpected);
+    
+    // 添加符号生成器来解析外部符号
+    auto& mainJD = jit_->getMainJITDylib();
+    auto dataLayout = jit_->getDataLayout();
+    auto generator = llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
+        dataLayout.getGlobalPrefix());
+    if (!generator) {
+        std::string errorStr;
+        llvm::raw_string_ostream errorStream(errorStr);
+        errorStream << generator.takeError();
+        reportError("Failed to create symbol generator: " + errorStr);
+        return false;
+    }
+    mainJD.addGenerator(std::move(*generator));
+    
+    // 克隆模块以保留原始模块
+    auto moduleClone = llvm::CloneModule(*module_);
+    
+    // 创建新的上下文用于JIT
+    auto jitContext = std::make_unique<llvm::LLVMContext>();
+    
+    // 创建线程安全的模块
+    auto tsm = llvm::orc::ThreadSafeModule(std::move(moduleClone), std::move(jitContext));
+    
+    // 添加模块到JIT - 使用正确的方法签名
+    auto err = jit_->addIRModule(std::move(tsm));
+    if (err) {
+        std::string errorStr;
+        llvm::raw_string_ostream errorStream(errorStr);
+        errorStream << err;
+        reportError("Failed to add module to JIT: " + errorStr);
+        return false;
+    }
+    
+    reportWarning("JIT initialization completed with modern ORC API");
+    
+    // 输出错误和警告信息用于调试
+    for (const auto& error : errors_) {
+        std::cerr << "Error: " << error.message << std::endl;
+    }
+    for (const auto& warning : warnings_) {
+        std::cerr << "Warning: " << warning << std::endl;
     }
     
     return true;
 }
 
 llvm::GenericValue LLVMCodeGenerator::executeFunction(const std::string& functionName, const std::vector<llvm::GenericValue>& args) {
-    if (!executionEngine_) {
-        reportError("JIT execution engine not initialized");
+    if (!jit_) {
+        reportError("JIT not initialized");
         return llvm::GenericValue();
     }
     
-    llvm::Function* function = executionEngine_->FindFunctionNamed(functionName);
-    if (!function) {
-        reportError("Function not found: " + functionName);
+    // 查找函数符号
+    auto symbolExpected = jit_->lookup(functionName);
+    if (!symbolExpected) {
+        std::string errorStr;
+        llvm::raw_string_ostream errorStream(errorStr);
+        errorStream << symbolExpected.takeError();
+        reportError("Function not found: " + functionName + ". Error: " + errorStr);
         return llvm::GenericValue();
     }
     
-    return executionEngine_->runFunction(function, args);
+    // 获取函数指针
+    auto functionPtr = symbolExpected->getValue();
+    
+    // 对于简单的无参数函数，直接调用
+    if (args.empty()) {
+        // 假设是返回int的函数
+        typedef int (*FuncPtr)();
+        FuncPtr func = reinterpret_cast<FuncPtr>(functionPtr);
+        int result = func();
+        
+        llvm::GenericValue gv;
+        gv.IntVal = llvm::APInt(32, result);
+        return gv;
+    }
+    
+    // 对于有参数的函数，需要更复杂的处理
+    reportWarning("Function execution with arguments not fully implemented");
+    return llvm::GenericValue();
 }
 
 void* LLVMCodeGenerator::getCompiledFunction(const std::string& functionName) {
@@ -504,10 +574,99 @@ llvm::Value* LLVMCodeGenerator::generateExpression(const Expr* expr) {
     // 简单的原始Expr处理 - 这里可以根据需要扩展
     if (!expr) return nullptr;
     
-    // TODO: 根据Expr的具体类型进行处理
-    // 这里可能需要根据实际的Expr类型来分发到相应的处理函数
-    reportError("Raw Expr generation not fully implemented yet");
-    return nullptr;
+    // 根据Expr的具体类型进行处理
+    if (auto literal = dynamic_cast<const Literal*>(expr)) {
+        const Token& token = literal->value;
+        
+        switch (token.type) {
+            case TokenType::IntegerLiteral: {
+                int64_t value = std::stoll(token.lexeme);
+                return createIntConstant(value);
+            }
+            case TokenType::FloatingLiteral: {
+                double value = std::stod(token.lexeme);
+                return createFloatConstant(value);
+            }
+            case TokenType::True:
+                return createBoolConstant(true);
+            case TokenType::False:
+                return createBoolConstant(false);
+            case TokenType::StringLiteral: {
+                // Remove quotes from string literal
+                std::string value = token.lexeme;
+                if (value.length() >= 2 && value.front() == '"' && value.back() == '"') {
+                    value = value.substr(1, value.length() - 2);
+                }
+                return createStringConstant(value);
+            }
+            default:
+                reportError("Unsupported literal type: " + token.lexeme);
+                return nullptr;
+        }
+    } else if (auto varExpr = dynamic_cast<const VarExpr*>(expr)) {
+        VariableInfo* varInfo = lookupVariable(varExpr->name.lexeme);
+        if (!varInfo) {
+            reportError("Undefined variable: " + varExpr->name.lexeme);
+            return nullptr;
+        }
+        return builder_->CreateLoad(varInfo->type, varInfo->value, varExpr->name.lexeme);
+    } else if (auto binary = dynamic_cast<const Binary*>(expr)) {
+        llvm::Value* left = generateExpression(binary->left.get());
+        llvm::Value* right = generateExpression(binary->right.get());
+        
+        const std::string& op = binary->op.lexeme;
+        
+        // 算术运算
+        if (op == "+") {
+            if (left->getType()->isIntegerTy()) {
+                return builder_->CreateAdd(left, right, "add");
+            } else if (left->getType()->isFloatingPointTy()) {
+                return builder_->CreateFAdd(left, right, "fadd");
+            }
+        } else if (op == "-") {
+            if (left->getType()->isIntegerTy()) {
+                return builder_->CreateSub(left, right, "sub");
+            } else if (left->getType()->isFloatingPointTy()) {
+                return builder_->CreateFSub(left, right, "fsub");
+            }
+        } else if (op == "*") {
+            if (left->getType()->isIntegerTy()) {
+                return builder_->CreateMul(left, right, "mul");
+            } else if (left->getType()->isFloatingPointTy()) {
+                return builder_->CreateFMul(left, right, "fmul");
+            }
+        } else if (op == "/") {
+            if (left->getType()->isIntegerTy()) {
+                return builder_->CreateSDiv(left, right, "div");
+            } else if (left->getType()->isFloatingPointTy()) {
+                return builder_->CreateFDiv(left, right, "fdiv");
+            }
+        }
+        
+        reportError("Unsupported binary operator: " + op);
+        return nullptr;
+    } else if (auto unary = dynamic_cast<const Unary*>(expr)) {
+        llvm::Value* operand = generateExpression(unary->right.get());
+        const std::string& op = unary->op.lexeme;
+        
+        if (op == "-") {
+            if (operand->getType()->isIntegerTy()) {
+                return builder_->CreateNeg(operand, "neg");
+            } else if (operand->getType()->isFloatingPointTy()) {
+                return builder_->CreateFNeg(operand, "fneg");
+            }
+        } else if (op == "!") {
+            return builder_->CreateNot(operand, "not");
+        }
+        
+        reportError("Unsupported unary operator: " + op);
+        return nullptr;
+    } else if (auto grouping = dynamic_cast<const Grouping*>(expr)) {
+        return generateExpression(grouping->expression.get());
+    } else {
+        reportWarning("Unsupported raw expression type, skipping");
+        return nullptr;
+    }
 }
 
 void LLVMCodeGenerator::generateStatement(const TypedStmt& stmt) {
@@ -516,12 +675,93 @@ void LLVMCodeGenerator::generateStatement(const TypedStmt& stmt) {
 
 void LLVMCodeGenerator::generateStatement(const Stmt* stmt) {
     // 简单的原始Stmt处理 - 这里可以根据需要扩展
-    // 目前只是一个占位符实现
     if (!stmt) return;
     
-    // TODO: 根据Stmt的具体类型进行处理
-    // 这里可能需要根据实际的Stmt类型来分发到相应的处理函数
-    reportError("Raw Stmt generation not fully implemented yet");
+    // 根据Stmt的具体类型进行处理
+    if (auto funcStmt = dynamic_cast<const FunctionStmt*>(stmt)) {
+        // 创建函数类型
+        std::vector<llvm::Type*> paramTypes;
+        for (const auto& param : funcStmt->parameters) {
+            paramTypes.push_back(builder_->getInt64Ty()); // 默认为int64类型
+        }
+        
+        // 根据函数声明确定返回类型
+        llvm::Type* returnType = builder_->getInt64Ty(); // 默认返回int64 (Swift Int)
+        llvm::FunctionType* funcType = llvm::FunctionType::get(returnType, paramTypes, false);
+        
+        // 创建函数
+        llvm::Function* function = llvm::Function::Create(
+            funcType, llvm::Function::ExternalLinkage, funcStmt->name.lexeme, module_.get());
+        
+        // 保存当前函数
+        llvm::Function* prevFunction = currentFunction_;
+        currentFunction_ = function;
+        
+        // 创建入口基本块
+        llvm::BasicBlock* entryBB = createBasicBlock("entry", function);
+        builder_->SetInsertPoint(entryBB);
+        
+        // 进入新作用域
+        enterScope();
+        
+        // 为参数创建alloca并存储参数值
+        auto argIt = function->arg_begin();
+        for (size_t i = 0; i < funcStmt->parameters.size(); ++i, ++argIt) {
+            llvm::Type* paramType = paramTypes[i];
+            llvm::Value* alloca = allocateVariable(funcStmt->parameters[i].name.lexeme, paramType);
+            builder_->CreateStore(&*argIt, alloca);
+            declareVariable(funcStmt->parameters[i].name.lexeme, VariableInfo(alloca, paramType));
+        }
+        
+        // 生成函数体
+        generateStatement(funcStmt->body.get());
+        
+        // 如果函数没有显式返回，添加默认返回
+        if (!builder_->GetInsertBlock()->getTerminator()) {
+            if (returnType->isVoidTy()) {
+                builder_->CreateRetVoid();
+            } else {
+                // 为非void函数创建默认返回值
+                llvm::Value* defaultValue = llvm::Constant::getNullValue(returnType);
+                builder_->CreateRet(defaultValue);
+            }
+        }
+        
+        // 退出作用域
+        exitScope();
+        
+        // 恢复之前的函数
+        currentFunction_ = prevFunction;
+        
+        // 记录函数信息
+        std::vector<std::string> paramNames;
+        for (const auto& param : funcStmt->parameters) {
+            paramNames.push_back(param.name.lexeme);
+        }
+        
+        // 创建一个基本的函数类型
+        auto voidType = typeSystem_->getVoidType();
+        std::vector<std::shared_ptr<Type>> swiftParamTypes;
+        auto swiftFuncType = std::make_shared<FunctionType>(swiftParamTypes, voidType);
+        
+        functions_[funcStmt->name.lexeme] = FunctionInfo(function, swiftFuncType, paramNames);
+        
+    } else if (auto returnStmt = dynamic_cast<const ReturnStmt*>(stmt)) {
+        if (returnStmt->value) {
+            llvm::Value* returnValue = generateExpression(returnStmt->value.get());
+            builder_->CreateRet(returnValue);
+        } else {
+            builder_->CreateRetVoid();
+        }
+    } else if (auto blockStmt = dynamic_cast<const BlockStmt*>(stmt)) {
+        enterScope();
+        for (const auto& s : blockStmt->statements) {
+            generateStatement(s.get());
+        }
+        exitScope();
+    } else {
+        reportWarning("Unsupported raw statement type, skipping");
+    }
 }
 
 llvm::Value* LLVMCodeGenerator::generateLiteral(const TypedLiteral& literal) {

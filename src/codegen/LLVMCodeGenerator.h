@@ -16,6 +16,8 @@
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/ExecutionEngine/MCJIT.h>
 #include <llvm/ExecutionEngine/GenericValue.h>
+#include <llvm/ExecutionEngine/Orc/LLJIT.h>
+#include <llvm/ExecutionEngine/Orc/ThreadSafeModule.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Target/TargetMachine.h>
 #include <llvm/IR/LegacyPassManager.h>
@@ -144,6 +146,7 @@ private:
     std::unique_ptr<llvm::Module> module_;
     std::unique_ptr<llvm::IRBuilder<>> builder_;
     std::unique_ptr<llvm::ExecutionEngine> executionEngine_;
+    std::unique_ptr<llvm::orc::LLJIT> jit_;
     
     // 符号表和类型映射
     std::unordered_map<std::string, VariableInfo> variables_;

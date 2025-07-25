@@ -91,6 +91,10 @@ set(MEMORY_SOURCES
     src/interpreter/Memory/MemoryManager.cpp
 )
 
+set(CONCURRENCY_SOURCES
+    src/interpreter/Concurrency/ConcurrencyRuntime.cpp
+)
+
 set(SEMANTIC_SOURCES
     src/semantic/SemanticAnalyzer.cpp
     src/semantic/SymbolTable.cpp
@@ -233,12 +237,14 @@ if(WIN32)
 else()
     # Unix-like systems (macOS, Linux)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -frtti")
+    # Add pthread support for concurrency
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
 endif()
 
 # Use zstd and LLVM libraries
 set(ALL_LIBS ${ZSTD_LIBRARY} ${llvm_libs})
 
-# Combine all sources (including CODEGEN)
+# Combine all sources (including CODEGEN and CONCURRENCY)
 set(ALL_SOURCES
     ${MAIN_SOURCES}
     ${LEXER_SOURCES}
@@ -248,6 +254,7 @@ set(ALL_SOURCES
     ${MEMORY_SOURCES}
     ${SEMANTIC_SOURCES}
     ${CODEGEN_SOURCES}
+    ${CONCURRENCY_SOURCES}
 )
 
 # Create the executable

@@ -103,6 +103,7 @@ public:
     bool compileToObjectFile(const std::string& filename);
     bool compileToExecutable(const std::string& filename);
     bool compileToAssembly(const std::string& filename);
+    bool emitLLVMIR(const std::string& filename);
     
     // 优化
     void optimizeModule(llvm::Module* module);

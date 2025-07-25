@@ -232,13 +232,18 @@ bool LLVMCodeGenerator::compileToObjectFile(const std::string& filename) {
     }
     
     // 获取目标机器
+    reportWarning("Initializing target machine for object file generation...");
     auto targetMachine = getTargetMachine();
     if (!targetMachine) {
         reportError("Failed to get target machine");
         return false;
     }
     
+    reportWarning("Target triple: " + targetMachine->getTargetTriple().str());
+    reportWarning("Target CPU: " + targetMachine->getTargetCPU().str());
+    
     // 设置数据布局
+    reportWarning("Setting up data layout...");
     module_->setDataLayout(targetMachine->createDataLayout());
     
     std::error_code errorCode;
@@ -249,6 +254,7 @@ bool LLVMCodeGenerator::compileToObjectFile(const std::string& filename) {
         return false;
     }
     
+    reportWarning("Setting up compilation passes...");
     llvm::legacy::PassManager pass;
     auto fileType = llvm::CodeGenFileType::ObjectFile;
     
@@ -257,9 +263,11 @@ bool LLVMCodeGenerator::compileToObjectFile(const std::string& filename) {
         return false;
     }
     
+    reportWarning("Running compilation passes...");
     pass.run(*module_);
     dest.flush();
     
+    reportWarning("Object file generation completed successfully.");
     return true;
 }
 
@@ -269,12 +277,17 @@ bool LLVMCodeGenerator::compileToAssembly(const std::string& filename) {
         return false;
     }
     
+    reportWarning("Initializing target machine for assembly generation...");
     auto targetMachine = getTargetMachine();
     if (!targetMachine) {
         reportError("Failed to get target machine");
         return false;
     }
     
+    reportWarning("Target triple: " + targetMachine->getTargetTriple().str());
+    reportWarning("Target CPU: " + targetMachine->getTargetCPU().str());
+    
+    reportWarning("Setting up data layout...");
     module_->setDataLayout(targetMachine->createDataLayout());
     
     std::error_code errorCode;
@@ -285,6 +298,7 @@ bool LLVMCodeGenerator::compileToAssembly(const std::string& filename) {
         return false;
     }
     
+    reportWarning("Setting up assembly generation passes...");
     llvm::legacy::PassManager pass;
     auto fileType = llvm::CodeGenFileType::AssemblyFile;
     
@@ -293,9 +307,11 @@ bool LLVMCodeGenerator::compileToAssembly(const std::string& filename) {
         return false;
     }
     
+    reportWarning("Running assembly generation passes...");
     pass.run(*module_);
     dest.flush();
     
+    reportWarning("Assembly generation completed successfully.");
     return true;
 }
 
@@ -306,13 +322,16 @@ bool LLVMCodeGenerator::compileToExecutable(const std::string& filename) {
     }
     
     // 首先编译为目标文件
+    reportWarning("Step 1: Compiling to object file...");
     std::string objFilename = filename + ".o";
     if (!compileToObjectFile(objFilename)) {
         reportError("Failed to compile to object file");
         return false;
     }
+    reportWarning("✓ Object file created: " + objFilename);
     
     // 使用系统链接器创建可执行文件
+    reportWarning("Step 2: Linking to create executable...");
     std::string linkCommand;
     
 #ifdef _WIN32
@@ -338,10 +357,12 @@ bool LLVMCodeGenerator::compileToExecutable(const std::string& filename) {
 #else
     // Unix-like系统使用gcc
     linkCommand = "gcc -o " + filename + " " + objFilename;
+    reportWarning("Linking with gcc: " + linkCommand);
     int result = std::system(linkCommand.c_str());
 #endif
     
     // 清理临时目标文件
+    reportWarning("Cleaning up temporary object file...");
     std::remove(objFilename.c_str());
     
     if (result != 0) {
@@ -349,6 +370,28 @@ bool LLVMCodeGenerator::compileToExecutable(const std::string& filename) {
         reportError("Make sure you have a C/C++ compiler (clang++, gcc, or Visual Studio) installed and in your PATH.");
         return false;
     }
+    
+    reportWarning("✓ Executable linking completed successfully.");
+    return true;
+}
+
+bool LLVMCodeGenerator::emitLLVMIR(const std::string& filename) {
+    if (!module_) {
+        reportError("No module available for LLVM IR emission");
+        return false;
+    }
+    
+    std::error_code errorCode;
+    llvm::raw_fd_ostream dest(filename, errorCode, llvm::sys::fs::OF_None);
+    
+    if (errorCode) {
+        reportError("Could not open file for LLVM IR output: " + errorCode.message());
+        return false;
+    }
+    
+    // 输出LLVM IR到文件
+    module_->print(dest, nullptr);
+    dest.flush();
     
     return true;
 }

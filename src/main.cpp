@@ -16,6 +16,7 @@ bool enableLLVMCodeGen = false;
 bool compileToExecutable = false;
 bool compileToObject = false;
 bool compileToAssembly = false;
+bool emitLLVMIR = false;
 bool showVersion = false;
 bool verboseOutput = false;
 std::string outputFile = "";
@@ -106,42 +107,75 @@ void run(const std::string &source) {
           
           if (verboseOutput) {
             std::cout << "LLVM IR generation completed successfully." << std::endl;
+            std::cout << "Generated module: " << codeGenResult.module->getName().str() << std::endl;
+            std::cout << "Module contains " << codeGenResult.module->size() << " functions" << std::endl;
           }
           
           // 根据编译选项生成不同的输出
           if (compileToExecutable) {
             std::string executableName = outputFile.empty() ? "output" : outputFile;
             if (verboseOutput) {
-              std::cout << "Compiling to executable: " << executableName << std::endl;
+              std::cout << "Starting compilation to executable..." << std::endl;
+              std::cout << "Target executable: " << executableName << std::endl;
+              std::cout << "Step 1: Generating object file..." << std::endl;
             }
             if (!codeGenerator->compileToExecutable(executableName)) {
               std::cerr << "Failed to compile to executable" << std::endl;
               hadError = true;
               return;
             }
-            std::cout << "Successfully compiled to executable: " << executableName << std::endl;
+            std::cout << "✓ Successfully compiled to executable: " << executableName << std::endl;
+            if (verboseOutput) {
+              std::cout << "Compilation completed successfully." << std::endl;
+            }
           } else if (compileToObject) {
             std::string objectName = outputFile.empty() ? "output.o" : outputFile;
             if (verboseOutput) {
-              std::cout << "Compiling to object file: " << objectName << std::endl;
+              std::cout << "Starting compilation to object file..." << std::endl;
+              std::cout << "Target object file: " << objectName << std::endl;
+              std::cout << "Initializing target machine..." << std::endl;
             }
             if (!codeGenerator->compileToObjectFile(objectName)) {
               std::cerr << "Failed to compile to object file" << std::endl;
               hadError = true;
               return;
             }
-            std::cout << "Successfully compiled to object file: " << objectName << std::endl;
+            std::cout << "✓ Successfully compiled to object file: " << objectName << std::endl;
+            if (verboseOutput) {
+              std::cout << "Object file generation completed." << std::endl;
+            }
           } else if (compileToAssembly) {
             std::string assemblyName = outputFile.empty() ? "output.s" : outputFile;
             if (verboseOutput) {
-              std::cout << "Compiling to assembly: " << assemblyName << std::endl;
+              std::cout << "Starting compilation to assembly..." << std::endl;
+              std::cout << "Target assembly file: " << assemblyName << std::endl;
+              std::cout << "Generating assembly code..." << std::endl;
             }
             if (!codeGenerator->compileToAssembly(assemblyName)) {
               std::cerr << "Failed to compile to assembly" << std::endl;
               hadError = true;
               return;
             }
-            std::cout << "Successfully compiled to assembly: " << assemblyName << std::endl;
+            std::cout << "✓ Successfully compiled to assembly: " << assemblyName << std::endl;
+            if (verboseOutput) {
+              std::cout << "Assembly generation completed." << std::endl;
+            }
+          } else if (emitLLVMIR) {
+            std::string llvmIRName = outputFile.empty() ? "output.ll" : outputFile;
+            if (verboseOutput) {
+              std::cout << "Starting LLVM IR emission..." << std::endl;
+              std::cout << "Target LLVM IR file: " << llvmIRName << std::endl;
+              std::cout << "Writing LLVM IR to file..." << std::endl;
+            }
+            if (!codeGenerator->emitLLVMIR(llvmIRName)) {
+              std::cerr << "Failed to emit LLVM IR" << std::endl;
+              hadError = true;
+              return;
+            }
+            std::cout << "✓ Successfully emitted LLVM IR to: " << llvmIRName << std::endl;
+            if (verboseOutput) {
+              std::cout << "LLVM IR emission completed." << std::endl;
+            }
           } else {
             // 默认JIT执行
             if (verboseOutput) {
@@ -202,6 +236,7 @@ void printUsage() {
   std::cout << "  -c, --compile     Compile to executable (requires -l)" << std::endl;
   std::cout << "  -o, --object      Compile to object file (requires -l)" << std::endl;
   std::cout << "  -S, --assembly    Compile to assembly (requires -l)" << std::endl;
+  std::cout << "  --emit-llvm       Output LLVM IR (requires -l)" << std::endl;
   std::cout << "  -O, --output FILE Specify output file name" << std::endl;
   std::cout << "  -v, --verbose     Enable verbose output" << std::endl;
   std::cout << "  --version         Show version information" << std::endl;
@@ -230,6 +265,10 @@ int main(int argc, char *argv[]) {
       enableSemanticAnalysis = true;
     } else if (arg == "-S" || arg == "--assembly") {
       compileToAssembly = true;
+      enableLLVMCodeGen = true;
+      enableSemanticAnalysis = true;
+    } else if (arg == "--emit-llvm") {
+      emitLLVMIR = true;
       enableLLVMCodeGen = true;
       enableSemanticAnalysis = true;
     } else if (arg == "-O" || arg == "--output") {
@@ -272,7 +311,7 @@ int main(int argc, char *argv[]) {
     return 64;
   }
 
-  if ((compileToExecutable || compileToObject || compileToAssembly) && !enableLLVMCodeGen) {
+  if ((compileToExecutable || compileToObject || compileToAssembly || emitLLVMIR) && !enableLLVMCodeGen) {
     std::cerr << "Error: Compilation options require LLVM code generation (-l)" << std::endl;
     return 64;
   }

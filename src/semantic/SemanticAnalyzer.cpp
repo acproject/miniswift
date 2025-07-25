@@ -654,14 +654,19 @@ void SemanticAnalyzer::visit(const FunctionStmt& stmt) {
         if (blockStmt) {
             std::vector<std::unique_ptr<TypedStmt>> typedStatements;
             
+            std::cerr << "DEBUG: BlockStmt has " << blockStmt->statements.size() << " statements" << std::endl;
+            
             // 分析块中的每个语句
             for (const auto& s : blockStmt->statements) {
                 std::cerr << "DEBUG: Processing statement in function body" << std::endl;
+                std::cerr << "DEBUG: Statement type: " << typeid(*s).name() << std::endl;
                 // 为每个语句创建相应的TypedStmt
                 if (auto exprStmt = dynamic_cast<const ExprStmt*>(s.get())) {
                     std::cerr << "DEBUG: Found ExprStmt" << std::endl;
                     // 分析表达式
                     exprStmt->expression->accept(*this);
+                    
+                    std::cerr << "DEBUG: Expression type: " << typeid(*exprStmt->expression).name() << std::endl;
                     
                     // 创建TypedExpr（简化实现）
                     std::unique_ptr<TypedExpr> typedExpr = nullptr;
@@ -717,6 +722,59 @@ void SemanticAnalyzer::visit(const FunctionStmt& stmt) {
                     auto typedExprStmt = std::make_unique<TypedExprStmt>(std::move(originalExprStmt), std::move(typedExpr));
                     std::cerr << "DEBUG: Created TypedExprStmt with TypedCall for function" << std::endl;
                     typedStatements.push_back(std::move(typedExprStmt));
+                    std::cerr << "DEBUG: Added TypedExprStmt to typedStatements, size now: " << typedStatements.size() << std::endl;
+                } else if (auto printStmt = dynamic_cast<const PrintStmt*>(s.get())) {
+                    std::cerr << "DEBUG: Found PrintStmt" << std::endl;
+                    // 将PrintStmt转换为print函数调用
+                    if (!printStmt->expressions.empty()) {
+                        // 创建print函数调用
+                         auto printVarExpr = std::make_unique<VarExpr>(Token{TokenType::Identifier, "print", 0});
+                        
+                        // 创建参数列表
+                        std::vector<std::unique_ptr<Expr>> args;
+                        for (const auto& expr : printStmt->expressions) {
+                            args.push_back(expr->clone());
+                        }
+                        
+                        // 创建Call表达式
+                        auto callExpr = std::make_unique<Call>(std::move(printVarExpr), std::move(args));
+                        
+                        // 创建TypedCall
+                        auto voidType = std::make_shared<PrimitiveType>(TypeKind::Void, "Void");
+                        
+                        // 创建类型化的callee
+                         auto typedCallee = std::make_unique<TypedVarExpr>(
+                             std::make_unique<VarExpr>(Token{TokenType::Identifier, "print", 0}), voidType);
+                        
+                        // 创建类型化的参数
+                        std::vector<std::unique_ptr<TypedExpr>> typedArgs;
+                        for (const auto& expr : printStmt->expressions) {
+                            if (auto literal = dynamic_cast<const Literal*>(expr.get())) {
+                                auto originalLiteral = std::unique_ptr<Literal>(static_cast<Literal*>(literal->clone().release()));
+                                auto intType = std::make_shared<PrimitiveType>(TypeKind::Int, "Int");
+                                typedArgs.push_back(std::make_unique<TypedLiteral>(std::move(originalLiteral), intType));
+                            }
+                        }
+                        
+                        // 创建TypedCall
+                        auto typedCall = std::make_unique<TypedCall>(std::move(callExpr), voidType, std::move(typedCallee), std::move(typedArgs));
+                        
+                        // 创建ExprStmt包装Call
+                         auto printCallExpr = std::make_unique<Call>(
+                             std::make_unique<VarExpr>(Token{TokenType::Identifier, "print", 0}),
+                            [&]() {
+                                std::vector<std::unique_ptr<Expr>> callArgs;
+                                for (const auto& expr : printStmt->expressions) {
+                                    callArgs.push_back(expr->clone());
+                                }
+                                return callArgs;
+                            }()
+                        );
+                        auto exprStmt = std::make_unique<ExprStmt>(std::move(printCallExpr));
+                        auto typedExprStmt = std::make_unique<TypedExprStmt>(std::move(exprStmt), std::move(typedCall));
+                        typedStatements.push_back(std::move(typedExprStmt));
+                        std::cerr << "DEBUG: Added TypedExprStmt with TypedCall from PrintStmt, typedStatements size: " << typedStatements.size() << std::endl;
+                    }
                 } else {
                     // 对于其他类型的语句，先简单处理
                     s->accept(*this);
@@ -724,8 +782,10 @@ void SemanticAnalyzer::visit(const FunctionStmt& stmt) {
             }
             
             // 创建TypedBlockStmt
+            std::cerr << "DEBUG: Creating TypedBlockStmt with " << typedStatements.size() << " statements" << std::endl;
             auto originalBlockStmt = std::unique_ptr<BlockStmt>(static_cast<BlockStmt*>(blockStmt->clone().release()));
             typedBody = std::make_unique<TypedBlockStmt>(std::move(originalBlockStmt), std::move(typedStatements));
+            std::cerr << "DEBUG: TypedBlockStmt created successfully" << std::endl;
         }
     }
     

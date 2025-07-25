@@ -949,12 +949,12 @@ llvm::Value* LLVMCodeGenerator::generateExpression(const Expr* expr) {
                     return nullptr;
                 }
                 
-                std::vector<llvm::Value*> args;
-                
-                // 处理参数
+                // 处理每个参数，为每个参数单独调用printf
                 for (const auto& arg : call->arguments) {
                     llvm::Value* argValue = generateExpression(arg.get());
                     if (!argValue) continue;
+                    
+                    std::vector<llvm::Value*> args;
                     
                     if (argValue->getType()->isIntegerTy()) {
                         llvm::Value* formatStr = builder_->CreateGlobalStringPtr("%lld\n");
@@ -975,7 +975,6 @@ llvm::Value* LLVMCodeGenerator::generateExpression(const Expr* expr) {
                     
                     // 调用printf
                     builder_->CreateCall(printfFunc, args, "print_call");
-                    args.clear(); // 清空参数列表，为下一个参数准备
                 }
                 
                 return nullptr; // print函数没有返回值

@@ -36,7 +36,7 @@ SemanticAnalysisResult SemanticAnalyzer::analyze(const std::vector<std::unique_p
         
         // 第二遍：进行类型检查和语义分析
         for (const auto& stmt : statements) {
-            analyzeStatement(*stmt);
+            stmt->accept(*this);
             // if (typedStmt) {
             //     currentTypedProgram->statements.push_back(typedStmt);
             // }

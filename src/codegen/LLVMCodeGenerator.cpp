@@ -13,6 +13,7 @@
 #include <llvm/Support/FileSystem.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Support/TargetSelect.h>
+#include <llvm/Support/Error.h>
 #include <llvm/TargetParser/Host.h>
 #include <llvm/MC/TargetRegistry.h>
 #include <llvm/Target/TargetOptions.h>
@@ -65,10 +66,10 @@ CodeGenResult LLVMCodeGenerator::generateModule(const std::string& moduleName, c
     try {
         // 生成运行时支持函数
         generateRuntimeFunctions();
-        // TODO: 暂时注释掉未实现的功能，避免段错误
-        // generateSwiftRuntimeSupport();
-        // generateARCSupport();
-        // generateConcurrencySupport();
+        // 生成Swift特定功能支持
+        generateSwiftRuntimeSupport();
+        generateARCSupport();
+        generateConcurrencySupport();
         
         // 遍历程序中的所有语句
         for (const auto& stmt : program.getStatements()) {
@@ -85,7 +86,11 @@ CodeGenResult LLVMCodeGenerator::generateModule(const std::string& moduleName, c
     }
     
     CodeGenResult result;
-    result.module = std::move(module_);
+    // 为了支持JIT，我们需要克隆模块而不是移动它
+    // 这样原始模块仍然可用于JIT初始化
+    if (module_) {
+        result.module = llvm::CloneModule(*module_);
+    }
     result.errors = errors_;
     result.warnings = warnings_;
     
@@ -93,20 +98,32 @@ CodeGenResult LLVMCodeGenerator::generateModule(const std::string& moduleName, c
 }
 
 bool LLVMCodeGenerator::initializeJIT() {
+    std::cerr << "DEBUG: initializeJIT method called" << std::endl;
+    std::cerr.flush();
+    
     if (!module_) {
+        std::cerr << "DEBUG: No module available" << std::endl;
         reportError("No module available for JIT compilation");
         return false;
     }
+    std::cerr << "DEBUG: Module is available" << std::endl;
+    
+    std::cout << "DEBUG: Starting JIT initialization..." << std::endl;
+    std::cout.flush();
     
     // 使用现代LLVM ORC JIT API
+    std::cout << "DEBUG: Creating LLJIT..." << std::endl;
+    std::cout.flush();
     auto jitExpected = llvm::orc::LLJITBuilder().create();
     if (!jitExpected) {
         std::string errorStr;
         llvm::raw_string_ostream errorStream(errorStr);
         errorStream << jitExpected.takeError();
         reportError("Failed to create LLJIT: " + errorStr);
+        std::cout << "DEBUG: LLJIT creation failed: " << errorStr << std::endl;
         return false;
     }
+    std::cout << "DEBUG: LLJIT created successfully" << std::endl;
     
     // 保存JIT实例
     jit_ = std::move(*jitExpected);
@@ -474,9 +491,8 @@ void LLVMCodeGenerator::visit(const TypedExprStmt& stmt) {
     // 获取原始表达式语句并处理其表达式
     const ExprStmt* originalExprStmt = static_cast<const ExprStmt*>(&stmt.getOriginalStmt());
     if (originalExprStmt && originalExprStmt->expression) {
-        // 暂时跳过表达式语句的处理，避免无限循环
-        // TODO: 实现正确的表达式语句处理
-        reportWarning("Expression statement processing skipped");
+        // 生成表达式但不使用返回值（表达式语句的副作用）
+        generateExpression(originalExprStmt->expression.get());
     }
 }
 
@@ -685,8 +701,26 @@ void LLVMCodeGenerator::generateStatement(const Stmt* stmt) {
             paramTypes.push_back(builder_->getInt64Ty()); // 默认为int64类型
         }
         
-        // 根据函数声明确定返回类型
-        llvm::Type* returnType = builder_->getInt64Ty(); // 默认返回int64 (Swift Int)
+        // 根据函数声明的返回类型来确定LLVM返回类型
+        llvm::Type* returnType;
+        std::cout << "DEBUG: Function " << funcStmt->name.lexeme << " return type: '" << funcStmt->returnType.lexeme << "'" << std::endl;
+        if (funcStmt->returnType.lexeme.empty() || funcStmt->returnType.lexeme == "Void") {
+            returnType = builder_->getVoidTy();
+            std::cout << "DEBUG: Using void return type" << std::endl;
+        } else if (funcStmt->returnType.lexeme == "Int") {
+            returnType = builder_->getInt64Ty();
+            std::cout << "DEBUG: Using int64 return type" << std::endl;
+        } else if (funcStmt->returnType.lexeme == "String") {
+            returnType = llvm::PointerType::getUnqual(*context_);
+            std::cout << "DEBUG: Using pointer return type" << std::endl;
+        } else if (funcStmt->returnType.lexeme == "Bool") {
+            returnType = builder_->getInt1Ty();
+            std::cout << "DEBUG: Using bool return type" << std::endl;
+        } else {
+            // 默认为void类型
+            returnType = builder_->getVoidTy();
+            std::cout << "DEBUG: Using default void return type for unknown type: " << funcStmt->returnType.lexeme << std::endl;
+        }
         llvm::FunctionType* funcType = llvm::FunctionType::get(returnType, paramTypes, false);
         
         // 创建函数
@@ -881,9 +915,12 @@ llvm::Value* LLVMCodeGenerator::generateUnaryOperation(const TypedUnary& unary) 
     // TypedUnary目前是占位符实现，需要添加getOperand方法
     // 暂时通过原始表达式访问
     const Unary* unaryExpr = static_cast<const Unary*>(&unary.getOriginalExpr());
-    // TODO: 正确获取Unary的operand
-    // 暂时返回nullptr，需要实现正确的operand访问
-    llvm::Value* operand = nullptr; // generateExpression(*unaryExpr->operand);
+    llvm::Value* operand = generateExpression(unaryExpr->right.get());
+    if (!operand) {
+        reportError("Failed to generate operand for unary operation");
+        return nullptr;
+    }
+    
     const std::string& op = unaryExpr->op.lexeme;
     
     if (op == "-") {
@@ -1092,9 +1129,26 @@ llvm::Function* LLVMCodeGenerator::generateFunction(const TypedFunctionStmt& fun
         paramTypes.push_back(builder_->getInt64Ty()); // 默认为int64类型
     }
     
-    // TODO: 正确实现从Token到Type的转换
-    // 暂时使用void类型作为返回类型
-    llvm::Type* returnType = builder_->getVoidTy();
+    // 根据函数声明的返回类型来确定LLVM返回类型
+    llvm::Type* returnType;
+    std::cout << "DEBUG: TypedFunction " << originalFuncStmt.name.lexeme << " return type: '" << originalFuncStmt.returnType.lexeme << "'" << std::endl;
+    if (originalFuncStmt.returnType.lexeme.empty() || originalFuncStmt.returnType.lexeme == "Void") {
+        returnType = builder_->getVoidTy();
+        std::cout << "DEBUG: Using void return type" << std::endl;
+    } else if (originalFuncStmt.returnType.lexeme == "Int") {
+        returnType = builder_->getInt64Ty();
+        std::cout << "DEBUG: Using int64 return type" << std::endl;
+    } else if (originalFuncStmt.returnType.lexeme == "String") {
+        returnType = llvm::PointerType::getUnqual(*context_);
+        std::cout << "DEBUG: Using pointer return type" << std::endl;
+    } else if (originalFuncStmt.returnType.lexeme == "Bool") {
+        returnType = builder_->getInt1Ty();
+        std::cout << "DEBUG: Using bool return type" << std::endl;
+    } else {
+        // 默认为void类型
+        returnType = builder_->getVoidTy();
+        std::cout << "DEBUG: Using default void return type for unknown type: " << originalFuncStmt.returnType.lexeme << std::endl;
+    }
     llvm::FunctionType* funcType = llvm::FunctionType::get(returnType, paramTypes, false);
     
     // 创建函数
@@ -1380,15 +1434,219 @@ llvm::StructType* LLVMCodeGenerator::generateClassType(const TypedClassStmt& cla
 }
 
 void LLVMCodeGenerator::generateSwiftRuntimeSupport() {
-    // TODO: 实现Swift运行时支持
+    // 创建Swift运行时支持函数
+    createSwiftStringType();
+    createSwiftArrayType();
+    createSwiftDictionaryType();
+    createSwiftOptionalType();
 }
 
 void LLVMCodeGenerator::generateARCSupport() {
-    // TODO: 实现ARC支持
+    // 创建ARC支持函数
+    createRetainFunction();
+    createReleaseFunction();
 }
 
 void LLVMCodeGenerator::generateConcurrencySupport() {
-    // TODO: 实现并发支持
+    // 创建并发支持函数
+    createAsyncFunction();
+    createAwaitFunction();
+    createTaskFunction();
+}
+
+// Swift运行时支持函数实现
+llvm::Function* LLVMCodeGenerator::createSwiftStringType() {
+    // 创建Swift String类型的运行时支持
+    // String在LLVM中表示为指向字符数据的指针和长度
+    std::vector<llvm::Type*> stringFields;
+    stringFields.push_back(llvm::PointerType::getUnqual(*context_)); // 字符数据指针
+    stringFields.push_back(builder_->getInt64Ty()); // 长度
+    
+    llvm::StructType* stringType = llvm::StructType::create(*context_, stringFields, "SwiftString");
+    
+    // 创建字符串创建函数
+    std::vector<llvm::Type*> createStringArgs;
+    createStringArgs.push_back(llvm::PointerType::getUnqual(*context_)); // C字符串
+    
+    llvm::FunctionType* createStringType = llvm::FunctionType::get(
+        llvm::PointerType::getUnqual(stringType), createStringArgs, false);
+    
+    llvm::Function* createStringFunc = llvm::Function::Create(
+        createStringType, llvm::Function::ExternalLinkage, "swift_string_create", module_.get());
+    
+    return createStringFunc;
+}
+
+llvm::Function* LLVMCodeGenerator::createSwiftArrayType() {
+    // 创建Swift Array类型的运行时支持
+    std::vector<llvm::Type*> arrayFields;
+    arrayFields.push_back(llvm::PointerType::getUnqual(*context_)); // 数据指针
+    arrayFields.push_back(builder_->getInt64Ty()); // 容量
+    arrayFields.push_back(builder_->getInt64Ty()); // 当前大小
+    
+    llvm::StructType* arrayType = llvm::StructType::create(*context_, arrayFields, "SwiftArray");
+    
+    // 创建数组创建函数
+    std::vector<llvm::Type*> createArrayArgs;
+    createArrayArgs.push_back(builder_->getInt64Ty()); // 初始容量
+    createArrayArgs.push_back(builder_->getInt64Ty()); // 元素大小
+    
+    llvm::FunctionType* createArrayType = llvm::FunctionType::get(
+        llvm::PointerType::getUnqual(arrayType), createArrayArgs, false);
+    
+    llvm::Function* createArrayFunc = llvm::Function::Create(
+        createArrayType, llvm::Function::ExternalLinkage, "swift_array_create", module_.get());
+    
+    return createArrayFunc;
+}
+
+llvm::Function* LLVMCodeGenerator::createSwiftDictionaryType() {
+    // 创建Swift Dictionary类型的运行时支持
+    std::vector<llvm::Type*> dictFields;
+    dictFields.push_back(llvm::PointerType::getUnqual(*context_)); // 哈希表指针
+    dictFields.push_back(builder_->getInt64Ty()); // 容量
+    dictFields.push_back(builder_->getInt64Ty()); // 当前大小
+    
+    llvm::StructType* dictType = llvm::StructType::create(*context_, dictFields, "SwiftDictionary");
+    
+    // 创建字典创建函数
+    std::vector<llvm::Type*> createDictArgs;
+    createDictArgs.push_back(builder_->getInt64Ty()); // 初始容量
+    
+    llvm::FunctionType* createDictType = llvm::FunctionType::get(
+        llvm::PointerType::getUnqual(dictType), createDictArgs, false);
+    
+    llvm::Function* createDictFunc = llvm::Function::Create(
+        createDictType, llvm::Function::ExternalLinkage, "swift_dict_create", module_.get());
+    
+    return createDictFunc;
+}
+
+llvm::Function* LLVMCodeGenerator::createSwiftOptionalType() {
+    // 创建Swift Optional类型的运行时支持
+    std::vector<llvm::Type*> optionalFields;
+    optionalFields.push_back(builder_->getInt1Ty()); // hasValue标志
+    optionalFields.push_back(llvm::PointerType::getUnqual(*context_)); // 值指针
+    
+    llvm::StructType* optionalType = llvm::StructType::create(*context_, optionalFields, "SwiftOptional");
+    
+    // 创建Optional创建函数
+    std::vector<llvm::Type*> createOptionalArgs;
+    createOptionalArgs.push_back(llvm::PointerType::getUnqual(*context_)); // 值指针
+    createOptionalArgs.push_back(builder_->getInt1Ty()); // hasValue
+    
+    llvm::FunctionType* createOptionalType = llvm::FunctionType::get(
+        llvm::PointerType::getUnqual(optionalType), createOptionalArgs, false);
+    
+    llvm::Function* createOptionalFunc = llvm::Function::Create(
+        createOptionalType, llvm::Function::ExternalLinkage, "swift_optional_create", module_.get());
+    
+    return createOptionalFunc;
+}
+
+// ARC支持函数实现
+llvm::Function* LLVMCodeGenerator::createRetainFunction() {
+    // 创建对象引用计数增加函数
+    std::vector<llvm::Type*> retainArgs;
+    retainArgs.push_back(llvm::PointerType::getUnqual(*context_)); // 对象指针
+    
+    llvm::FunctionType* retainType = llvm::FunctionType::get(
+        llvm::PointerType::getUnqual(*context_), retainArgs, false);
+    
+    llvm::Function* retainFunc = llvm::Function::Create(
+        retainType, llvm::Function::ExternalLinkage, "swift_retain", module_.get());
+    
+    return retainFunc;
+}
+
+llvm::Function* LLVMCodeGenerator::createReleaseFunction() {
+    // 创建对象引用计数减少函数
+    std::vector<llvm::Type*> releaseArgs;
+    releaseArgs.push_back(llvm::PointerType::getUnqual(*context_)); // 对象指针
+    
+    llvm::FunctionType* releaseType = llvm::FunctionType::get(
+        builder_->getVoidTy(), releaseArgs, false);
+    
+    llvm::Function* releaseFunc = llvm::Function::Create(
+        releaseType, llvm::Function::ExternalLinkage, "swift_release", module_.get());
+    
+    return releaseFunc;
+}
+
+void LLVMCodeGenerator::insertRetain(llvm::Value* object) {
+    // 插入retain调用
+    if (!object || !object->getType()->isPointerTy()) {
+        return;
+    }
+    
+    llvm::Function* retainFunc = module_->getFunction("swift_retain");
+    if (retainFunc) {
+        builder_->CreateCall(retainFunc, {object});
+    }
+}
+
+void LLVMCodeGenerator::insertRelease(llvm::Value* object) {
+    // 插入release调用
+    if (!object || !object->getType()->isPointerTy()) {
+        return;
+    }
+    
+    llvm::Function* releaseFunc = module_->getFunction("swift_release");
+    if (releaseFunc) {
+        builder_->CreateCall(releaseFunc, {object});
+    }
+}
+
+// 并发支持函数实现
+llvm::Function* LLVMCodeGenerator::createAsyncFunction() {
+    // 创建异步函数支持
+    std::vector<llvm::Type*> asyncArgs;
+    asyncArgs.push_back(llvm::PointerType::getUnqual(*context_)); // 函数指针
+    asyncArgs.push_back(llvm::PointerType::getUnqual(*context_)); // 参数指针
+    
+    llvm::FunctionType* asyncType = llvm::FunctionType::get(
+        llvm::PointerType::getUnqual(*context_), asyncArgs, false); // 返回Task指针
+    
+    llvm::Function* asyncFunc = llvm::Function::Create(
+        asyncType, llvm::Function::ExternalLinkage, "swift_async", module_.get());
+    
+    return asyncFunc;
+}
+
+llvm::Function* LLVMCodeGenerator::createAwaitFunction() {
+    // 创建await函数支持
+    std::vector<llvm::Type*> awaitArgs;
+    awaitArgs.push_back(llvm::PointerType::getUnqual(*context_)); // Task指针
+    
+    llvm::FunctionType* awaitType = llvm::FunctionType::get(
+        llvm::PointerType::getUnqual(*context_), awaitArgs, false); // 返回结果指针
+    
+    llvm::Function* awaitFunc = llvm::Function::Create(
+        awaitType, llvm::Function::ExternalLinkage, "swift_await", module_.get());
+    
+    return awaitFunc;
+}
+
+llvm::Function* LLVMCodeGenerator::createTaskFunction() {
+    // 创建Task类型支持
+    std::vector<llvm::Type*> taskFields;
+    taskFields.push_back(llvm::PointerType::getUnqual(*context_)); // 函数指针
+    taskFields.push_back(llvm::PointerType::getUnqual(*context_)); // 状态指针
+    taskFields.push_back(builder_->getInt32Ty()); // 状态标志
+    
+    llvm::StructType* taskType = llvm::StructType::create(*context_, taskFields, "SwiftTask");
+    
+    // 创建Task创建函数
+    std::vector<llvm::Type*> createTaskArgs;
+    createTaskArgs.push_back(llvm::PointerType::getUnqual(*context_)); // 函数指针
+    
+    llvm::FunctionType* createTaskType = llvm::FunctionType::get(
+        llvm::PointerType::getUnqual(taskType), createTaskArgs, false);
+    
+    llvm::Function* createTaskFunc = llvm::Function::Create(
+        createTaskType, llvm::Function::ExternalLinkage, "swift_task_create", module_.get());
+    
+    return createTaskFunc;
 }
 
 // 工厂方法实现

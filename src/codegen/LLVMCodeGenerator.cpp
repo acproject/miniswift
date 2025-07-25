@@ -526,22 +526,22 @@ bool LLVMCodeGenerator::compileToExecutable(const std::string& filename) {
     std::string linkCommand;
     
 #ifdef _WIN32
-    // Windows - 尝试多种链接器
-    // 首先尝试使用gcc（MinGW）
-    linkCommand = "gcc -o " + filename + ".exe " + objFilename;
-    reportWarning("Attempting to link with gcc (MinGW): " + linkCommand);
+    // Windows - 优先使用MSVC链接器
+    // 首先尝试使用link.exe（MSVC链接器）
+    linkCommand = "link.exe /OUT:" + filename + ".exe " + objFilename + " /SUBSYSTEM:CONSOLE";
+    reportWarning("Attempting to link with MSVC link.exe: " + linkCommand);
     int result = std::system(linkCommand.c_str());
     
     if (result != 0) {
-        // 如果gcc失败，尝试clang++
+        // 如果MSVC链接器失败，尝试clang++
         linkCommand = "clang++ -o " + filename + ".exe " + objFilename;
-        reportWarning("GCC failed, trying clang++: " + linkCommand);
+        reportWarning("MSVC link.exe failed, trying clang++: " + linkCommand);
         result = std::system(linkCommand.c_str());
         
         if (result != 0) {
-            // 如果clang++也失败，尝试使用ld直接链接
-            linkCommand = "ld -o " + filename + ".exe " + objFilename + " -lkernel32 -luser32";
-            reportWarning("Clang++ failed, trying ld directly: " + linkCommand);
+            // 如果clang++失败，最后尝试gcc（MinGW）
+            linkCommand = "gcc -fno-lto -o " + filename + ".exe " + objFilename;
+            reportWarning("Clang++ failed, trying gcc (with LTO disabled): " + linkCommand);
             result = std::system(linkCommand.c_str());
             
             if (result != 0) {

@@ -72,9 +72,79 @@ CodeGenResult LLVMCodeGenerator::generateModule(const std::string& moduleName, c
         generateARCSupport();
         generateConcurrencySupport();
         
-        // 遍历程序中的所有语句
+        // 检查是否存在main函数
+        bool hasMainFunction = false;
+        std::vector<const TypedStmt*> topLevelStatements;
+        
+        // 第一遍：检查是否有main函数，收集顶层语句
         for (const auto& stmt : program.getStatements()) {
-            generateStatement(*stmt);
+            if (auto typedFuncStmt = dynamic_cast<const TypedFunctionStmt*>(stmt.get())) {
+                const auto& originalFuncStmt = static_cast<const FunctionStmt&>(typedFuncStmt->getOriginalStmt());
+                if (originalFuncStmt.name.lexeme == "main") {
+                    hasMainFunction = true;
+                }
+            } else {
+                // 收集顶层语句（非函数声明）
+                topLevelStatements.push_back(stmt.get());
+            }
+        }
+        
+        // 第二遍：生成函数声明
+        for (const auto& stmt : program.getStatements()) {
+            if (auto typedFuncStmt = dynamic_cast<const TypedFunctionStmt*>(stmt.get())) {
+                generateStatement(*stmt);
+            }
+        }
+        
+        // 如果没有main函数，创建一个包含顶层语句的main函数
+        if (!hasMainFunction) {
+            // 创建main函数类型：int main()
+            llvm::FunctionType* mainType = llvm::FunctionType::get(
+                builder_->getInt32Ty(), // 返回int
+                false // 不是可变参数
+            );
+            
+            // 创建main函数
+            llvm::Function* mainFunc = llvm::Function::Create(
+                mainType,
+                llvm::Function::ExternalLinkage,
+                "main",
+                module_.get()
+            );
+            
+            // 创建函数体的基本块
+            llvm::BasicBlock* entryBB = llvm::BasicBlock::Create(*context_, "entry", mainFunc);
+            builder_->SetInsertPoint(entryBB);
+            
+            // 设置当前函数
+            llvm::Function* prevFunction = currentFunction_;
+            currentFunction_ = mainFunc;
+            
+            // 进入新作用域
+            enterScope();
+            
+            // 生成所有顶层语句到main函数中
+            for (const TypedStmt* stmt : topLevelStatements) {
+                generateStatement(*stmt);
+            }
+            
+            // 如果main函数没有显式返回，添加默认返回值0
+            if (!builder_->GetInsertBlock()->getTerminator()) {
+                builder_->CreateRet(createIntConstant(0, builder_->getInt32Ty()));
+            }
+            
+            // 退出作用域
+            exitScope();
+            
+            // 恢复之前的函数
+            currentFunction_ = prevFunction;
+            
+            reportWarning("Created main function for top-level statements");
+        } else {
+            // 如果有main函数，生成顶层语句（这些语句会在全局作用域中）
+            for (const TypedStmt* stmt : topLevelStatements) {
+                generateStatement(*stmt);
+            }
         }
         
         // 验证模块

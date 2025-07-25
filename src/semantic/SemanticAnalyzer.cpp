@@ -377,6 +377,60 @@ void SemanticAnalyzer::visit(const IndexAccess& expr) {
 // 语句访问者实现
 void SemanticAnalyzer::visit(const ExprStmt& stmt) {
     stmt.expression->accept(*this);
+    
+    // 创建TypedExpr（简化实现）
+    std::unique_ptr<TypedExpr> typedExpr = nullptr;
+    if (auto call = dynamic_cast<const Call*>(stmt.expression.get())) {
+        // 为Call表达式创建TypedCall
+        auto originalCall = std::unique_ptr<Call>(static_cast<Call*>(call->clone().release()));
+        auto voidType = std::make_shared<PrimitiveType>(TypeKind::Void, "Void");
+        
+        // 创建类型化的callee
+        std::unique_ptr<TypedExpr> typedCallee = nullptr;
+        if (auto varExpr = dynamic_cast<const VarExpr*>(call->callee.get())) {
+            auto originalVarExpr = std::unique_ptr<VarExpr>(static_cast<VarExpr*>(varExpr->clone().release()));
+            typedCallee = std::make_unique<TypedVarExpr>(std::move(originalVarExpr), voidType);
+        }
+        
+        // 创建类型化的参数
+        std::vector<std::unique_ptr<TypedExpr>> typedArgs;
+        for (const auto& arg : call->arguments) {
+            if (auto literal = dynamic_cast<const Literal*>(arg.get())) {
+                auto originalLiteral = std::unique_ptr<Literal>(static_cast<Literal*>(literal->clone().release()));
+                // 根据字面量的值确定类型
+                std::shared_ptr<Type> argType;
+                if (literal->value.type == TokenType::IntegerLiteral || literal->value.type == TokenType::FloatingLiteral) {
+                    argType = std::make_shared<PrimitiveType>(TypeKind::Int, "Int");
+                } else if (literal->value.type == TokenType::StringLiteral) {
+                    argType = std::make_shared<PrimitiveType>(TypeKind::String, "String");
+                } else {
+                    argType = std::make_shared<PrimitiveType>(TypeKind::Int, "Int"); // 默认
+                }
+                typedArgs.push_back(std::make_unique<TypedLiteral>(std::move(originalLiteral), argType));
+            } else {
+                // 对于非字面量参数，先分析表达式类型
+                arg->accept(*this);
+                auto argType = currentExpressionType ? currentExpressionType : std::make_shared<PrimitiveType>(TypeKind::Int, "Int");
+                
+                // 创建适当的TypedExpr
+                if (auto varExpr = dynamic_cast<const VarExpr*>(arg.get())) {
+                    auto originalVarExpr = std::unique_ptr<VarExpr>(static_cast<VarExpr*>(varExpr->clone().release()));
+                    typedArgs.push_back(std::make_unique<TypedVarExpr>(std::move(originalVarExpr), argType));
+                }
+            }
+        }
+        
+        if (typedCallee) {
+            typedExpr = std::make_unique<TypedCall>(std::move(originalCall), voidType, std::move(typedCallee), std::move(typedArgs));
+        }
+    }
+    
+    // 创建TypedExprStmt并添加到currentTypedProgram
+    if (typedExpr && currentTypedProgram) {
+        auto originalExprStmt = std::unique_ptr<ExprStmt>(static_cast<ExprStmt*>(stmt.clone().release()));
+        auto typedExprStmt = std::make_unique<TypedExprStmt>(std::move(originalExprStmt), std::move(typedExpr));
+        currentTypedProgram->addStatement(std::move(typedExprStmt));
+    }
 }
 
 void SemanticAnalyzer::visit(const VarStmt& stmt) {

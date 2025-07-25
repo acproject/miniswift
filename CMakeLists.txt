@@ -123,7 +123,24 @@ include_directories("${ZSTD_INCLUDE_DIR}")
 
 message(STATUS "Using C compiler: ${CMAKE_C_COMPILER}")
 message(STATUS "Using CXX compiler: ${CMAKE_CXX_COMPILER}")
-# Find LLVM
+
+# Find LLVM - 在macOS上优先使用Homebrew LLVM
+if(APPLE)
+    # 尝试使用Homebrew LLVM
+    execute_process(
+        COMMAND brew --prefix llvm
+        OUTPUT_VARIABLE HOMEBREW_LLVM_PREFIX
+        ERROR_QUIET
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    
+    if(HOMEBREW_LLVM_PREFIX AND EXISTS "${HOMEBREW_LLVM_PREFIX}")
+        message(STATUS "Found Homebrew LLVM at: ${HOMEBREW_LLVM_PREFIX}")
+        set(CMAKE_PREFIX_PATH "${HOMEBREW_LLVM_PREFIX}" ${CMAKE_PREFIX_PATH})
+        set(LLVM_DIR "${HOMEBREW_LLVM_PREFIX}/lib/cmake/llvm")
+    endif()
+endif()
+
 find_package(LLVM REQUIRED CONFIG)
 
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
@@ -134,10 +151,39 @@ include_directories(${LLVM_INCLUDE_DIRS})
 separate_arguments(LLVM_DEFINITIONS_LIST NATIVE_COMMAND ${LLVM_DEFINITIONS})
 add_definitions(${LLVM_DEFINITIONS_LIST})
 
+# Add LLVM library directories
+link_directories(${LLVM_LIBRARY_DIRS})
+
 # Find the libraries that correspond to the LLVM components
-llvm_map_components_to_libnames(llvm_libs support core irreader executionengine interpreter mc mcjit bitwriter x86codegen x86asmparser x86desc x86disassembler x86info target orcjit orctargetprocess)
+# 根据操作系统选择不同的LLVM组件
+if(APPLE)
+    # macOS: 使用Homebrew LLVM的组件映射
+    llvm_map_components_to_libnames(llvm_libs 
+        support core irreader executionengine interpreter mc mcjit bitwriter 
+        x86codegen x86asmparser x86desc x86disassembler x86info target 
+        orcjit orctargetprocess analysis transformutils scalaropts 
+        instcombine vectorize ipo passes codegen asmprinter selectiondag)
+    message(STATUS "Using LLVM component mapping for macOS")
+    
+    # 添加LLVM系统依赖库
+    execute_process(
+        COMMAND ${HOMEBREW_LLVM_PREFIX}/bin/llvm-config --system-libs
+        OUTPUT_VARIABLE LLVM_SYSTEM_LIBS
+        ERROR_QUIET
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    if(LLVM_SYSTEM_LIBS)
+        string(REPLACE " " ";" LLVM_SYSTEM_LIBS_LIST "${LLVM_SYSTEM_LIBS}")
+        list(APPEND llvm_libs ${LLVM_SYSTEM_LIBS_LIST})
+        message(STATUS "Added LLVM system libs: ${LLVM_SYSTEM_LIBS}")
+    endif()
+else()
+    # Linux和Windows使用标准映射
+    llvm_map_components_to_libnames(llvm_libs support core irreader executionengine interpreter mc mcjit bitwriter x86codegen x86asmparser x86desc x86disassembler x86info target orcjit orctargetprocess)
+endif()
 
 message(STATUS "Building with LLVM code generation enabled")
+message(STATUS "LLVM libraries: ${llvm_libs}")
 
 # Set up basic compiler flags
 if(WIN32)

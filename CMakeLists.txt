@@ -126,18 +126,46 @@ message(STATUS "Using CXX compiler: ${CMAKE_CXX_COMPILER}")
 
 # Find LLVM - 在macOS上优先使用Homebrew LLVM
 if(APPLE)
-    # 尝试使用Homebrew LLVM
+    # 尝试使用MacPorts LLVM
     execute_process(
-        COMMAND brew --prefix llvm
-        OUTPUT_VARIABLE HOMEBREW_LLVM_PREFIX
+        COMMAND port installed | grep llvm
+        OUTPUT_VARIABLE PORT_LLVM_OUTPUT
         ERROR_QUIET
         OUTPUT_STRIP_TRAILING_WHITESPACE
     )
     
-    if(HOMEBREW_LLVM_PREFIX AND EXISTS "${HOMEBREW_LLVM_PREFIX}")
-        message(STATUS "Found Homebrew LLVM at: ${HOMEBREW_LLVM_PREFIX}")
-        set(CMAKE_PREFIX_PATH "${HOMEBREW_LLVM_PREFIX}" ${CMAKE_PREFIX_PATH})
-        set(LLVM_DIR "${HOMEBREW_LLVM_PREFIX}/lib/cmake/llvm")
+    if(PORT_LLVM_OUTPUT)
+        # 检查常见的MacPorts LLVM路径
+        set(POSSIBLE_LLVM_PATHS 
+            "/opt/local/libexec/llvm-18"
+            "/opt/local/libexec/llvm-17"
+            "/opt/local/libexec/llvm-16"
+            "/opt/local/libexec/llvm-15"
+        )
+        
+        foreach(LLVM_PATH ${POSSIBLE_LLVM_PATHS})
+            if(EXISTS "${LLVM_PATH}")
+                message(STATUS "Found MacPorts LLVM at: ${LLVM_PATH}")
+                set(CMAKE_PREFIX_PATH "${LLVM_PATH}" ${CMAKE_PREFIX_PATH})
+                set(LLVM_DIR "${LLVM_PATH}/lib/cmake/llvm")
+                set(MACPORTS_LLVM_PREFIX "${LLVM_PATH}")
+                break()
+            endif()
+        endforeach()
+    else()
+        # 回退到Homebrew LLVM
+        execute_process(
+            COMMAND brew --prefix llvm
+            OUTPUT_VARIABLE HOMEBREW_LLVM_PREFIX
+            ERROR_QUIET
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+        )
+        
+        if(HOMEBREW_LLVM_PREFIX AND EXISTS "${HOMEBREW_LLVM_PREFIX}")
+            message(STATUS "Found Homebrew LLVM at: ${HOMEBREW_LLVM_PREFIX}")
+            set(CMAKE_PREFIX_PATH "${HOMEBREW_LLVM_PREFIX}" ${CMAKE_PREFIX_PATH})
+            set(LLVM_DIR "${HOMEBREW_LLVM_PREFIX}/lib/cmake/llvm")
+        endif()
     endif()
 endif()
 
@@ -157,21 +185,32 @@ link_directories(${LLVM_LIBRARY_DIRS})
 # Find the libraries that correspond to the LLVM components
 # 根据操作系统选择不同的LLVM组件
 if(APPLE)
-    # macOS: 使用Homebrew LLVM的组件映射
+    # macOS: 使用LLVM组件映射，添加AArch64支持
     llvm_map_components_to_libnames(llvm_libs 
         support core irreader executionengine interpreter mc mcjit bitwriter 
-        x86codegen x86asmparser x86desc x86disassembler x86info target 
-        orcjit orctargetprocess analysis transformutils scalaropts 
+        x86codegen x86asmparser x86desc x86disassembler x86info 
+        aarch64codegen aarch64asmparser aarch64desc aarch64disassembler aarch64info 
+        target orcjit orctargetprocess analysis transformutils scalaropts 
         instcombine vectorize ipo passes codegen asmprinter selectiondag)
     message(STATUS "Using LLVM component mapping for macOS")
     
     # 添加LLVM系统依赖库
-    execute_process(
-        COMMAND ${HOMEBREW_LLVM_PREFIX}/bin/llvm-config --system-libs
-        OUTPUT_VARIABLE LLVM_SYSTEM_LIBS
-        ERROR_QUIET
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
+    if(MACPORTS_LLVM_PREFIX)
+        execute_process(
+            COMMAND ${MACPORTS_LLVM_PREFIX}/bin/llvm-config --system-libs
+            OUTPUT_VARIABLE LLVM_SYSTEM_LIBS
+            ERROR_QUIET
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+        )
+    elseif(HOMEBREW_LLVM_PREFIX)
+        execute_process(
+            COMMAND ${HOMEBREW_LLVM_PREFIX}/bin/llvm-config --system-libs
+            OUTPUT_VARIABLE LLVM_SYSTEM_LIBS
+            ERROR_QUIET
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+        )
+    endif()
+    
     if(LLVM_SYSTEM_LIBS)
         string(REPLACE " " ";" LLVM_SYSTEM_LIBS_LIST "${LLVM_SYSTEM_LIBS}")
         list(APPEND llvm_libs ${LLVM_SYSTEM_LIBS_LIST})

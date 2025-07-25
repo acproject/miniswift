@@ -560,6 +560,8 @@ void SemanticAnalyzer::visit(const ReturnStmt& stmt) {
 }
 
 void SemanticAnalyzer::visit(const FunctionStmt& stmt) {
+    std::cerr << "DEBUG: Visiting FunctionStmt: " << stmt.name.lexeme << std::endl;
+    
     // 创建基本类型（简化实现）
     auto voidType = std::make_shared<PrimitiveType>(TypeKind::Void, "Void");
     auto intType = std::make_shared<PrimitiveType>(TypeKind::Int, "Int");
@@ -593,9 +595,84 @@ void SemanticAnalyzer::visit(const FunctionStmt& stmt) {
     // 分析函数体
     std::unique_ptr<TypedStmt> typedBody = nullptr;
     if (stmt.body) {
-        stmt.body->accept(*this);
-        // 这里应该从某个地方获取分析后的TypedStmt，但为了简化，我们创建一个基本的
-        // 在实际实现中，需要在visit方法中设置一个成员变量来传递结果
+        // 创建一个简单的TypedBlockStmt来包含函数体
+        auto blockStmt = dynamic_cast<const BlockStmt*>(stmt.body.get());
+        if (blockStmt) {
+            std::vector<std::unique_ptr<TypedStmt>> typedStatements;
+            
+            // 分析块中的每个语句
+            for (const auto& s : blockStmt->statements) {
+                std::cerr << "DEBUG: Processing statement in function body" << std::endl;
+                // 为每个语句创建相应的TypedStmt
+                if (auto exprStmt = dynamic_cast<const ExprStmt*>(s.get())) {
+                    std::cerr << "DEBUG: Found ExprStmt" << std::endl;
+                    // 分析表达式
+                    exprStmt->expression->accept(*this);
+                    
+                    // 创建TypedExpr（简化实现）
+                    std::unique_ptr<TypedExpr> typedExpr = nullptr;
+                    if (auto call = dynamic_cast<const Call*>(exprStmt->expression.get())) {
+                        // 为Call表达式创建TypedCall
+                        auto originalCall = std::unique_ptr<Call>(static_cast<Call*>(call->clone().release()));
+                        auto voidType = std::make_shared<PrimitiveType>(TypeKind::Void, "Void");
+                        
+                        // 创建类型化的callee
+                        std::unique_ptr<TypedExpr> typedCallee = nullptr;
+                        if (auto varExpr = dynamic_cast<const VarExpr*>(call->callee.get())) {
+                            auto originalVarExpr = std::unique_ptr<VarExpr>(static_cast<VarExpr*>(varExpr->clone().release()));
+                            typedCallee = std::make_unique<TypedVarExpr>(std::move(originalVarExpr), voidType);
+                        }
+                        
+                        // 创建类型化的参数
+                        std::vector<std::unique_ptr<TypedExpr>> typedArgs;
+                        for (const auto& arg : call->arguments) {
+                            if (auto literal = dynamic_cast<const Literal*>(arg.get())) {
+                                auto originalLiteral = std::unique_ptr<Literal>(static_cast<Literal*>(literal->clone().release()));
+                                // 根据字面量的值确定类型
+                                std::shared_ptr<Type> argType;
+                                if (literal->value.type == TokenType::IntegerLiteral || literal->value.type == TokenType::FloatingLiteral) {
+                                    argType = std::make_shared<PrimitiveType>(TypeKind::Int, "Int");
+                                } else if (literal->value.type == TokenType::StringLiteral) {
+                                    argType = std::make_shared<PrimitiveType>(TypeKind::String, "String");
+                                } else {
+                                    argType = std::make_shared<PrimitiveType>(TypeKind::Int, "Int"); // 默认
+                                }
+                                typedArgs.push_back(std::make_unique<TypedLiteral>(std::move(originalLiteral), argType));
+                            } else {
+                                // 对于非字面量参数，先分析表达式类型
+                                arg->accept(*this);
+                                auto argType = currentExpressionType ? currentExpressionType : std::make_shared<PrimitiveType>(TypeKind::Int, "Int");
+                                
+                                // 创建适当的TypedExpr
+                                if (auto varExpr = dynamic_cast<const VarExpr*>(arg.get())) {
+                                    auto originalVarExpr = std::unique_ptr<VarExpr>(static_cast<VarExpr*>(varExpr->clone().release()));
+                                    typedArgs.push_back(std::make_unique<TypedVarExpr>(std::move(originalVarExpr), argType));
+                                } else {
+                                    // 对于其他类型的表达式，暂时跳过或创建通用的TypedExpr
+                                    // 这里可以根据需要扩展
+                                }
+                            }
+                        }
+                        
+                        if (typedCallee) {
+                            typedExpr = std::make_unique<TypedCall>(std::move(originalCall), voidType, std::move(typedCallee), std::move(typedArgs));
+                        }
+                    }
+                    
+                    auto originalExprStmt = std::unique_ptr<ExprStmt>(static_cast<ExprStmt*>(exprStmt->clone().release()));
+                    auto typedExprStmt = std::make_unique<TypedExprStmt>(std::move(originalExprStmt), std::move(typedExpr));
+                    std::cerr << "DEBUG: Created TypedExprStmt with TypedCall for function" << std::endl;
+                    typedStatements.push_back(std::move(typedExprStmt));
+                } else {
+                    // 对于其他类型的语句，先简单处理
+                    s->accept(*this);
+                }
+            }
+            
+            // 创建TypedBlockStmt
+            auto originalBlockStmt = std::unique_ptr<BlockStmt>(static_cast<BlockStmt*>(blockStmt->clone().release()));
+            typedBody = std::make_unique<TypedBlockStmt>(std::move(originalBlockStmt), std::move(typedStatements));
+        }
     }
     
     // 创建TypedFunctionStmt

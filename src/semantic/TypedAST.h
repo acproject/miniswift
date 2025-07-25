@@ -485,10 +485,16 @@ public:
 // 语句占位符
 class TypedExprStmt : public TypedStmt {
 public:
-    TypedExprStmt(std::unique_ptr<ExprStmt> originalStmt)
-        : TypedStmt(std::move(originalStmt)) {}
+    TypedExprStmt(std::unique_ptr<ExprStmt> originalStmt, std::unique_ptr<TypedExpr> typedExpression = nullptr)
+        : TypedStmt(std::move(originalStmt)), typedExpression_(std::move(typedExpression)) {}
+    
+    const TypedExpr* getTypedExpression() const { return typedExpression_.get(); }
+    
     void accept(TypedStmtVisitor& visitor) const override { visitor.visit(*this); }
     std::unique_ptr<TypedStmt> clone() const override { return nullptr; } // TODO: 实现
+    
+private:
+    std::unique_ptr<TypedExpr> typedExpression_;
 };
 
 class TypedIfStmt : public TypedStmt {

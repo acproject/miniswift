@@ -303,18 +303,18 @@ struct FunctionStmt : Stmt {
                std::unique_ptr<Stmt> body, AccessLevel accessLevel = AccessLevel::INTERNAL,
                GenericParameterClause genericParams = GenericParameterClause({}),
                WhereClause whereClause = WhereClause({}), bool isMutating = false,
-               bool canThrow = false, bool isAsync = false)
+               bool canThrow = false, bool isAsync = false, bool isMain = false)
       : name(name), parameters(std::move(parameters)), returnType(returnType),
         body(std::move(body)), accessLevel(accessLevel),
         genericParams(std::move(genericParams)), whereClause(std::move(whereClause)),
-        isMutating(isMutating), canThrow(canThrow), isAsync(isAsync) {}
+        isMutating(isMutating), canThrow(canThrow), isAsync(isAsync), isMain(isMain) {}
 
   void accept(StmtVisitor &visitor) const override { visitor.visit(*this); }
 
   std::unique_ptr<Stmt> clone() const override {
     return std::make_unique<FunctionStmt>(name, parameters, returnType,
                                           body->clone(), accessLevel,
-                                          genericParams, whereClause, isMutating, canThrow, isAsync);
+                                          genericParams, whereClause, isMutating, canThrow, isAsync, isMain);
   }
 
   const Token name;
@@ -327,6 +327,7 @@ struct FunctionStmt : Stmt {
   bool isMutating;                      // Whether this is a mutating function
   bool canThrow;                        // Whether this function can throw errors
   bool isAsync;                         // Whether this is an async function
+  bool isMain;                          // Whether this function has @main attribute
   
   // Check if this is a generic function
   bool isGeneric() const { return !genericParams.isEmpty(); }
@@ -492,6 +493,7 @@ struct StructStmt : Stmt {
   std::unique_ptr<DeinitStmt> deinitializer;           // Destructor
   std::vector<std::unique_ptr<SubscriptStmt>> subscripts; // Subscripts
   std::vector<std::unique_ptr<Stmt>> nestedTypes; // Nested types (structs, classes, enums)
+  bool isMain; // Whether this struct has @main attribute
 
   StructStmt(Token name, std::vector<StructMember> members,
              std::vector<std::unique_ptr<FunctionStmt>> methods = {},
@@ -502,13 +504,14 @@ struct StructStmt : Stmt {
              AccessLevel accessLevel = AccessLevel::INTERNAL,
              GenericParameterClause genericParams = GenericParameterClause({}),
              WhereClause whereClause = WhereClause({}),
-             std::vector<std::unique_ptr<Stmt>> nestedTypes = {})
+             std::vector<std::unique_ptr<Stmt>> nestedTypes = {},
+             bool isMain = false)
       : name(name), accessLevel(accessLevel), genericParams(std::move(genericParams)),
         conformedProtocols(std::move(conformedProtocols)), whereClause(std::move(whereClause)),
         members(std::move(members)), methods(std::move(methods)),
         initializers(std::move(initializers)),
         deinitializer(std::move(deinitializer)), subscripts(std::move(subscripts)),
-        nestedTypes(std::move(nestedTypes)) {}
+        nestedTypes(std::move(nestedTypes)), isMain(isMain) {}
 
   void accept(StmtVisitor &visitor) const override { visitor.visit(*this); }
 
@@ -538,6 +541,7 @@ struct ClassStmt : Stmt {
   std::unique_ptr<DeinitStmt> deinitializer;           // Destructor
   std::vector<std::unique_ptr<SubscriptStmt>> subscripts; // Subscripts
   std::vector<std::unique_ptr<Stmt>> nestedTypes; // Nested types (structs, classes, enums)
+  bool isMain; // Whether this class has @main attribute
 
   ClassStmt(Token name, Token superclass, std::vector<StructMember> members,
             std::vector<std::unique_ptr<FunctionStmt>> methods = {},
@@ -548,13 +552,14 @@ struct ClassStmt : Stmt {
             AccessLevel accessLevel = AccessLevel::INTERNAL,
             GenericParameterClause genericParams = GenericParameterClause({}),
             WhereClause whereClause = WhereClause({}),
-            std::vector<std::unique_ptr<Stmt>> nestedTypes = {})
+            std::vector<std::unique_ptr<Stmt>> nestedTypes = {},
+            bool isMain = false)
       : name(name), superclass(superclass), accessLevel(accessLevel),
         genericParams(std::move(genericParams)), conformedProtocols(std::move(conformedProtocols)),
         whereClause(std::move(whereClause)), members(std::move(members)),
         methods(std::move(methods)), initializers(std::move(initializers)),
         deinitializer(std::move(deinitializer)), subscripts(std::move(subscripts)),
-        nestedTypes(std::move(nestedTypes)) {}
+        nestedTypes(std::move(nestedTypes)), isMain(isMain) {}
 
   void accept(StmtVisitor &visitor) const override { visitor.visit(*this); }
 

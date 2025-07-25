@@ -72,22 +72,43 @@ CodeGenResult LLVMCodeGenerator::generateModule(const std::string& moduleName, c
         generateARCSupport();
         generateConcurrencySupport();
         
-        // 检查是否存在main函数
+        // 检查是否存在main函数或@main属性
         bool hasMainFunction = false;
+        bool hasMainAttribute = false;
         std::vector<const TypedStmt*> topLevelStatements;
         
-        // 第一遍：检查是否有main函数，收集顶层语句
+        // 第一遍：检查是否有main函数或@main属性，收集顶层语句
         for (const auto& stmt : program.getStatements()) {
             if (auto typedFuncStmt = dynamic_cast<const TypedFunctionStmt*>(stmt.get())) {
                 const auto& originalFuncStmt = static_cast<const FunctionStmt&>(typedFuncStmt->getOriginalStmt());
                 if (originalFuncStmt.name.lexeme == "main") {
                     hasMainFunction = true;
+                    std::cout << "DEBUG: Found main function" << std::endl;
+                }
+                if (originalFuncStmt.isMain) {
+                    hasMainAttribute = true;
+                    std::cout << "DEBUG: Found @main function: " << originalFuncStmt.name.lexeme << std::endl;
+                }
+            } else if (auto typedStructStmt = dynamic_cast<const TypedStructStmt*>(stmt.get())) {
+                const auto& originalStructStmt = static_cast<const StructStmt&>(typedStructStmt->getOriginalStmt());
+                if (originalStructStmt.isMain) {
+                    hasMainAttribute = true;
+                    std::cout << "DEBUG: Found @main struct: " << originalStructStmt.name.lexeme << std::endl;
+                }
+            } else if (auto typedClassStmt = dynamic_cast<const TypedClassStmt*>(stmt.get())) {
+                const auto& originalClassStmt = static_cast<const ClassStmt&>(typedClassStmt->getOriginalStmt());
+                if (originalClassStmt.isMain) {
+                    hasMainAttribute = true;
+                    std::cout << "DEBUG: Found @main class: " << originalClassStmt.name.lexeme << std::endl;
                 }
             } else {
                 // 收集顶层语句（非函数声明）
                 topLevelStatements.push_back(stmt.get());
+                std::cout << "DEBUG: Found top-level statement" << std::endl;
             }
         }
+        
+        std::cout << "DEBUG: hasMainFunction = " << hasMainFunction << ", hasMainAttribute = " << hasMainAttribute << ", topLevelStatements.size() = " << topLevelStatements.size() << std::endl;
         
         // 第二遍：生成函数声明
         for (const auto& stmt : program.getStatements()) {
@@ -96,8 +117,8 @@ CodeGenResult LLVMCodeGenerator::generateModule(const std::string& moduleName, c
             }
         }
         
-        // 如果没有main函数，创建一个包含顶层语句的main函数
-        if (!hasMainFunction) {
+        // 如果没有main函数且没有@main属性，创建一个包含顶层语句的main函数
+        if (!hasMainFunction && !hasMainAttribute) {
             // 创建main函数类型：int main()
             llvm::FunctionType* mainType = llvm::FunctionType::get(
                 builder_->getInt32Ty(), // 返回int
@@ -140,10 +161,109 @@ CodeGenResult LLVMCodeGenerator::generateModule(const std::string& moduleName, c
             currentFunction_ = prevFunction;
             
             reportWarning("Created main function for top-level statements");
-        } else {
-            // 如果有main函数，生成顶层语句（这些语句会在全局作用域中）
+        } else if (hasMainAttribute) {
+            // 如果有@main属性，创建一个调用@main函数的main函数
+            llvm::FunctionType* mainType = llvm::FunctionType::get(
+                builder_->getInt32Ty(), // 返回int
+                false // 不是可变参数
+            );
+            
+            // 创建main函数
+            llvm::Function* mainFunc = llvm::Function::Create(
+                mainType,
+                llvm::Function::ExternalLinkage,
+                "main",
+                module_.get()
+            );
+            
+            // 创建函数体的基本块
+            llvm::BasicBlock* entryBB = llvm::BasicBlock::Create(*context_, "entry", mainFunc);
+            builder_->SetInsertPoint(entryBB);
+            
+            // 设置当前函数
+            llvm::Function* prevFunction = currentFunction_;
+            currentFunction_ = mainFunc;
+            
+            // 进入新作用域
+            enterScope();
+            
+            // 查找并调用@main标记的函数
+            for (const auto& stmt : program.getStatements()) {
+                if (auto typedFuncStmt = dynamic_cast<const TypedFunctionStmt*>(stmt.get())) {
+                    const auto& originalFuncStmt = static_cast<const FunctionStmt&>(typedFuncStmt->getOriginalStmt());
+                    if (originalFuncStmt.isMain) {
+                        // 调用@main函数
+                        llvm::Function* mainAttrFunc = module_->getFunction(originalFuncStmt.name.lexeme);
+                        if (mainAttrFunc) {
+                            builder_->CreateCall(mainAttrFunc);
+                        }
+                        break;
+                    }
+                }
+            }
+            
+            // 生成所有顶层语句到main函数中
             for (const TypedStmt* stmt : topLevelStatements) {
                 generateStatement(*stmt);
+            }
+            
+            // 如果main函数没有显式返回，添加默认返回值0
+            if (!builder_->GetInsertBlock()->getTerminator()) {
+                builder_->CreateRet(createIntConstant(0, builder_->getInt32Ty()));
+            }
+            
+            // 退出作用域
+            exitScope();
+            
+            // 恢复之前的函数
+            currentFunction_ = prevFunction;
+            
+            reportWarning("Created main function for @main attribute");
+        } else {
+            // 如果有main函数，但还有顶层语句，需要创建一个新的main函数来包含这些语句
+            if (!topLevelStatements.empty()) {
+                // 创建一个新的main函数来包含顶层语句
+                llvm::FunctionType* mainType = llvm::FunctionType::get(
+                    builder_->getInt32Ty(), // 返回int
+                    false // 不是可变参数
+                );
+                
+                // 创建新的main函数，覆盖原来的
+                llvm::Function* mainFunc = llvm::Function::Create(
+                    mainType,
+                    llvm::Function::ExternalLinkage,
+                    "main",
+                    module_.get()
+                );
+                
+                // 创建函数体的基本块
+                llvm::BasicBlock* entryBB = llvm::BasicBlock::Create(*context_, "entry", mainFunc);
+                builder_->SetInsertPoint(entryBB);
+                
+                // 设置当前函数
+                llvm::Function* prevFunction = currentFunction_;
+                currentFunction_ = mainFunc;
+                
+                // 进入新作用域
+                enterScope();
+                
+                // 生成所有顶层语句到main函数中
+                for (const TypedStmt* stmt : topLevelStatements) {
+                    generateStatement(*stmt);
+                }
+                
+                // 如果main函数没有显式返回，添加默认返回值0
+                if (!builder_->GetInsertBlock()->getTerminator()) {
+                    builder_->CreateRet(createIntConstant(0, builder_->getInt32Ty()));
+                }
+                
+                // 退出作用域
+                exitScope();
+                
+                // 恢复之前的函数
+                currentFunction_ = prevFunction;
+                
+                reportWarning("Created main function wrapper for top-level statements");
             }
         }
         

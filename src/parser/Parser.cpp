@@ -155,6 +155,31 @@ std::vector<std::unique_ptr<Stmt>> Parser::declaration() {
       result.push_back(attachedMacroDeclaration());
       return result;
     }
+    // Handle @main attribute
+    if (check(TokenType::Identifier) && peek().lexeme == "main") {
+      advance(); // consume 'main'
+      std::vector<std::unique_ptr<Stmt>> result;
+      
+      // Check what follows @main
+      if (match({TokenType::Func})) {
+        auto func = functionDeclaration();
+        static_cast<FunctionStmt *>(func.get())->isMain = true;
+        result.push_back(std::move(func));
+      } else if (match({TokenType::Struct})) {
+        auto structStmt = structDeclaration();
+        static_cast<StructStmt *>(structStmt.get())->isMain = true;
+        static_cast<StructStmt *>(structStmt.get())->accessLevel = accessLevel;
+        result.push_back(std::move(structStmt));
+      } else if (match({TokenType::Class})) {
+        auto classStmt = classDeclaration();
+        static_cast<ClassStmt *>(classStmt.get())->isMain = true;
+        static_cast<ClassStmt *>(classStmt.get())->accessLevel = accessLevel;
+        result.push_back(std::move(classStmt));
+      } else {
+        throw std::runtime_error("@main attribute can only be applied to functions, structs, or classes.");
+      }
+      return result;
+    }
   }
   // Macro declarations
   if (match({TokenType::Macro})) {

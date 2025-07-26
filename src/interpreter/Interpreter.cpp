@@ -1994,11 +1994,16 @@ void Interpreter::visit(const Call& expr) {
                 // Create new defer stack level for this method
                 deferStack.push(std::vector<std::unique_ptr<Stmt>>());
                 
-                // Bind parameters
+                // Bind 'self' parameter if this is an instance method
+                if (arguments.size() > 0) {
+                    environment->define("self", arguments[0], false, "Self");
+                }
+                
+                // Bind the actual method parameters (skip the first argument which is 'self')
                 for (size_t i = 0; i < callable->functionDecl->parameters.size(); ++i) {
                     environment->define(
                         callable->functionDecl->parameters[i].name.lexeme,
-                        arguments[i],
+                        arguments[i + 1], // Skip the 'self' argument
                         false, // parameters are not const
                         callable->functionDecl->parameters[i].type.lexeme
                     );
@@ -2306,10 +2311,15 @@ void Interpreter::visit(const LabeledCall& expr) {
             
             if (callable->isFunction) {
                 // Handle function call with self parameter
-                if (arguments.size() != callable->functionDecl->parameters.size()) {
+                // For instance methods, we need to account for the implicit 'self' parameter
+                // The method definition doesn't include 'self' in its parameter count
+                size_t expectedArgs = callable->functionDecl->parameters.size();
+                size_t actualArgs = arguments.size() - 1; // Subtract 1 for the 'self' parameter we added
+                
+                if (actualArgs != expectedArgs) {
                     throw std::runtime_error("Expected " + 
-                        std::to_string(callable->functionDecl->parameters.size()) + 
-                        " arguments but got " + std::to_string(arguments.size()) + ".");
+                        std::to_string(expectedArgs) + 
+                        " arguments but got " + std::to_string(actualArgs) + ".");
                 }
                 
                 // Create new environment for function execution

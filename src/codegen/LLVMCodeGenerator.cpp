@@ -794,6 +794,24 @@ void LLVMCodeGenerator::visit(const TypedReturnStmt& stmt) {
     generateReturnStatement(stmt);
 }
 
+void LLVMCodeGenerator::visit(const TypedContinueStmt& stmt) {
+    // TODO: 实现continue语句的代码生成
+    // 需要跳转到当前循环的条件检查基本块
+    reportError("Continue statement generation not implemented yet");
+}
+
+void LLVMCodeGenerator::visit(const TypedBreakStmt& stmt) {
+    // TODO: 实现break语句的代码生成
+    // 需要跳转到当前循环的退出基本块
+    reportError("Break statement generation not implemented yet");
+}
+
+void LLVMCodeGenerator::visit(const TypedFallthroughStmt& stmt) {
+    // TODO: 实现fallthrough语句的代码生成
+    // 需要跳转到switch语句的下一个case
+    reportError("Fallthrough statement generation not implemented yet");
+}
+
 void LLVMCodeGenerator::visit(const TypedFunctionStmt& stmt) {
     generateFunction(stmt);
 }

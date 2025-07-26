@@ -224,7 +224,46 @@ void Interpreter::visit(const VarStmt& stmt) {
 }
 
 void Interpreter::visit(const VarExpr& expr) {
-    result = environment->get(expr.name);
+    try {
+        result = environment->get(expr.name);
+    } catch (const std::runtime_error&) {
+        // If variable not found, try to find it as a member of 'self'
+        try {
+            Value selfValue = environment->get(Token{TokenType::Identifier, "self", 0});
+            if (selfValue.isStruct()) {
+                auto& structValue = selfValue.asStruct();
+                // Try property system first
+                if (structValue.properties && structValue.properties->hasProperty(expr.name.lexeme)) {
+                    result = structValue.properties->getProperty(*this, expr.name.lexeme);
+                    return;
+                }
+                // Fallback to legacy member access
+                auto it = structValue.members->find(expr.name.lexeme);
+                if (it != structValue.members->end()) {
+                    result = it->second;
+                    return;
+                }
+            } else if (selfValue.isClass()) {
+                auto& classValue = selfValue.asClass();
+                // Try property system first
+                if (classValue->properties && classValue->properties->hasProperty(expr.name.lexeme)) {
+                    result = classValue->properties->getProperty(*this, expr.name.lexeme);
+                    return;
+                }
+                // Fallback to legacy member access
+                auto it = classValue->members->find(expr.name.lexeme);
+                if (it != classValue->members->end()) {
+                    result = it->second;
+                    return;
+                }
+            }
+        } catch (const std::runtime_error&) {
+            // 'self' not found, continue with original error
+        }
+        
+        // Re-throw original error if member not found in self
+        throw std::runtime_error("Undefined variable '" + expr.name.lexeme + "'");
+    }
 }
 
 void Interpreter::visit(const Assign& expr) {
@@ -781,7 +820,7 @@ void Interpreter::visit(const CustomOperatorExpr& expr) {
                 executeDeferredStatements();
                 
                 // Function returned a value
-                result = returnValue.value;
+                result = *returnValue.value;
             }
             
             // Restore previous environment
@@ -964,7 +1003,9 @@ void Interpreter::visit(const Unary& expr) {
 }
 
 Value Interpreter::evaluate(const Expr& expr) {
+    std::cout << "DEBUG: evaluate called for expression type: " << typeid(expr).name() << std::endl;
     expr.accept(*this);
+    std::cout << "DEBUG: evaluate result type: " << static_cast<int>(result.type) << std::endl;
     return result;
 }
 
@@ -1803,8 +1844,23 @@ void Interpreter::visit(const ReturnStmt& stmt) {
     throw ReturnException(value);
 }
 
+void Interpreter::visit(const ContinueStmt& stmt) {
+    std::string label = stmt.label.lexeme.empty() ? "" : stmt.label.lexeme;
+    throw ContinueException(label);
+}
+
+void Interpreter::visit(const BreakStmt& stmt) {
+    std::string label = stmt.label.lexeme.empty() ? "" : stmt.label.lexeme;
+    throw BreakException(label);
+}
+
+void Interpreter::visit(const FallthroughStmt& stmt) {
+    throw FallthroughException();
+}
+
 // Execute function call: callee(arguments)
 void Interpreter::visit(const Call& expr) {
+    std::cout << "DEBUG: Call::visit entered" << std::endl;
     
     // Check if callee is MemberAccess
     if (auto memberAccess = dynamic_cast<const MemberAccess*>(expr.callee.get())) {
@@ -1865,7 +1921,14 @@ void Interpreter::visit(const Call& expr) {
             throw std::runtime_error("Array has no member '" + memberAccess->member.lexeme + "'");
         }
         
-        Value method = getMemberValue(object, memberAccess->member.lexeme);
+        Value method;
+        try {
+            method = getMemberValue(object, memberAccess->member.lexeme);
+            std::cout << "DEBUG: Found method '" << memberAccess->member.lexeme << "' for struct, type: " << static_cast<int>(method.type) << std::endl;
+        } catch (const std::runtime_error& e) {
+            std::cout << "DEBUG: getMemberValue failed: " << e.what() << std::endl;
+            throw;
+        }
         
         if (method.isFunction()) {
             // This is a method call - prepare arguments with 'self' as first parameter
@@ -1881,11 +1944,15 @@ void Interpreter::visit(const Call& expr) {
             
             if (callable->isFunction) {
                 // Handle function call with self parameter
+                // Note: arguments already includes 'self' as first parameter
                 if (arguments.size() != callable->functionDecl->parameters.size()) {
                     throw std::runtime_error("Expected " + 
                         std::to_string(callable->functionDecl->parameters.size()) + 
                         " arguments but got " + std::to_string(arguments.size()) + ".");
                 }
+                
+                std::cout << "DEBUG: Method call - arguments.size()=" << arguments.size() 
+                         << ", parameters.size()=" << callable->functionDecl->parameters.size() << std::endl;
                 
                 // Create new environment for function execution
                 auto previous = environment;
@@ -1918,7 +1985,7 @@ void Interpreter::visit(const Call& expr) {
                     executeDeferredStatements();
                     
                     // Function returned a value
-                    result = returnValue.value;
+                    result = *returnValue.value;
                 }
                 
                 // Restore previous environment
@@ -2045,7 +2112,7 @@ void Interpreter::visit(const Call& expr) {
             executeDeferredStatements();
             
             // Function returned a value
-            result = returnValue.value;
+            result = *returnValue.value;
         }
         
         // Restore previous environment
@@ -2091,7 +2158,7 @@ void Interpreter::visit(const Call& expr) {
             executeDeferredStatements();
             
             // Closure returned a value
-            result = returnValue.value;
+            result = *returnValue.value;
         }
         
         // Restore previous environment
@@ -2118,6 +2185,111 @@ void Interpreter::visit(const LabeledCall& expr) {
             }
         }
         // For other member access, fall through to normal evaluation
+    }
+    
+    // Check if this is a struct initialization call
+    if (auto varExpr = dynamic_cast<const VarExpr*>(expr.callee.get())) {
+        std::string structName = varExpr->name.lexeme;
+        
+        // Check if this is a struct constructor
+        if (auto* structPropManager = getStructPropertyManager(structName)) {
+            // Create a new struct instance
+            auto propContainer = std::make_shared<InstancePropertyContainer>(*structPropManager, environment);
+            propContainer->initializeDefaults(*this);
+            StructValue structValue(structName, propContainer);
+            
+            // Copy subscripts from static manager to instance
+            auto* typeSubscriptManager = staticSubscriptManager->getSubscriptManager(structName);
+            if (typeSubscriptManager) {
+                for (const auto& subscript : typeSubscriptManager->getAllSubscripts()) {
+                    structValue.subscripts->addSubscript(std::make_unique<SubscriptValue>(*subscript));
+                }
+            }
+            
+            // Set member values using labeled arguments
+            for (size_t i = 0; i < expr.argumentLabels.size() && i < expr.arguments.size(); ++i) {
+                const std::string& memberName = expr.argumentLabels[i].lexeme;
+                if (!memberName.empty()) {
+                    Value memberValue = evaluate(*expr.arguments[i]);
+                    structValue.properties->setProperty(*this, memberName, memberValue);
+                }
+            }
+            
+            result = Value(structValue);
+            return;
+        }
+    }
+    
+    // Check if this is a method call (callee is a member access)
+    if (auto memberAccess = dynamic_cast<const MemberAccess*>(expr.callee.get())) {
+        Value object = evaluate(*memberAccess->object);
+        Value method;
+        
+        try {
+            method = getMemberValue(object, memberAccess->member.lexeme);
+        } catch (const std::runtime_error& e) {
+            throw;
+        }
+        
+        if (method.isFunction()) {
+            // This is a method call - prepare arguments with 'self' as first parameter
+            std::vector<Value> arguments;
+            arguments.push_back(object); // Add 'self' as first argument
+            
+            // Add the provided arguments
+            for (const auto& argument : expr.arguments) {
+                arguments.push_back(evaluate(*argument));
+            }
+            
+            auto callable = method.asFunction();
+            
+            if (callable->isFunction) {
+                // Handle function call with self parameter
+                if (arguments.size() != callable->functionDecl->parameters.size()) {
+                    throw std::runtime_error("Expected " + 
+                        std::to_string(callable->functionDecl->parameters.size()) + 
+                        " arguments but got " + std::to_string(arguments.size()) + ".");
+                }
+                
+                // Create new environment for function execution
+                auto previous = environment;
+                environment = std::make_shared<Environment>(callable->closure);
+                
+                // Create new defer stack level for this method
+                deferStack.push(std::vector<std::unique_ptr<Stmt>>());
+                
+                // Bind parameters
+                for (size_t i = 0; i < callable->functionDecl->parameters.size(); ++i) {
+                    environment->define(
+                        callable->functionDecl->parameters[i].name.lexeme,
+                        arguments[i],
+                        false, // parameters are not const
+                        callable->functionDecl->parameters[i].type.lexeme
+                    );
+                }
+                
+                try {
+                    // Execute function body
+                    callable->functionDecl->body->accept(*this);
+                    
+                    // Execute deferred statements before function exits
+                    executeDeferredStatements();
+                    
+                    // If no return statement was executed, return nil
+                    result = Value();
+                } catch (const ReturnException& returnValue) {
+                    // Execute deferred statements before function exits
+                    executeDeferredStatements();
+                    
+                    // Function returned a value
+                    result = *returnValue.value;
+                }
+                
+                // Restore previous environment
+                environment = previous;
+                return;
+            }
+        }
     }
     
     Value callee = evaluate(*expr.callee);
@@ -2207,7 +2379,7 @@ void Interpreter::visit(const LabeledCall& expr) {
             executeDeferredStatements();
             
             // Function returned a value
-            result = returnValue.value;
+            result = *returnValue.value;
         }
         
         // Restore previous environment
@@ -2346,6 +2518,53 @@ void Interpreter::visit(const StructStmt& stmt) {
     
     // Register struct properties with the full type name
     registerStructProperties(typeName, stmt.members);
+    
+    // Process struct methods - register them in global environment
+    for (const auto& method : stmt.methods) {
+        // Create mangled name for the method (TypeName.methodName)
+        std::string mangledName = typeName + "." + method->name.lexeme;
+        
+        // Create a new parameter list with 'self' as the first parameter
+        std::vector<Parameter> newParameters;
+        
+        // Add 'self' parameter as the first parameter
+        Token selfToken{TokenType::Identifier, "self", 0};
+        Token structTypeToken{TokenType::Identifier, typeName, 0};
+        Parameter selfParam{selfToken, structTypeToken, false, false}; // name, type, isInout, isVariadic
+        newParameters.push_back(selfParam);
+        
+        // Add original method parameters
+        for (const auto& param : method->parameters) {
+            newParameters.push_back(param);
+        }
+        
+        // Clone the method body
+        auto clonedBody = method->body->clone();
+        
+        // Create a new FunctionStmt with 'self' parameter
+        auto newMethodStmt = std::make_shared<FunctionStmt>(
+            method->name,
+            std::move(newParameters),
+            method->returnType,
+            std::move(clonedBody),
+            method->accessLevel,
+            method->genericParams,
+            method->whereClause,
+            method->isMutating,
+            method->canThrow,
+            method->isAsync,
+            method->isMain
+        );
+        
+        // Store the new function statement to keep it alive
+        methodFunctions[mangledName] = newMethodStmt;
+        
+        // Create a function value for the method
+        auto callable = std::make_shared<Function>(newMethodStmt.get(), environment);
+        
+        // Store the method in the global environment
+        globals->define(mangledName, Value(callable), false, "Function");
+    }
     
     // Process subscripts
     for (const auto& subscript : stmt.subscripts) {
@@ -2650,13 +2869,16 @@ void Interpreter::visit(const MemberAccess& expr) {
             // Not a nested type, check if this is an enum access
             try {
                 Value enumType = environment->get(Token(TokenType::Identifier, typeName, 0));
-                // Check if this is an enum type by checking if it exists and is not a function
-                if (enumType.type == ValueType::Nil || !enumType.isFunction()) {
+                std::cout << "DEBUG: Found type '" << typeName << "' with type: " << static_cast<int>(enumType.type) << std::endl;
+                // Check if this is an enum type by checking if it exists and is not a function or struct
+                if (enumType.type == ValueType::Nil || (enumType.type == ValueType::Enum)) {
+                    std::cout << "DEBUG: Treating '" << typeName << "." << expr.member.lexeme << "' as enum access" << std::endl;
                     // This might be an enum type, try to create enum value
                     EnumValue enumValue(typeName, expr.member.lexeme, {});
                     result = Value(std::make_shared<EnumValue>(enumValue));
                     return;
                 }
+                std::cout << "DEBUG: Type '" << typeName << "' is a function, not treating as enum" << std::endl;
             } catch (const std::runtime_error&) {
                 // Not an enum type either
             }
@@ -2777,7 +2999,7 @@ void Interpreter::executeWithEnvironment(const Stmt& stmt, std::shared_ptr<Envir
         stmt.accept(*this);
     } catch (const ReturnException& returnValue) {
         // 捕获返回值并存储在环境中
-        env->define("return", returnValue.value);
+        env->define("return", *returnValue.value);
         environment = previous;
         throw; // 重新抛出以便上层处理
     } catch (...) {
@@ -2869,6 +3091,8 @@ void Interpreter::registerClassProperties(const std::string& className, const st
 
 
 Value Interpreter::getMemberValue(const Value& object, const std::string& memberName) {
+    std::cout << "DEBUG: getMemberValue called for member '" << memberName << "'" << std::endl;
+    
     // If the object is an optional, we cannot access its members directly
     if (object.isOptional()) {
         throw std::runtime_error("Cannot access member '" + memberName + "' on optional value. Use optional chaining (?.) instead.");
@@ -2896,30 +3120,35 @@ Value Interpreter::getMemberValue(const Value& object, const std::string& member
     
     if (object.isStruct()) {
         const auto& structValue = object.asStruct();
+        std::cout << "DEBUG: Object is struct '" << structValue.structName << "'" << std::endl;
         
         // Try property system first
         if (structValue.properties && structValue.properties->hasProperty(memberName)) {
+            std::cout << "DEBUG: Found member in property system" << std::endl;
             return structValue.properties->getProperty(*this, memberName);
         }
         
         // Fallback to legacy member access
         auto it = structValue.members->find(memberName);
         if (it != structValue.members->end()) {
+            std::cout << "DEBUG: Found member in struct members" << std::endl;
             return it->second;
         }
         
         // Try to find extension methods
         std::string mangledName = structValue.structName + "." + memberName;
+        std::cout << "DEBUG: Looking for extension method: " << mangledName << std::endl;
         try {
             Value extensionMethod = globals->get(Token(TokenType::Identifier, mangledName, 0));
+            std::cout << "DEBUG: Found method in globals, type: " << (extensionMethod.type == ValueType::Function ? "function" : "not function") << std::endl;
             if (extensionMethod.type == ValueType::Function) {
                 // Create a bound method that includes the struct instance as 'self'
                 auto function = extensionMethod.asFunction();
                 // For now, return the function directly - the Call visitor will handle binding
                 return extensionMethod;
             }
-        } catch (const std::runtime_error&) {
-            // Extension method not found, continue to error
+        } catch (const std::runtime_error& e) {
+            std::cout << "DEBUG: Extension method not found: " << e.what() << std::endl;
         }
         
         throw std::runtime_error("Struct '" + structValue.structName + "' has no member '" + memberName + "'");
@@ -3776,7 +4005,7 @@ void Interpreter::visit(const TaskExpr& expr) {
         // For now, return the last result
         // In a full implementation, this would return a Task<T> type
     } catch (const ReturnException& returnValue) {
-        result = returnValue.value;
+        result = *returnValue.value;
     }
     
     // Restore previous environment
@@ -3811,7 +4040,7 @@ void Interpreter::visit(const TaskGroupExpr& expr) {
         }
         
     } catch (const ReturnException& returnValue) {
-        result = returnValue.value;
+        result = *returnValue.value;
     }
     
     // Restore previous environment

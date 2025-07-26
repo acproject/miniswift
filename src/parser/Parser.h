@@ -34,6 +34,9 @@ private:
     std::unique_ptr<Stmt> whileStatement();
     std::unique_ptr<Stmt> forStatement();
     std::unique_ptr<Stmt> returnStatement();
+    std::unique_ptr<Stmt> continueStatement();
+    std::unique_ptr<Stmt> breakStatement();
+    std::unique_ptr<Stmt> fallthroughStatement();
     std::unique_ptr<Stmt> throwStatement();
     std::unique_ptr<Stmt> doCatchStatement();
     std::unique_ptr<Stmt> deferStatement();

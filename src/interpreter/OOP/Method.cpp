@@ -11,9 +11,10 @@ namespace miniswift {
 // MethodValue 实现
 
 Value MethodValue::call(Interpreter& interpreter, const std::vector<Value>& arguments, const Value* selfValue) {
-    // 检查参数数量
-    if (arguments.size() != definition_.parameters.size()) {
-        throw std::runtime_error("Expected " + std::to_string(definition_.parameters.size()) + 
+    // 检查参数数量 - 对于实例方法，第一个参数是self，所以实际用户参数数量应该是parameters.size() - 1
+    size_t expectedArgs = definition_.isStatic ? definition_.parameters.size() : definition_.parameters.size() - 1;
+    if (arguments.size() != expectedArgs) {
+        throw std::runtime_error("Expected " + std::to_string(expectedArgs) + 
                           " arguments but got " + std::to_string(arguments.size()));
     }
     
@@ -32,8 +33,17 @@ Value MethodValue::call(Interpreter& interpreter, const std::vector<Value>& argu
     }
     
     // 绑定参数
-    for (size_t i = 0; i < definition_.parameters.size(); ++i) {
-        methodEnv->define(definition_.parameters[i].lexeme, arguments[i]);
+    if (!definition_.isStatic) {
+        // 对于实例方法，第一个参数是self，已经通过MethodCallEnvironment处理
+        // 绑定其余的用户参数
+        for (size_t i = 1; i < definition_.parameters.size(); ++i) {
+            methodEnv->define(definition_.parameters[i].lexeme, arguments[i - 1]);
+        }
+    } else {
+        // 对于静态方法，直接绑定所有参数
+        for (size_t i = 0; i < definition_.parameters.size(); ++i) {
+            methodEnv->define(definition_.parameters[i].lexeme, arguments[i]);
+        }
     }
     
     // 执行方法体

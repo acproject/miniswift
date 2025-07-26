@@ -24,6 +24,10 @@ struct ForInStmt;
 struct ForAwaitStmt;
 struct FunctionStmt;
 struct ReturnStmt;
+// Control transfer statements
+struct ContinueStmt;
+struct BreakStmt;
+struct FallthroughStmt;
 struct EnumStmt;
 struct StructStmt;
 struct ClassStmt;
@@ -69,6 +73,10 @@ public:
   virtual void visit(const ForAwaitStmt &stmt) = 0;
   virtual void visit(const FunctionStmt &stmt) = 0;
   virtual void visit(const ReturnStmt &stmt) = 0;
+  // Control transfer statements
+  virtual void visit(const ContinueStmt &stmt) = 0;
+  virtual void visit(const BreakStmt &stmt) = 0;
+  virtual void visit(const FallthroughStmt &stmt) = 0;
   virtual void visit(const EnumStmt &stmt) = 0;
   virtual void visit(const StructStmt &stmt) = 0;
   virtual void visit(const ClassStmt &stmt) = 0;
@@ -364,6 +372,43 @@ struct ReturnStmt : Stmt {
   }
 
   const std::unique_ptr<Expr> value; // Can be null for void return
+};
+
+// Continue statement: continue [label]
+struct ContinueStmt : Stmt {
+  explicit ContinueStmt(Token label = Token()) : label(label) {}
+
+  void accept(StmtVisitor &visitor) const override { visitor.visit(*this); }
+
+  std::unique_ptr<Stmt> clone() const override {
+    return std::make_unique<ContinueStmt>(label);
+  }
+
+  const Token label; // Optional label for labeled statements
+};
+
+// Break statement: break [label]
+struct BreakStmt : Stmt {
+  explicit BreakStmt(Token label = Token()) : label(label) {}
+
+  void accept(StmtVisitor &visitor) const override { visitor.visit(*this); }
+
+  std::unique_ptr<Stmt> clone() const override {
+    return std::make_unique<BreakStmt>(label);
+  }
+
+  const Token label; // Optional label for labeled statements
+};
+
+// Fallthrough statement: fallthrough
+struct FallthroughStmt : Stmt {
+  FallthroughStmt() {}
+
+  void accept(StmtVisitor &visitor) const override { visitor.visit(*this); }
+
+  std::unique_ptr<Stmt> clone() const override {
+    return std::make_unique<FallthroughStmt>();
+  }
 };
 
 // Enum case definition

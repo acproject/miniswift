@@ -256,6 +256,15 @@ std::unique_ptr<Stmt> Parser::statement() {
   if (match({TokenType::Return})) {
     return returnStatement();
   }
+  if (match({TokenType::Continue})) {
+    return continueStatement();
+  }
+  if (match({TokenType::Break})) {
+    return breakStatement();
+  }
+  if (match({TokenType::Fallthrough})) {
+    return fallthroughStatement();
+  }
   if (match({TokenType::Throw})) {
     return throwStatement();
   }
@@ -782,23 +791,54 @@ std::unique_ptr<Expr> Parser::primary() {
     // misinterpreted
 
     // Check for generic type instantiation: Identifier<Type1, Type2>
+    // Only parse as generic if the next token after '<' looks like a type
     if (identifier.type == TokenType::Identifier && check(TokenType::LAngle)) {
-      // Parse generic type instantiation
+      // Look ahead to see if this is really a generic type instantiation
+      int savedCurrent = current;
       advance(); // consume '<'
-
-      std::vector<Token> typeArguments;
+      
+      bool isGeneric = false;
       if (!check(TokenType::RAngle)) {
-        do {
-          Token typeArg = parseType();
-          typeArguments.push_back(typeArg);
-        } while (match({TokenType::Comma}));
+        // Check if the next token could be a type name (not a literal or variable)
+        // Only consider built-in type keywords, not literals or variables
+        if (check(TokenType::String) || check(TokenType::Int) || check(TokenType::Bool) ||
+            check(TokenType::Double) || check(TokenType::Int8) || check(TokenType::Int16) ||
+            check(TokenType::Int32) || check(TokenType::Int64) || check(TokenType::UInt) ||
+            check(TokenType::UInt8) || check(TokenType::UInt16) || check(TokenType::UInt64) ||
+            check(TokenType::Float) || check(TokenType::Character) || check(TokenType::Any) ||
+            check(TokenType::Void) || check(TokenType::Set)) {
+          isGeneric = true;
+        }
+        // For identifiers, we need to be more careful - only treat as generic
+        // if it's likely a type name (starts with uppercase)
+        else if (check(TokenType::Identifier)) {
+          std::string tokenText = peek().lexeme;
+          if (!tokenText.empty() && std::isupper(tokenText[0])) {
+            isGeneric = true;
+          }
+        }
       }
+      
+      if (isGeneric) {
+        // Parse generic type instantiation
+        std::vector<Token> typeArguments;
+        if (!check(TokenType::RAngle)) {
+          do {
+            Token typeArg = parseType();
+            typeArguments.push_back(typeArg);
+          } while (match({TokenType::Comma}));
+        }
 
-      consume(TokenType::RAngle, "Expect '>' after generic type arguments.");
+        consume(TokenType::RAngle, "Expect '>' after generic type arguments.");
 
-      // Create a GenericTypeInstantiation expression
-      expr = std::make_unique<GenericTypeInstantiationExpr>(
-          identifier, std::move(typeArguments));
+        // Create a GenericTypeInstantiation expression
+        expr = std::make_unique<GenericTypeInstantiationExpr>(
+            identifier, std::move(typeArguments));
+      } else {
+        // Not a generic, restore position and treat as regular variable
+        current = savedCurrent;
+        expr = std::make_unique<VarExpr>(identifier);
+      }
     } else {
       // Regular variable expression
       expr = std::make_unique<VarExpr>(identifier);
@@ -1580,6 +1620,38 @@ std::unique_ptr<Stmt> Parser::returnStatement() {
 
   match({TokenType::Semicolon}); // Optional semicolon
   return std::make_unique<ReturnStmt>(std::move(value));
+}
+
+std::unique_ptr<Stmt> Parser::continueStatement() {
+  Token keyword = previous();
+  std::optional<Token> label;
+
+  // Check for optional label: continue labelName
+  if (check(TokenType::Identifier)) {
+    label = advance();
+  }
+
+  match({TokenType::Semicolon}); // Optional semicolon
+  return std::make_unique<ContinueStmt>(label.value_or(Token()));
+}
+
+std::unique_ptr<Stmt> Parser::breakStatement() {
+  Token keyword = previous();
+  std::optional<Token> label;
+
+  // Check for optional label: break labelName
+  if (check(TokenType::Identifier)) {
+    label = advance();
+  }
+
+  match({TokenType::Semicolon}); // Optional semicolon
+  return std::make_unique<BreakStmt>(label.value_or(Token()));
+}
+
+std::unique_ptr<Stmt> Parser::fallthroughStatement() {
+  Token keyword = previous();
+  match({TokenType::Semicolon}); // Optional semicolon
+  return std::make_unique<FallthroughStmt>();
 }
 
 // Parse function call: primary ( arguments )

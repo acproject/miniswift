@@ -105,6 +105,9 @@ public:
     virtual void visit(const class TypedWhileStmt& stmt) = 0;
     virtual void visit(const class TypedForStmt& stmt) = 0;
     virtual void visit(const class TypedReturnStmt& stmt) = 0;
+    virtual void visit(const class TypedContinueStmt& stmt) = 0;
+    virtual void visit(const class TypedBreakStmt& stmt) = 0;
+    virtual void visit(const class TypedFallthroughStmt& stmt) = 0;
     
     // 函数和类型定义
     virtual void visit(const class TypedFunctionStmt& stmt) = 0;
@@ -532,6 +535,30 @@ public:
 class TypedStructStmt : public TypedStmt {
 public:
     TypedStructStmt(std::unique_ptr<StructStmt> originalStmt)
+        : TypedStmt(std::move(originalStmt)) {}
+    void accept(TypedStmtVisitor& visitor) const override { visitor.visit(*this); }
+    std::unique_ptr<TypedStmt> clone() const override { return nullptr; } // TODO: 实现
+};
+
+class TypedContinueStmt : public TypedStmt {
+public:
+    TypedContinueStmt(std::unique_ptr<ContinueStmt> originalStmt)
+        : TypedStmt(std::move(originalStmt)) {}
+    void accept(TypedStmtVisitor& visitor) const override { visitor.visit(*this); }
+    std::unique_ptr<TypedStmt> clone() const override { return nullptr; } // TODO: 实现
+};
+
+class TypedBreakStmt : public TypedStmt {
+public:
+    TypedBreakStmt(std::unique_ptr<BreakStmt> originalStmt)
+        : TypedStmt(std::move(originalStmt)) {}
+    void accept(TypedStmtVisitor& visitor) const override { visitor.visit(*this); }
+    std::unique_ptr<TypedStmt> clone() const override { return nullptr; } // TODO: 实现
+};
+
+class TypedFallthroughStmt : public TypedStmt {
+public:
+    TypedFallthroughStmt(std::unique_ptr<FallthroughStmt> originalStmt)
         : TypedStmt(std::move(originalStmt)) {}
     void accept(TypedStmtVisitor& visitor) const override { visitor.visit(*this); }
     std::unique_ptr<TypedStmt> clone() const override { return nullptr; } // TODO: 实现

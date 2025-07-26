@@ -52,6 +52,9 @@ public:
     void visit(const ForInStmt& stmt) override;
     void visit(const FunctionStmt& stmt) override;
     void visit(const ReturnStmt& stmt) override;
+    void visit(const ContinueStmt& stmt) override;
+    void visit(const BreakStmt& stmt) override;
+    void visit(const FallthroughStmt& stmt) override;
     void visit(const EnumStmt& stmt) override;
     void visit(const StructStmt& stmt) override;
     void visit(const ClassStmt& stmt) override;

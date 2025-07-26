@@ -11,10 +11,10 @@
 namespace miniswift {
 
 // Forward declarations
-struct Value;
 class Expr;
 class Stmt;
 class Environment;
+struct Value;
 
 // Error protocol - base interface for all error types
 struct ErrorProtocol {
@@ -216,6 +216,43 @@ public:
 
   ThrowException(std::unique_ptr<ErrorProtocol> err)
       : ThrowException(ErrorValue(std::move(err))) {}
+};
+
+// Control flow exceptions
+class ReturnException : public std::runtime_error {
+public:
+  std::shared_ptr<Value> value;
+
+  ReturnException(std::shared_ptr<Value> val)
+      : std::runtime_error("Return statement executed"),
+        value(std::move(val)) {}
+        
+  // Convenience constructor that takes Value by reference
+  ReturnException(const Value& val);
+};
+
+class ContinueException : public std::runtime_error {
+public:
+  std::string label;
+
+  ContinueException(const std::string& lbl = "")
+      : std::runtime_error("Continue statement executed"),
+        label(lbl) {}
+};
+
+class BreakException : public std::runtime_error {
+public:
+  std::string label;
+
+  BreakException(const std::string& lbl = "")
+      : std::runtime_error("Break statement executed"),
+        label(lbl) {}
+};
+
+class FallthroughException : public std::runtime_error {
+public:
+  FallthroughException()
+      : std::runtime_error("Fallthrough statement executed") {}
 };
 
 // Error handling context for tracking try-catch blocks

@@ -34,6 +34,10 @@ public:
     void visit(const ForAwaitStmt& stmt) override;
     void visit(const FunctionStmt& stmt) override;
     void visit(const ReturnStmt& stmt) override;
+    // Control transfer statements
+    void visit(const ContinueStmt& stmt) override;
+    void visit(const BreakStmt& stmt) override;
+    void visit(const FallthroughStmt& stmt) override;
     void visit(const EnumStmt& stmt) override;
     void visit(const StructStmt& stmt) override;
     void visit(const ClassStmt& stmt) override;
@@ -140,6 +144,9 @@ private:
     
     // Constructor function storage to keep them alive
     std::unordered_map<std::string, std::shared_ptr<FunctionStmt>> constructorFunctions;
+    
+    // Method function storage to keep them alive (with self parameter)
+    std::unordered_map<std::string, std::shared_ptr<FunctionStmt>> methodFunctions;
     
     // Inheritance management
     std::unique_ptr<InheritanceManager> inheritanceManager;

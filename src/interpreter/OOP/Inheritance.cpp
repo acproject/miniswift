@@ -1,17 +1,9 @@
 #include "Inheritance.h"
 #include "../Interpreter.h"
 #include "../Environment.h"
+#include "../ErrorHandling.h"
 #include <algorithm>
 #include <stdexcept>
-
-// Forward declaration of ReturnException from Interpreter.cpp
-namespace miniswift {
-    class ReturnException : public std::runtime_error {
-    public:
-        Value value;
-        ReturnException(miniswift::Value val) : std::runtime_error("return"), value(val) {}
-    };
-}
 
 namespace miniswift {
 
@@ -172,7 +164,7 @@ Value SuperHandler::callSuperMethod(const std::string& currentClass,
         interpreter_.executeWithEnvironment(*method->body, methodEnv);
         return Value(); // void return
     } catch (const ReturnException& returnEx) {
-        return returnEx.value;
+        return *returnEx.value;
     }
 }
 

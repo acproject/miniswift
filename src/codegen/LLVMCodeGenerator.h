@@ -137,6 +137,9 @@ public:
     void visit(const TypedWhileStmt& stmt) override;
     void visit(const TypedForStmt& stmt) override;
     void visit(const TypedReturnStmt& stmt) override;
+    void visit(const TypedContinueStmt& stmt) override;
+    void visit(const TypedBreakStmt& stmt) override;
+    void visit(const TypedFallthroughStmt& stmt) override;
     void visit(const TypedFunctionStmt& stmt) override;
     void visit(const TypedStructStmt& stmt) override;
     void visit(const TypedClassStmt& stmt) override;

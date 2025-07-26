@@ -66,7 +66,7 @@ Value SubscriptValue::get(Interpreter& interpreter, const std::vector<Value>& in
             result = Value();
         } catch (const ReturnException& returnValue) {
             // This is a return statement, get the returned value
-            result = returnValue.value;
+            result = *returnValue.value;
         }
         
         interpreter.setCurrentEnvironment(previous);

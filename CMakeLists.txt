@@ -73,6 +73,7 @@ set(INTERPRETER_SOURCES
     src/interpreter/Interpreter.cpp
     src/interpreter/Environment.cpp
     src/interpreter/Value.cpp
+    src/interpreter/ErrorHandling.cpp
 )
 
 set(OOP_SOURCES

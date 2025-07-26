@@ -37,6 +37,9 @@ static void initializeKeywords() {
   keywords["false"] = TokenType::False;
   keywords["print"] = TokenType::Print;
   keywords["return"] = TokenType::Return;
+  keywords["continue"] = TokenType::Continue;
+  keywords["break"] = TokenType::Break;
+  keywords["fallthrough"] = TokenType::Fallthrough;
   keywords["get"] = TokenType::Get;
   keywords["set"] = TokenType::Set;
   keywords["willSet"] = TokenType::WillSet;

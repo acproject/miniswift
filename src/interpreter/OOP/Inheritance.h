@@ -46,6 +46,10 @@ public:
   std::shared_ptr<FunctionStmt> findMethod(const std::string &className,
                                            const std::string &methodName) const;
 
+  // 只在指定类中查找方法（不递归查找父类）
+  std::shared_ptr<FunctionStmt> findMethodInClass(const std::string &className,
+                                                   const std::string &methodName) const;
+
   // 注册类的方法
   void registerMethod(const std::string &className,
                       const std::string &methodName,

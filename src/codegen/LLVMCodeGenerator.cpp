@@ -83,32 +83,32 @@ CodeGenResult LLVMCodeGenerator::generateModule(const std::string& moduleName, c
                 const auto& originalFuncStmt = static_cast<const FunctionStmt&>(typedFuncStmt->getOriginalStmt());
                 if (originalFuncStmt.name.lexeme == "main") {
                     hasMainFunction = true;
-                    std::cout << "DEBUG: Found main function" << std::endl;
+        
                 }
                 if (originalFuncStmt.isMain) {
                     hasMainAttribute = true;
-                    std::cout << "DEBUG: Found @main function: " << originalFuncStmt.name.lexeme << std::endl;
+        
                 }
             } else if (auto typedStructStmt = dynamic_cast<const TypedStructStmt*>(stmt.get())) {
                 const auto& originalStructStmt = static_cast<const StructStmt&>(typedStructStmt->getOriginalStmt());
                 if (originalStructStmt.isMain) {
                     hasMainAttribute = true;
-                    std::cout << "DEBUG: Found @main struct: " << originalStructStmt.name.lexeme << std::endl;
+        
                 }
             } else if (auto typedClassStmt = dynamic_cast<const TypedClassStmt*>(stmt.get())) {
                 const auto& originalClassStmt = static_cast<const ClassStmt&>(typedClassStmt->getOriginalStmt());
                 if (originalClassStmt.isMain) {
                     hasMainAttribute = true;
-                    std::cout << "DEBUG: Found @main class: " << originalClassStmt.name.lexeme << std::endl;
+        
                 }
             } else {
                 // 收集顶层语句（非函数声明）
                 topLevelStatements.push_back(stmt.get());
-                std::cout << "DEBUG: Found top-level statement" << std::endl;
+    
             }
         }
         
-        std::cout << "DEBUG: hasMainFunction = " << hasMainFunction << ", hasMainAttribute = " << hasMainAttribute << ", topLevelStatements.size() = " << topLevelStatements.size() << std::endl;
+
         
         // 第二遍：生成函数声明
         for (const auto& stmt : program.getStatements()) {
@@ -299,11 +299,11 @@ bool LLVMCodeGenerator::initializeJIT() {
     }
     std::cerr << "DEBUG: Module is available" << std::endl;
     
-    std::cout << "DEBUG: Starting JIT initialization..." << std::endl;
+    
     std::cout.flush();
     
     // 使用现代LLVM ORC JIT API
-    std::cout << "DEBUG: Creating LLJIT..." << std::endl;
+    
     std::cout.flush();
     auto jitExpected = llvm::orc::LLJITBuilder().create();
     if (!jitExpected) {
@@ -311,10 +311,10 @@ bool LLVMCodeGenerator::initializeJIT() {
         llvm::raw_string_ostream errorStream(errorStr);
         errorStream << jitExpected.takeError();
         reportError("Failed to create LLJIT: " + errorStr);
-        std::cout << "DEBUG: LLJIT creation failed: " << errorStr << std::endl;
+        
         return false;
     }
-    std::cout << "DEBUG: LLJIT created successfully" << std::endl;
+    
     
     // 保存JIT实例
     jit_ = std::move(*jitExpected);
@@ -1046,23 +1046,23 @@ void LLVMCodeGenerator::generateStatement(const Stmt* stmt) {
         
         // 根据函数声明的返回类型来确定LLVM返回类型
         llvm::Type* returnType;
-        std::cout << "DEBUG: Function " << funcStmt->name.lexeme << " return type: '" << funcStmt->returnType.lexeme << "'" << std::endl;
+
         if (funcStmt->returnType.lexeme.empty() || funcStmt->returnType.lexeme == "Void") {
             returnType = builder_->getVoidTy();
-            std::cout << "DEBUG: Using void return type" << std::endl;
+
         } else if (funcStmt->returnType.lexeme == "Int") {
             returnType = builder_->getInt64Ty();
-            std::cout << "DEBUG: Using int64 return type" << std::endl;
+
         } else if (funcStmt->returnType.lexeme == "String") {
             returnType = llvm::PointerType::getUnqual(*context_);
-            std::cout << "DEBUG: Using pointer return type" << std::endl;
+
         } else if (funcStmt->returnType.lexeme == "Bool") {
             returnType = builder_->getInt1Ty();
-            std::cout << "DEBUG: Using bool return type" << std::endl;
+
         } else {
             // 默认为void类型
             returnType = builder_->getVoidTy();
-            std::cout << "DEBUG: Using default void return type for unknown type: " << funcStmt->returnType.lexeme << std::endl;
+
         }
         llvm::FunctionType* funcType = llvm::FunctionType::get(returnType, paramTypes, false);
         
@@ -1482,23 +1482,23 @@ llvm::Function* LLVMCodeGenerator::generateFunction(const TypedFunctionStmt& fun
     
     // 根据函数声明的返回类型来确定LLVM返回类型
     llvm::Type* returnType;
-    std::cout << "DEBUG: TypedFunction " << originalFuncStmt.name.lexeme << " return type: '" << originalFuncStmt.returnType.lexeme << "'" << std::endl;
+    
     if (originalFuncStmt.returnType.lexeme.empty() || originalFuncStmt.returnType.lexeme == "Void") {
         returnType = builder_->getVoidTy();
-        std::cout << "DEBUG: Using void return type" << std::endl;
+        
     } else if (originalFuncStmt.returnType.lexeme == "Int") {
         returnType = builder_->getInt64Ty();
-        std::cout << "DEBUG: Using int64 return type" << std::endl;
+        
     } else if (originalFuncStmt.returnType.lexeme == "String") {
         returnType = llvm::PointerType::getUnqual(*context_);
-        std::cout << "DEBUG: Using pointer return type" << std::endl;
+        
     } else if (originalFuncStmt.returnType.lexeme == "Bool") {
         returnType = builder_->getInt1Ty();
-        std::cout << "DEBUG: Using bool return type" << std::endl;
+        
     } else {
         // 默认为void类型
         returnType = builder_->getVoidTy();
-        std::cout << "DEBUG: Using default void return type for unknown type: " << originalFuncStmt.returnType.lexeme << std::endl;
+        
     }
     llvm::FunctionType* funcType = llvm::FunctionType::get(returnType, paramTypes, false);
     

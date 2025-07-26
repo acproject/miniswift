@@ -2224,12 +2224,21 @@ std::unique_ptr<Stmt> Parser::classDeclaration() {
       memberSetterAccessLevel = accessPair.second;
     }
 
+    // Check for override keyword before func
+    bool isOverride = false;
+    if (match({TokenType::Override})) {
+      isOverride = true;
+    }
+
     if (match({TokenType::Func})) {
       // Parse method declaration
       auto method = std::unique_ptr<FunctionStmt>(
           static_cast<FunctionStmt *>(functionDeclaration().release()));
       method->accessLevel = memberAccessLevel;
+      method->isOverride = isOverride;
       methods.push_back(std::move(method));
+    } else if (isOverride) {
+      throw std::runtime_error("Expect 'func' after 'override'.");
     } else if (match({TokenType::Init})) {
       // Parse initializer declaration
       auto init = std::unique_ptr<InitStmt>(

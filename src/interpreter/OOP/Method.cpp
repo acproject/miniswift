@@ -11,8 +11,17 @@ namespace miniswift {
 // MethodValue 实现
 
 Value MethodValue::call(Interpreter& interpreter, const std::vector<Value>& arguments, const Value* selfValue) {
-    // 检查参数数量 - 对于实例方法，第一个参数是self，所以实际用户参数数量应该是parameters.size() - 1
-    size_t expectedArgs = definition_.isStatic ? definition_.parameters.size() : definition_.parameters.size() - 1;
+    // 检查参数数量 - 对于实例方法，如果有参数，第一个参数是self，所以实际用户参数数量应该是parameters.size() - 1
+    // 但是如果没有参数，那么用户参数数量就是0
+    size_t expectedArgs;
+    if (definition_.isStatic) {
+        expectedArgs = definition_.parameters.size();
+    } else {
+        // 对于实例方法，如果有参数且第一个是self，则用户参数数量是parameters.size() - 1
+        // 如果没有参数，则用户参数数量是0
+        expectedArgs = definition_.parameters.empty() ? 0 : definition_.parameters.size() - 1;
+    }
+    
     if (arguments.size() != expectedArgs) {
         throw std::runtime_error("Expected " + std::to_string(expectedArgs) + 
                           " arguments but got " + std::to_string(arguments.size()));
@@ -34,10 +43,12 @@ Value MethodValue::call(Interpreter& interpreter, const std::vector<Value>& argu
     
     // 绑定参数
     if (!definition_.isStatic) {
-        // 对于实例方法，第一个参数是self，已经通过MethodCallEnvironment处理
-        // 绑定其余的用户参数
-        for (size_t i = 1; i < definition_.parameters.size(); ++i) {
-            methodEnv->define(definition_.parameters[i].lexeme, arguments[i - 1]);
+        // 对于实例方法，self已经通过MethodCallEnvironment处理
+        // 直接绑定所有用户参数到对应的参数名
+        for (size_t i = 0; i < arguments.size(); ++i) {
+            if (i < definition_.parameters.size()) {
+                methodEnv->define(definition_.parameters[i].lexeme, arguments[i]);
+            }
         }
     } else {
         // 对于静态方法，直接绑定所有参数

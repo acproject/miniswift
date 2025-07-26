@@ -284,7 +284,7 @@ void ARCManager::notifyUnownedRefs(void* object) {
 void ARCManager::printDebugInfo() const {
     std::lock_guard<std::mutex> lock(arcMutex);
     
-    std::cout << "\n=== ARC Debug Information ===" << std::endl;
+
     std::cout << "Total objects tracked: " << refCounts.size() << std::endl;
     
     std::cout << "\nReference counts:" << std::endl;

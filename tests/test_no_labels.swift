@@ -1,8 +1,0 @@
-// Test without labels
-
-func add(a: Int, b: Int) -> Int {
-    return a + b
-}
-
-let result = add(5, 3)
-print(result)

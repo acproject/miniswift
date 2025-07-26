@@ -104,6 +104,20 @@ std::shared_ptr<FunctionStmt> InheritanceManager::getOverriddenMethod(const std:
     return findMethodRecursive(superclass, methodName);
 }
 
+std::shared_ptr<FunctionStmt> InheritanceManager::findMethodInClass(const std::string& className,
+                                                                      const std::string& methodName) const {
+    // 只在当前类中查找，不递归查找父类
+    auto classIt = classMethods_.find(className);
+    if (classIt != classMethods_.end()) {
+        auto methodIt = classIt->second.find(methodName);
+        if (methodIt != classIt->second.end()) {
+            return methodIt->second;
+        }
+    }
+    
+    return nullptr;
+}
+
 std::shared_ptr<FunctionStmt> InheritanceManager::findMethodRecursive(const std::string& className,
                                                                      const std::string& methodName) const {
     // 在当前类中查找

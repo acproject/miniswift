@@ -329,7 +329,7 @@ void MemorySafetyManager::printMemoryReport() const {
     std::cout << "Tracked pointers: " << trackedPointers.size() << std::endl;
     std::cout << "Memory regions: " << memoryRegions.size() << std::endl;
     std::cout << "Strict mode: " << (strictMode.load() ? "enabled" : "disabled") << std::endl;
-    std::cout << "Debug mode: " << (debugMode.load() ? "enabled" : "disabled") << std::endl;
+
     
     // 统计有效和无效的指针
     size_t validPointers = 0;

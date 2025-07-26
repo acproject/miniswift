@@ -1034,9 +1034,7 @@ void Interpreter::visit(const Unary& expr) {
 }
 
 Value Interpreter::evaluate(const Expr& expr) {
-    std::cout << "DEBUG: evaluate called for expression type: " << typeid(expr).name() << std::endl;
     expr.accept(*this);
-    std::cout << "DEBUG: evaluate result type: " << static_cast<int>(result.type) << std::endl;
     return result;
 }
 
@@ -1891,11 +1889,11 @@ void Interpreter::visit(const FallthroughStmt& stmt) {
 
 // Execute function call: callee(arguments)
 void Interpreter::visit(const Call& expr) {
-    std::cout << "DEBUG: Call::visit entered" << std::endl;
+
     
     // Check if callee is MemberAccess
     if (auto memberAccess = dynamic_cast<const MemberAccess*>(expr.callee.get())) {
-        std::cout << "DEBUG: Found MemberAccess callee" << std::endl;
+
         
         // First check if this is a nested type constructor call
         if (auto varExpr = dynamic_cast<const VarExpr*>(memberAccess->object.get())) {
@@ -1955,39 +1953,43 @@ void Interpreter::visit(const Call& expr) {
         Value method;
         try {
             method = getMemberValue(object, memberAccess->member.lexeme);
-            std::cout << "DEBUG: Found method '" << memberAccess->member.lexeme << "' for struct, type: " << static_cast<int>(method.type) << std::endl;
+
         } catch (const std::runtime_error& e) {
-            std::cout << "DEBUG: getMemberValue failed: " << e.what() << std::endl;
+
             throw;
         }
         
         if (method.isFunction()) {
-            // This is a method call - prepare arguments with 'self' as first parameter
-            std::vector<Value> arguments;
-            arguments.push_back(object); // Add 'self' as first argument
-            
-            // Add the provided arguments
-            for (const auto& argument : expr.arguments) {
-                arguments.push_back(evaluate(*argument));
-            }
-            
             auto callable = method.asFunction();
             
             if (callable->isFunction) {
-                // Handle function call with self parameter
-                // Note: arguments already includes 'self' as first parameter
+                // For inherited methods, the function definition doesn't include 'self' parameter
+                // but we need to execute it in the context of the current object
+                std::vector<Value> arguments;
+                
+                // Add the provided arguments (no self parameter for inherited methods)
+                for (const auto& argument : expr.arguments) {
+                    arguments.push_back(evaluate(*argument));
+                }
+                
+                // Check parameter count - inherited methods should match exactly
                 if (arguments.size() != callable->functionDecl->parameters.size()) {
                     throw std::runtime_error("Expected " + 
                         std::to_string(callable->functionDecl->parameters.size()) + 
                         " arguments but got " + std::to_string(arguments.size()) + ".");
                 }
                 
-                std::cout << "DEBUG: Method call - arguments.size()=" << arguments.size() 
-                         << ", parameters.size()=" << callable->functionDecl->parameters.size() << std::endl;
+
                 
                 // Create new environment for function execution
                 auto previous = environment;
                 environment = std::make_shared<Environment>(callable->closure);
+                
+                // Set current class context for super keyword support
+                if (object.isClass()) {
+                    auto classInstance = object.asClass();
+                    environment->define("__current_class__", Value(classInstance->getClassName()), false, "String");
+                }
                 
                 // Create new defer stack level for this method
                 deferStack.push(std::vector<std::unique_ptr<Stmt>>());
@@ -2218,19 +2220,19 @@ void Interpreter::visit(const LabeledCall& expr) {
         // For other member access, fall through to normal evaluation
     }
     
-    // Check if this is a struct initialization call
+    // Check if this is a struct or class initialization call
     if (auto varExpr = dynamic_cast<const VarExpr*>(expr.callee.get())) {
-        std::string structName = varExpr->name.lexeme;
+        std::string typeName = varExpr->name.lexeme;
         
         // Check if this is a struct constructor
-        if (auto* structPropManager = getStructPropertyManager(structName)) {
+        if (auto* structPropManager = getStructPropertyManager(typeName)) {
             // Create a new struct instance
             auto propContainer = std::make_shared<InstancePropertyContainer>(*structPropManager, environment);
             propContainer->initializeDefaults(*this);
-            StructValue structValue(structName, propContainer);
+            StructValue structValue(typeName, propContainer);
             
             // Copy subscripts from static manager to instance
-            auto* typeSubscriptManager = staticSubscriptManager->getSubscriptManager(structName);
+            auto* typeSubscriptManager = staticSubscriptManager->getSubscriptManager(typeName);
             if (typeSubscriptManager) {
                 for (const auto& subscript : typeSubscriptManager->getAllSubscripts()) {
                     structValue.subscripts->addSubscript(std::make_unique<SubscriptValue>(*subscript));
@@ -2247,6 +2249,34 @@ void Interpreter::visit(const LabeledCall& expr) {
             }
             
             result = Value(structValue);
+            return;
+        }
+        
+        // Check if this is a class constructor
+        if (auto* classPropManager = getClassPropertyManager(typeName)) {
+            // Create a new class instance
+            auto propContainer = std::make_unique<InstancePropertyContainer>(*classPropManager, environment);
+            propContainer->initializeDefaults(*this);
+            ClassInstance classInstance(typeName, std::move(propContainer));
+            
+            // Copy subscripts from static manager to instance
+            auto* typeSubscriptManager = staticSubscriptManager->getSubscriptManager(typeName);
+            if (typeSubscriptManager) {
+                for (const auto& subscript : typeSubscriptManager->getAllSubscripts()) {
+                    classInstance.subscripts->addSubscript(std::make_unique<SubscriptValue>(*subscript));
+                }
+            }
+            
+            // Set member values using labeled arguments
+            for (size_t i = 0; i < expr.argumentLabels.size() && i < expr.arguments.size(); ++i) {
+                const std::string& memberName = expr.argumentLabels[i].lexeme;
+                if (!memberName.empty()) {
+                    Value memberValue = evaluate(*expr.arguments[i]);
+                    classInstance.properties->setProperty(*this, memberName, memberValue);
+                }
+            }
+            
+            result = Value(std::make_shared<ClassInstance>(std::move(classInstance)));
             return;
         }
     }
@@ -2900,16 +2930,16 @@ void Interpreter::visit(const MemberAccess& expr) {
             // Not a nested type, check if this is an enum access
             try {
                 Value enumType = environment->get(Token(TokenType::Identifier, typeName, 0));
-                std::cout << "DEBUG: Found type '" << typeName << "' with type: " << static_cast<int>(enumType.type) << std::endl;
+    
                 // Check if this is an enum type by checking if it exists and is not a function or struct
                 if (enumType.type == ValueType::Nil || (enumType.type == ValueType::Enum)) {
-                    std::cout << "DEBUG: Treating '" << typeName << "." << expr.member.lexeme << "' as enum access" << std::endl;
+        
                     // This might be an enum type, try to create enum value
                     EnumValue enumValue(typeName, expr.member.lexeme, {});
                     result = Value(std::make_shared<EnumValue>(enumValue));
                     return;
                 }
-                std::cout << "DEBUG: Type '" << typeName << "' is a function, not treating as enum" << std::endl;
+    
             } catch (const std::runtime_error&) {
                 // Not an enum type either
             }
@@ -3122,7 +3152,7 @@ void Interpreter::registerClassProperties(const std::string& className, const st
 
 
 Value Interpreter::getMemberValue(const Value& object, const std::string& memberName) {
-    std::cout << "DEBUG: getMemberValue called for member '" << memberName << "'" << std::endl;
+
     
     // If the object is an optional, we cannot access its members directly
     if (object.isOptional()) {
@@ -3151,27 +3181,27 @@ Value Interpreter::getMemberValue(const Value& object, const std::string& member
     
     if (object.isStruct()) {
         const auto& structValue = object.asStruct();
-        std::cout << "DEBUG: Object is struct '" << structValue.structName << "'" << std::endl;
+        
         
         // Try property system first
         if (structValue.properties && structValue.properties->hasProperty(memberName)) {
-            std::cout << "DEBUG: Found member in property system" << std::endl;
+
             return structValue.properties->getProperty(*this, memberName);
         }
         
         // Fallback to legacy member access
         auto it = structValue.members->find(memberName);
         if (it != structValue.members->end()) {
-            std::cout << "DEBUG: Found member in struct members" << std::endl;
+
             return it->second;
         }
         
         // Try to find extension methods
         std::string mangledName = structValue.structName + "." + memberName;
-        std::cout << "DEBUG: Looking for extension method: " << mangledName << std::endl;
+        
         try {
             Value extensionMethod = globals->get(Token(TokenType::Identifier, mangledName, 0));
-            std::cout << "DEBUG: Found method in globals, type: " << (extensionMethod.type == ValueType::Function ? "function" : "not function") << std::endl;
+
             if (extensionMethod.type == ValueType::Function) {
                 // Create a bound method that includes the struct instance as 'self'
                 auto function = extensionMethod.asFunction();
@@ -3179,7 +3209,7 @@ Value Interpreter::getMemberValue(const Value& object, const std::string& member
                 return extensionMethod;
             }
         } catch (const std::runtime_error& e) {
-            std::cout << "DEBUG: Extension method not found: " << e.what() << std::endl;
+
         }
         
         throw std::runtime_error("Struct '" + structValue.structName + "' has no member '" + memberName + "'");
@@ -3195,6 +3225,22 @@ Value Interpreter::getMemberValue(const Value& object, const std::string& member
         auto it = classValue->members->find(memberName);
         if (it != classValue->members->end()) {
             return it->second;
+        }
+        
+        // Try to find methods in current class first, then inherited methods
+        auto currentClassMethod = inheritanceManager->findMethodInClass(classValue->className, memberName);
+        if (currentClassMethod) {
+            // Create a callable from the current class method (including overridden methods)
+            auto callable = std::make_shared<Function>(currentClassMethod.get(), environment);
+            return Value(callable);
+        }
+        
+        // If not found in current class, try inherited methods
+        auto inheritedMethod = inheritanceManager->findMethodRecursive(inheritanceManager->getSuperclass(classValue->className), memberName);
+        if (inheritedMethod) {
+            // Create a callable from the inherited method
+            auto callable = std::make_shared<Function>(inheritedMethod.get(), environment);
+            return Value(callable);
         }
         
         // Try to find extension methods

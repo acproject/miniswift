@@ -235,7 +235,7 @@ void MemoryManager::printMemoryReport() const {
     std::cout << "  Dangling pointer detection: " << (config.enableDanglingPointerDetection ? "yes" : "no") << std::endl;
     std::cout << "  Array bounds checking: " << (config.enableArrayBoundsChecking ? "yes" : "no") << std::endl;
     std::cout << "  Memory leak detection: " << (config.enableMemoryLeakDetection ? "yes" : "no") << std::endl;
-    std::cout << "  Debug logging: " << (config.enableDebugLogging ? "yes" : "no") << std::endl;
+
     
     std::cout << "============================\n" << std::endl;
 }

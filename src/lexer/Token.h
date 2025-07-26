@@ -205,6 +205,7 @@ enum class TokenType {
   IntegerLiteral,
   FloatingLiteral,
   StringLiteral,
+  CharacterLiteral,
   InterpolatedStringLiteral,
 
   // String Interpolation

@@ -194,7 +194,7 @@ void Interpreter::printValueInline(const Value& val) {
             std::cout << std::get<float>(val.value);
             break;
         case ValueType::Character:
-            std::cout << "'" << std::get<char>(val.value) << "'";
+            std::cout << "'" << static_cast<unsigned char>(std::get<char>(val.value)) << "'";
             break;
         
         // Special Types
@@ -828,6 +828,16 @@ void Interpreter::visit(const Literal& expr) {
         case TokenType::StringLiteral:
             result = Value(expr.value.lexeme);
             break;
+        case TokenType::CharacterLiteral:
+            // Character literal should contain exactly one character
+            if (!expr.value.lexeme.empty()) {
+                // Convert to unsigned char to avoid signed char issues
+                unsigned char ch = static_cast<unsigned char>(expr.value.lexeme[0]);
+                result = Value(static_cast<char>(ch));
+            } else {
+                throw std::runtime_error("Invalid character literal.");
+            }
+            break;
         case TokenType::InterpolatedStringLiteral:
             // For now, treat interpolated string literals as regular strings
             // TODO: Implement proper string interpolation evaluation
@@ -895,7 +905,7 @@ void Interpreter::visit(const StringInterpolation& expr) {
                     result_str += std::to_string(std::get<float>(value.value));
                     break;
                 case ValueType::Character:
-                    result_str += std::get<char>(value.value);
+                    result_str += static_cast<unsigned char>(std::get<char>(value.value));
                     break;
                 
                 // Special Types
@@ -1018,7 +1028,7 @@ void Interpreter::visit(const DictionaryLiteral& expr) {
                 keyStr = std::to_string(std::get<uint64_t>(key.value));
                 break;
             case ValueType::Character:
-                keyStr = std::string(1, std::get<char>(key.value));
+                keyStr = std::string(1, static_cast<unsigned char>(std::get<char>(key.value)));
                 break;
             default:
                 throw std::runtime_error("Dictionary keys must be strings or numbers.");
@@ -1117,7 +1127,7 @@ void Interpreter::visit(const IndexAccess& expr) {
                 key = std::to_string(std::get<uint64_t>(index.value));
                 break;
             case ValueType::Character:
-                key = std::string(1, std::get<char>(index.value));
+                key = std::string(1, static_cast<unsigned char>(std::get<char>(index.value)));
                 break;
             default:
                 throw std::runtime_error("Dictionary key must be a string or number.");
@@ -1385,7 +1395,7 @@ std::string Interpreter::valueToString(const Value& val) {
         case ValueType::Float:
             return std::to_string(std::get<float>(val.value));
         case ValueType::Character:
-            return std::string(1, std::get<char>(val.value));
+            return std::string(1, static_cast<unsigned char>(std::get<char>(val.value)));
         
         // Special Types
         case ValueType::Set:

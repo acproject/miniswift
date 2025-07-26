@@ -20,6 +20,7 @@ private:
   char peekNext();
   void skipWhitespace();
   Token stringLiteral();
+  Token characterLiteral();
   Token number();
   Token identifier();
   TokenType identifierType();

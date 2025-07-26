@@ -314,6 +314,8 @@ Token Lexer::scanToken() {
       inStringLiteral = true;
       return stringLiteral();
     }
+  case '\'':
+    return characterLiteral();
   case '\\':
     if (inStringLiteral && peek() == '(') {
       advance(); // consume (
@@ -508,6 +510,67 @@ bool Lexer::isUnicodeIdentifierContinue(char c) {
   // Similar to isUnicodeIdentifierStart but also allows digits and some
   // additional characters
   return isUnicodeIdentifierStart(c);
+}
+
+Token Lexer::characterLiteral() {
+  if (current >= source.length()) {
+    return {TokenType::Unknown, "Unterminated character literal.", line};
+  }
+
+  char value;
+  
+  // Handle escape sequences
+  if (peek() == '\\') {
+    advance(); // consume backslash
+    if (current >= source.length()) {
+      return {TokenType::Unknown, "Unterminated character literal.", line};
+    }
+    
+    char escaped = peek();
+    switch (escaped) {
+    case 'n':
+      value = '\n';
+      advance();
+      break;
+    case 't':
+      value = '\t';
+      advance();
+      break;
+    case 'r':
+      value = '\r';
+      advance();
+      break;
+    case '\\':
+      value = '\\';
+      advance();
+      break;
+    case '\'':
+      value = '\'';
+      advance();
+      break;
+    case '0':
+      value = '\0';
+      advance();
+      break;
+    default:
+      // Unknown escape sequence, treat as literal
+      value = escaped;
+      advance();
+      break;
+    }
+  } else {
+    // Regular character
+    value = advance();
+  }
+
+  // Check for closing quote
+  if (current >= source.length() || peek() != '\'') {
+    return {TokenType::Unknown, "Unterminated character literal.", line};
+  }
+  
+  advance(); // consume closing quote
+  
+  return {TokenType::CharacterLiteral, std::string(1, value), line};
 }
 
 } // namespace miniswift

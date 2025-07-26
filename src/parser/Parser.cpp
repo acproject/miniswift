@@ -657,7 +657,7 @@ std::unique_ptr<Expr> Parser::unary() {
 std::unique_ptr<Expr> Parser::primary() {
   if (match({TokenType::True, TokenType::False, TokenType::Nil,
              TokenType::IntegerLiteral, TokenType::FloatingLiteral,
-             TokenType::StringLiteral})) {
+             TokenType::StringLiteral, TokenType::CharacterLiteral})) {
     return std::make_unique<Literal>(previous());
   }
 
@@ -1152,6 +1152,14 @@ Token Parser::parseType() {
 std::unique_ptr<Expr> Parser::arrayLiteral() {
   // We've already consumed the '['
   std::vector<std::unique_ptr<Expr>> elements;
+
+  // Check for empty dictionary [:]
+  if (check(TokenType::Colon)) {
+    advance(); // consume ':'
+    consume(TokenType::RSquare, "Expect ']' after empty dictionary literal.");
+    std::vector<DictionaryLiteral::KeyValuePair> pairs;
+    return std::make_unique<DictionaryLiteral>(std::move(pairs));
+  }
 
   if (!check(TokenType::RSquare)) {
     do {

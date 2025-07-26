@@ -1,12 +1,11 @@
 struct User {
-    var id: Int
     var name: String
+    var age: Int
     
     func getInfo() -> String {
-        return "User info"
+        return "Name: \(name), Age: \(age)"
     }
 }
 
-let user = User(id: 1, name: "Alice")
-print("User created")
+let user = User(name: "Alice", age: 30)
 print(user.getInfo())

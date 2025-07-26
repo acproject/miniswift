@@ -272,7 +272,38 @@ void Interpreter::visit(const Assign& expr) {
     // Check if target is a simple variable or member access
     if (auto varExpr = dynamic_cast<const VarExpr*>(expr.target.get())) {
         // Simple variable assignment
-        environment->assign(varExpr->name, value);
+        try {
+            environment->assign(varExpr->name, value);
+        } catch (const std::runtime_error&) {
+            // If variable not found, try to assign it as a member of 'self'
+            try {
+                Value& selfValue = environment->getReference(Token{TokenType::Identifier, "self", 0});
+                if (selfValue.isStruct()) {
+                    auto& structValue = selfValue.asStruct();
+                    // Try property system first
+                    if (structValue.properties && structValue.properties->hasProperty(varExpr->name.lexeme)) {
+                        structValue.properties->setProperty(*this, varExpr->name.lexeme, value);
+                    } else {
+                        // Fallback to legacy member assignment
+                        (*structValue.members)[varExpr->name.lexeme] = value;
+                    }
+                } else if (selfValue.isClass()) {
+                    auto& classValue = selfValue.asClass();
+                    // Try property system first
+                    if (classValue->properties && classValue->properties->hasProperty(varExpr->name.lexeme)) {
+                        classValue->properties->setProperty(*this, varExpr->name.lexeme, value);
+                    } else {
+                        // Fallback to legacy member assignment
+                        (*classValue->members)[varExpr->name.lexeme] = value;
+                    }
+                } else {
+                    throw std::runtime_error("Undefined variable '" + varExpr->name.lexeme + "'");
+                }
+            } catch (const std::runtime_error&) {
+                // 'self' not found or member assignment failed, re-throw original error
+                throw std::runtime_error("Undefined variable '" + varExpr->name.lexeme + "'");
+            }
+        }
     } else if (auto memberAccess = dynamic_cast<const MemberAccess*>(expr.target.get())) {
         // Member access assignment: object.member = value
         // For simple variable access, modify the original variable directly

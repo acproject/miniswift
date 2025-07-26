@@ -1741,6 +1741,43 @@ void Interpreter::visit(const ForInStmt& stmt) {
     environment = previous;
 }
 
+// Execute for-await statement: for await variable in asyncSequence { body }
+void Interpreter::visit(const ForAwaitStmt& stmt) {
+    // Create new environment for for-await loop scope
+    auto previous = environment;
+    environment = std::make_shared<Environment>(environment);
+    
+    try {
+        // Evaluate the async sequence
+        Value asyncSequence = evaluate(*stmt.asyncSequence);
+        
+        // For now, treat async sequences like regular sequences
+        // In a full implementation, this would handle async iteration
+        if (asyncSequence.type == ValueType::Array) {
+            const auto& arr = *asyncSequence.asArray();
+            
+            if (stmt.variables.size() == 1) {
+                // Simple async iteration: for await item in asyncArray
+                for (const auto& item : arr) {
+                    environment->define(stmt.variables[0].lexeme, item, false, "Any");
+                    stmt.body->accept(*this);
+                }
+            } else {
+                throw std::runtime_error("Invalid number of variables for async sequence iteration");
+            }
+        } else {
+            throw std::runtime_error("Can only iterate over async sequences (arrays for now)");
+        }
+    } catch (...) {
+        // Restore previous environment even if exception occurs
+        environment = previous;
+        throw;
+    }
+    
+    // Restore previous environment
+    environment = previous;
+}
+
 // Execute function declaration: func name(parameters) -> ReturnType { body }
 void Interpreter::visit(const FunctionStmt& stmt) {
     auto function = std::make_shared<Function>(&stmt, environment);
@@ -3736,6 +3773,77 @@ void Interpreter::visit(const TaskExpr& expr) {
     environment = previous;
     
     std::cout << "Task created and executed." << std::endl;
+}
+
+void Interpreter::visit(const TaskGroupExpr& expr) {
+    // For now, we simulate task group by executing the closure immediately
+    // In a full implementation, this would:
+    // 1. Create a task group for managing child tasks
+    // 2. Execute the closure with the task group as parameter
+    // 3. Wait for all child tasks to complete
+    
+    std::cout << "Creating task group..." << std::endl;
+    
+    // Create new environment for task group execution
+    auto previous = environment;
+    environment = std::make_shared<Environment>(environment);
+    
+    try {
+        // Cast the closure expression to Closure type
+        const Closure* closure = dynamic_cast<const Closure*>(expr.closure.get());
+        if (!closure) {
+            throw std::runtime_error("Task group closure is not a valid closure expression");
+        }
+        
+        // Execute the task group closure
+        for (const auto& statement : closure->body) {
+            statement->accept(*this);
+        }
+        
+    } catch (const ReturnException& returnValue) {
+        result = returnValue.value;
+    }
+    
+    // Restore previous environment
+    environment = previous;
+    
+    std::cout << "Task group completed." << std::endl;
+}
+
+void Interpreter::visit(const AsyncSequenceExpr& expr) {
+    // For now, we simulate async sequence by evaluating the body expression
+    // In a full implementation, this would:
+    // 1. Create an async sequence that yields values over time
+    // 2. Handle async iteration protocol
+    // 3. Support cancellation and backpressure
+    
+    std::cout << "Creating async sequence..." << std::endl;
+    
+    // For now, just evaluate the body and return it as a regular value
+    result = evaluate(*expr.body);
+    
+    std::cout << "Async sequence created." << std::endl;
+}
+
+void Interpreter::visit(const AsyncLetExpr& expr) {
+    // For now, we simulate async let by evaluating the expression immediately
+    // In a full implementation, this would:
+    // 1. Start the async operation concurrently
+    // 2. Allow other code to run while waiting
+    // 3. Provide the result when awaited
+    
+    std::cout << "Creating async let binding..." << std::endl;
+    
+    // Evaluate the async expression
+    Value asyncValue = evaluate(*expr.initializer);
+    
+    // Define the variable in current environment
+    environment->define(expr.variable.lexeme, asyncValue, false, "Any");
+    
+    // Return the value
+    result = asyncValue;
+    
+    std::cout << "Async let binding created." << std::endl;
 }
 
 // Opaque and Boxed Protocol Types implementations

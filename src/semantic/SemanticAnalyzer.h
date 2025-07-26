@@ -74,6 +74,7 @@ public:
     void visit(const ExternalMacroStmt& stmt) override;
     void visit(const FreestandingMacroStmt& stmt) override;
     void visit(const AttachedMacroStmt& stmt) override;
+    void visit(const ForAwaitStmt& stmt) override;
     
     // AST访问者模式实现 - 表达式
     void visit(const Binary& expr) override;
@@ -115,6 +116,9 @@ public:
     void visit(const MacroExpansionExpr& expr) override;
     void visit(const FreestandingMacroExpr& expr) override;
     void visit(const AttachedMacroExpr& expr) override;
+    void visit(const TaskGroupExpr& expr) override;
+    void visit(const AsyncSequenceExpr& expr) override;
+    void visit(const AsyncLetExpr& expr) override;
     
 private:
     // 核心组件

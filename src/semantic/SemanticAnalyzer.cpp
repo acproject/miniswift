@@ -1188,4 +1188,24 @@ void SemanticAnalyzer::visit(const AttachedMacroExpr& expr) {
     // 简化实现
 }
 
+void SemanticAnalyzer::visit(const ForAwaitStmt& stmt) {
+    (void)stmt; // 标记参数为有意未使用
+    // 简化实现
+}
+
+void SemanticAnalyzer::visit(const TaskGroupExpr& expr) {
+    (void)expr; // 标记参数为有意未使用
+    // 简化实现
+}
+
+void SemanticAnalyzer::visit(const AsyncSequenceExpr& expr) {
+    (void)expr; // 标记参数为有意未使用
+    // 简化实现
+}
+
+void SemanticAnalyzer::visit(const AsyncLetExpr& expr) {
+    (void)expr; // 标记参数为有意未使用
+    // 简化实现
+}
+
 } // namespace miniswift

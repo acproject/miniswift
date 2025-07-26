@@ -266,7 +266,15 @@ if(TARGET ${ZSTD_TARGET})
 endif()
 
 # Link with all libraries (including LLVM)
-target_link_libraries(miniswift PRIVATE ${ALL_LIBS})
+target_link_libraries(miniswift PRIVATE ${llvm_libs})
+
+# Link with zstd target separately
+if(TARGET ${ZSTD_TARGET})
+    target_link_libraries(miniswift PRIVATE ${ZSTD_TARGET})
+else()
+    # Fallback to direct library linking
+    target_link_libraries(miniswift PRIVATE ${ZSTD_LIBRARY})
+endif()
 # Add platform-specific system libraries
 if(APPLE)
     # macOS frameworks and libraries - no LLVM dependencies

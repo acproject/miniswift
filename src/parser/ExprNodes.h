@@ -45,6 +45,9 @@ struct ResultBuilderExpr;
 // Concurrency expressions
 struct AwaitExpr;
 struct TaskExpr;
+struct TaskGroupExpr;
+struct AsyncSequenceExpr;
+struct AsyncLetExpr;
 // Opaque and Boxed Protocol Types
 struct OpaqueTypeExpr;
 struct BoxedProtocolTypeExpr;
@@ -95,6 +98,9 @@ public:
   // Concurrency expressions
   virtual void visit(const AwaitExpr &expr) = 0;
   virtual void visit(const TaskExpr &expr) = 0;
+  virtual void visit(const TaskGroupExpr &expr) = 0;
+  virtual void visit(const AsyncSequenceExpr &expr) = 0;
+  virtual void visit(const AsyncLetExpr &expr) = 0;
   virtual void visit(const OpaqueTypeExpr &expr) = 0;
   virtual void visit(const BoxedProtocolTypeExpr &expr) = 0;
   // Macro expressions
@@ -710,6 +716,80 @@ struct AttachedMacroExpr : Expr {
   const Token atToken;
   const Token macroName;
   const std::vector<std::unique_ptr<Expr>> arguments;
+};
+
+// TaskGroup expression: withTaskGroup(of: Type.self) { group in ... }
+struct TaskGroupExpr : Expr {
+  enum class Operation {
+    Create,     // withTaskGroup(of: Type.self) { ... }
+    AddTask,    // group.addTask { ... }
+    WaitForAll, // group.waitForAll()
+    Next        // group.next()
+  };
+
+  TaskGroupExpr(Token keyword, Operation operation, Token resultType,
+                std::unique_ptr<Expr> closure = nullptr,
+                std::unique_ptr<Expr> taskClosure = nullptr)
+      : keyword(keyword), operation(operation), resultType(resultType),
+        closure(std::move(closure)), taskClosure(std::move(taskClosure)) {}
+
+  void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
+
+  std::unique_ptr<Expr> clone() const override {
+    return std::make_unique<TaskGroupExpr>(
+        keyword, operation, resultType,
+        closure ? closure->clone() : nullptr,
+        taskClosure ? taskClosure->clone() : nullptr);
+  }
+
+  const Token keyword;
+  const Operation operation;
+  const Token resultType;
+  const std::unique_ptr<Expr> closure;     // Main TaskGroup closure
+  const std::unique_ptr<Expr> taskClosure; // Task closure for addTask
+};
+
+// AsyncSequence expression: for await item in asyncSequence { ... }
+struct AsyncSequenceExpr : Expr {
+  AsyncSequenceExpr(Token forKeyword, Token awaitKeyword, Token variable,
+                    std::unique_ptr<Expr> sequence,
+                    std::unique_ptr<Expr> body)
+      : forKeyword(forKeyword), awaitKeyword(awaitKeyword), variable(variable),
+        sequence(std::move(sequence)), body(std::move(body)) {}
+
+  void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
+
+  std::unique_ptr<Expr> clone() const override {
+    return std::make_unique<AsyncSequenceExpr>(
+        forKeyword, awaitKeyword, variable, sequence->clone(),
+        body->clone());
+  }
+
+  const Token forKeyword;
+  const Token awaitKeyword;
+  const Token variable;
+  const std::unique_ptr<Expr> sequence;
+  const std::unique_ptr<Expr> body;
+};
+
+// AsyncLet expression: async let value = asyncFunction()
+struct AsyncLetExpr : Expr {
+  AsyncLetExpr(Token asyncKeyword, Token letKeyword, Token variable,
+               std::unique_ptr<Expr> initializer)
+      : asyncKeyword(asyncKeyword), letKeyword(letKeyword), variable(variable),
+        initializer(std::move(initializer)) {}
+
+  void accept(ExprVisitor &visitor) const override { visitor.visit(*this); }
+
+  std::unique_ptr<Expr> clone() const override {
+    return std::make_unique<AsyncLetExpr>(asyncKeyword, letKeyword, variable,
+                                          initializer->clone());
+  }
+
+  const Token asyncKeyword;
+  const Token letKeyword;
+  const Token variable;
+  const std::unique_ptr<Expr> initializer;
 };
 
 }; // namespace miniswift

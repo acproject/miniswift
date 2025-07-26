@@ -31,6 +31,7 @@ public:
     void visit(const WhileStmt& stmt) override;
     void visit(const ForStmt& stmt) override;
     void visit(const ForInStmt& stmt) override;
+    void visit(const ForAwaitStmt& stmt) override;
     void visit(const FunctionStmt& stmt) override;
     void visit(const ReturnStmt& stmt) override;
     void visit(const EnumStmt& stmt) override;
@@ -105,6 +106,9 @@ public:
     // Concurrency expressions
     void visit(const AwaitExpr& expr) override;
     void visit(const TaskExpr& expr) override;
+    void visit(const TaskGroupExpr& expr) override;
+    void visit(const AsyncSequenceExpr& expr) override;
+    void visit(const AsyncLetExpr& expr) override;
     
     // Opaque and Boxed Protocol Types
     void visit(const OpaqueTypeExpr& expr) override;

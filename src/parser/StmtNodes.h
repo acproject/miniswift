@@ -21,6 +21,7 @@ struct IfLetStmt;
 struct WhileStmt;
 struct ForStmt;
 struct ForInStmt;
+struct ForAwaitStmt;
 struct FunctionStmt;
 struct ReturnStmt;
 struct EnumStmt;
@@ -65,6 +66,7 @@ public:
   virtual void visit(const WhileStmt &stmt) = 0;
   virtual void visit(const ForStmt &stmt) = 0;
   virtual void visit(const ForInStmt &stmt) = 0;
+  virtual void visit(const ForAwaitStmt &stmt) = 0;
   virtual void visit(const FunctionStmt &stmt) = 0;
   virtual void visit(const ReturnStmt &stmt) = 0;
   virtual void visit(const EnumStmt &stmt) = 0;
@@ -268,6 +270,24 @@ struct ForInStmt : Stmt {
 
   const std::vector<Token> variables; // Loop variables (can be multiple for tuple destructuring)
   const std::unique_ptr<Expr> collection; // Collection to iterate over
+  const std::unique_ptr<Stmt> body;
+};
+
+// For-await-in statement: for await variable in asyncSequence { body }
+struct ForAwaitStmt : Stmt {
+  ForAwaitStmt(std::vector<Token> variables, std::unique_ptr<Expr> asyncSequence,
+               std::unique_ptr<Stmt> body)
+      : variables(std::move(variables)), asyncSequence(std::move(asyncSequence)),
+        body(std::move(body)) {}
+
+  void accept(StmtVisitor &visitor) const override { visitor.visit(*this); }
+
+  std::unique_ptr<Stmt> clone() const override {
+    return std::make_unique<ForAwaitStmt>(variables, asyncSequence->clone(), body->clone());
+  }
+
+  const std::vector<Token> variables; // Loop variables (can be multiple for tuple destructuring)
+  const std::unique_ptr<Expr> asyncSequence; // AsyncSequence to iterate over
   const std::unique_ptr<Stmt> body;
 };
 

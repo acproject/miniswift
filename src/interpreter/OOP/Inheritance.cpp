@@ -191,10 +191,16 @@ Value SuperHandler::getSuperProperty(const std::string& currentClass,
         throw std::runtime_error("Class " + currentClass + " has no superclass");
     }
     
-    // 在环境中查找父类的属性
-    // 这里需要根据具体的属性存储机制来实现
-    // 暂时返回nil
-    return Value();
+    // 在父类中查找方法
+    auto method = inheritanceManager_.findMethodRecursive(superclass, propertyName);
+    if (method) {
+        // 创建一个可调用的函数对象
+        auto callable = std::make_shared<Function>(method.get(), environment);
+        return Value(callable);
+    }
+    
+    // 如果不是方法，可能是属性（暂时不支持）
+    throw std::runtime_error("Property '" + propertyName + "' not found in superclass " + superclass);
 }
 
 void SuperHandler::setSuperProperty(const std::string& currentClass,

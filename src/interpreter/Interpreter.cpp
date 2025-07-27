@@ -1889,10 +1889,13 @@ void Interpreter::visit(const FallthroughStmt& stmt) {
 
 // Execute function call: callee(arguments)
 void Interpreter::visit(const Call& expr) {
-
+    std::cout << "DEBUG: Call expression detected" << std::endl;
+    
+    Value calleeValue = evaluate(*expr.callee);
     
     // Check if callee is MemberAccess
     if (auto memberAccess = dynamic_cast<const MemberAccess*>(expr.callee.get())) {
+        std::cout << "DEBUG: This is a member access call: " << memberAccess->member.lexeme << std::endl;
 
         
         // First check if this is a nested type constructor call
@@ -1989,21 +1992,35 @@ void Interpreter::visit(const Call& expr) {
                 if (object.isClass()) {
                     auto classInstance = object.asClass();
                     environment->define("__current_class__", Value(classInstance->getClassName()), false, "String");
+                    
+                    // Find which class this method is actually defined in
+                    std::string methodDefiningClass = classInstance->getClassName();
+                    auto currentClassMethod = inheritanceManager->findMethodInClass(classInstance->getClassName(), memberAccess->member.lexeme);
+                    if (!currentClassMethod) {
+                        // Method not found in current class, find in inheritance chain
+                        auto inheritanceChain = inheritanceManager->getInheritanceChain(classInstance->getClassName());
+                        for (const auto& ancestorClass : inheritanceChain) {
+                            if (inheritanceManager->findMethodInClass(ancestorClass, memberAccess->member.lexeme)) {
+                                methodDefiningClass = ancestorClass;
+                                break;
+                            }
+                        }
+                    }
+                    environment->define("__current_method_class__", Value(methodDefiningClass), false, "String");
+                    std::cout << "DEBUG: Set __current_method_class__ to: " << methodDefiningClass << " for method: " << memberAccess->member.lexeme << std::endl;
                 }
                 
                 // Create new defer stack level for this method
                 deferStack.push(std::vector<std::unique_ptr<Stmt>>());
                 
-                // Bind 'self' parameter if this is an instance method
-                if (arguments.size() > 0) {
-                    environment->define("self", arguments[0], false, "Self");
-                }
+                // Bind 'self' parameter for instance method
+                environment->define("self", object, false, "Self");
                 
-                // Bind the actual method parameters (skip the first argument which is 'self')
+                // Bind the actual method parameters
                 for (size_t i = 0; i < callable->functionDecl->parameters.size(); ++i) {
                     environment->define(
                         callable->functionDecl->parameters[i].name.lexeme,
-                        arguments[i + 1], // Skip the 'self' argument
+                        arguments[i], // Use arguments directly
                         false, // parameters are not const
                         callable->functionDecl->parameters[i].type.lexeme
                     );
@@ -2064,6 +2081,103 @@ void Interpreter::visit(const Call& expr) {
             result = Value(structValue);
             return;
         }
+    } else if (auto superExpr = dynamic_cast<const Super*>(expr.callee.get())) {
+        std::cout << "DEBUG: This is a super method call: " << superExpr->method.lexeme << std::endl;
+        
+        // Handle super method call: super.method(arguments)
+        // Get current method class context from environment
+        std::string currentMethodClass;
+        try {
+            Value methodClassContext = environment->get(Token(TokenType::Identifier, "__current_method_class__", 0));
+            if (methodClassContext.type == ValueType::String) {
+                currentMethodClass = std::get<std::string>(methodClassContext.value);
+                std::cout << "DEBUG: Found __current_method_class__: " << currentMethodClass << std::endl;
+            } else {
+                std::cout << "DEBUG: __current_method_class__ is not a string" << std::endl;
+                throw std::runtime_error("super can only be used within class methods");
+            }
+        } catch (const std::runtime_error& e) {
+            std::cout << "DEBUG: Failed to get __current_method_class__: " << e.what() << std::endl;
+            throw std::runtime_error("super can only be used within class methods");
+        }
+        
+        // Get the superclass of the current method's class
+        auto superclass = inheritanceManager->getSuperclass(currentMethodClass);
+        if (superclass.empty()) {
+            throw std::runtime_error("Class '" + currentMethodClass + "' has no superclass");
+        }
+        
+        // Find the method in the superclass
+        auto superMethod = inheritanceManager->findMethodInClass(superclass, superExpr->method.lexeme);
+        if (!superMethod) {
+            throw std::runtime_error("Method '" + superExpr->method.lexeme + "' not found in superclass '" + superclass + "'");
+        }
+        
+        // Get self object from environment
+        Value selfObject;
+        try {
+            selfObject = environment->get(Token(TokenType::Identifier, "self", 0));
+        } catch (const std::runtime_error& e) {
+            throw std::runtime_error("super can only be used within instance methods");
+        }
+        
+        // Evaluate arguments
+        std::vector<Value> arguments;
+        for (const auto& argument : expr.arguments) {
+            arguments.push_back(evaluate(*argument));
+        }
+        
+        // Check parameter count
+        if (arguments.size() != superMethod->parameters.size()) {
+            throw std::runtime_error("Expected " + 
+                std::to_string(superMethod->parameters.size()) + 
+                " arguments but got " + std::to_string(arguments.size()) + ".");
+        }
+        
+        // Create new environment for super method execution
+        auto previous = environment;
+        environment = std::make_shared<Environment>(globals);
+        
+        // Set current class context for nested super calls
+        environment->define("__current_class__", Value(superclass), false, "String");
+        environment->define("__current_method_class__", Value(superclass), false, "String");
+        
+        // Create new defer stack level for this method
+        deferStack.push(std::vector<std::unique_ptr<Stmt>>());
+        
+        // Bind 'self' parameter for instance method
+        environment->define("self", selfObject, false, "Self");
+        
+        // Bind the actual method parameters
+        for (size_t i = 0; i < superMethod->parameters.size(); ++i) {
+            environment->define(
+                superMethod->parameters[i].name.lexeme,
+                arguments[i],
+                false, // parameters are not const
+                superMethod->parameters[i].type.lexeme
+            );
+        }
+        
+        try {
+            // Execute super method body
+            superMethod->body->accept(*this);
+            
+            // Execute deferred statements before method exits
+            executeDeferredStatements();
+            
+            // If no return statement was executed, return nil
+            result = Value();
+        } catch (const ReturnException& returnValue) {
+            // Execute deferred statements before method exits
+            executeDeferredStatements();
+            
+            // Method returned a value
+            result = *returnValue.value;
+        }
+        
+        // Restore previous environment
+        environment = previous;
+        return;
     }
     
     Value callee = evaluate(*expr.callee);
@@ -2325,6 +2439,28 @@ void Interpreter::visit(const LabeledCall& expr) {
                 // Create new environment for function execution
                 auto previous = environment;
                 environment = std::make_shared<Environment>(callable->closure);
+                
+                // Set current class context for super keyword support
+                if (object.isClass()) {
+                    auto classInstance = object.asClass();
+                    environment->define("__current_class__", Value(classInstance->getClassName()), false, "String");
+                    
+                    // Find which class this method is actually defined in
+                    std::string methodDefiningClass = classInstance->getClassName();
+                    auto currentClassMethod = inheritanceManager->findMethodInClass(classInstance->getClassName(), memberAccess->member.lexeme);
+                    if (!currentClassMethod) {
+                        // Method not found in current class, find in inheritance chain
+                        auto inheritanceChain = inheritanceManager->getInheritanceChain(classInstance->getClassName());
+                        for (const auto& ancestorClass : inheritanceChain) {
+                            if (inheritanceManager->findMethodInClass(ancestorClass, memberAccess->member.lexeme)) {
+                                methodDefiningClass = ancestorClass;
+                                break;
+                            }
+                        }
+                    }
+                    environment->define("__current_method_class__", Value(methodDefiningClass), false, "String");
+                    std::cout << "DEBUG: Set __current_method_class__ to: " << methodDefiningClass << " for method: " << memberAccess->member.lexeme << std::endl;
+                }
                 
                 // Create new defer stack level for this method
                 deferStack.push(std::vector<std::unique_ptr<Stmt>>());
@@ -2926,6 +3062,32 @@ void Interpreter::visit(const SubscriptStmt& stmt) {
 
 // Execute member access: object.member
 void Interpreter::visit(const MemberAccess& expr) {
+    // Check if this is a super member access
+    if (auto superExpr = dynamic_cast<const Super*>(expr.object.get())) {
+        std::cout << "DEBUG: MemberAccess on Super expression for member: " << expr.member.lexeme << std::endl;
+        
+        // Get current method class context from environment
+        std::string currentMethodClass;
+        try {
+            Value methodClassContext = environment->get(Token(TokenType::Identifier, "__current_method_class__", 0));
+            if (methodClassContext.type == ValueType::String) {
+                currentMethodClass = std::get<std::string>(methodClassContext.value);
+            } else {
+                throw std::runtime_error("super can only be used within class methods");
+            }
+        } catch (const std::runtime_error& e) {
+            throw std::runtime_error("super can only be used within class methods");
+        }
+        
+        // Use SuperHandler to get the super property/method
+        try {
+            result = superHandler->getSuperProperty(currentMethodClass, expr.member.lexeme, environment);
+            return;
+        } catch (const std::runtime_error& e) {
+            throw std::runtime_error("Failed to access super member '" + expr.member.lexeme + "': " + e.what());
+        }
+    }
+    
     // Check if this is a type access (e.g., OuterType.NestedType)
     if (auto varExpr = dynamic_cast<const VarExpr*>(expr.object.get())) {
         std::string typeName = varExpr->name.lexeme;
@@ -3163,6 +3325,7 @@ void Interpreter::registerClassProperties(const std::string& className, const st
 
 Value Interpreter::getMemberValue(const Value& object, const std::string& memberName) {
 
+
     
     // If the object is an optional, we cannot access its members directly
     if (object.isOptional()) {
@@ -3279,6 +3442,17 @@ Value Interpreter::getMemberValue(const Value& object, const std::string& member
         } else {
             throw std::runtime_error("Array has no member '" + memberName + "'");
         }
+    } else if (object.isDictionary()) {
+        // Handle super object (Dictionary type with __super_class__ key)
+        const auto& dict = object.asDictionaryRef();
+        auto superClassIt = dict.find("__super_class__");
+        if (superClassIt != dict.end() && superClassIt->second.type == ValueType::String) {
+            // This is a super object, use SuperHandler to get the property/method
+            std::string currentClass = std::get<std::string>(superClassIt->second.value);
+            return superHandler->getSuperProperty(currentClass, memberName, environment);
+        } else {
+            throw std::runtime_error("Dictionary has no member '" + memberName + "'");
+        }
     } else {
         throw std::runtime_error("Only structs and classes have members");
     }
@@ -3312,29 +3486,30 @@ void Interpreter::setMemberValue(Value& object, const std::string& memberName, c
     }
 }
 
-// Execute super expression: super.method() or super.property
+// Execute super expression: super keyword
 void Interpreter::visit(const Super& expr) {
-    // Get current class context from environment
-    // This should be set when we're inside a class method
-    std::string currentClass;
+    std::cout << "DEBUG: Super expression visit called" << std::endl;
+    
+    // Get current method class context from environment
+    std::string currentMethodClass;
     try {
-        Value classContext = environment->get(Token(TokenType::Identifier, "__current_class__", 0));
-        if (classContext.type == ValueType::String) {
-            currentClass = std::get<std::string>(classContext.value);
+        Value methodClassContext = environment->get(Token(TokenType::Identifier, "__current_method_class__", 0));
+        if (methodClassContext.type == ValueType::String) {
+            currentMethodClass = std::get<std::string>(methodClassContext.value);
+            std::cout << "DEBUG: Found __current_method_class__: " << currentMethodClass << std::endl;
         } else {
+            std::cout << "DEBUG: __current_method_class__ is not a string" << std::endl;
             throw std::runtime_error("super can only be used within class methods");
         }
-    } catch (const std::runtime_error&) {
+    } catch (const std::runtime_error& e) {
+        std::cout << "DEBUG: Failed to get __current_method_class__: " << e.what() << std::endl;
         throw std::runtime_error("super can only be used within class methods");
     }
     
-    // For now, we'll handle super.method as a property access
-    // In a full implementation, this would need to handle method calls differently
-    try {
-        result = superHandler->getSuperProperty(currentClass, expr.method.lexeme, environment);
-    } catch (const std::runtime_error& e) {
-        throw std::runtime_error("Failed to access super property '" + expr.method.lexeme + "': " + e.what());
-    }
+    // Create a special super value that contains the current method class
+    std::unordered_map<std::string, Value> superInfo;
+    superInfo["__super_class__"] = Value(currentMethodClass);
+    result = Value(superInfo);
 }
 
 // Execute optional chaining expression: object?.property, object?.method(), object?[index]

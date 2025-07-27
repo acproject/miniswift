@@ -679,10 +679,10 @@ std::unique_ptr<Expr> Parser::primary() {
   // Handle 'super' keyword
   if (match({TokenType::Super})) {
     Token keyword = previous();
-    consume(TokenType::Dot, "Expect '.' after 'super'.");
-    consume(TokenType::Identifier, "Expect superclass method name.");
-    Token method = previous();
-    return std::make_unique<Super>(keyword, method);
+    // Don't consume the dot and method name here - let call() handle it
+    // Create a Super expression with an empty method token
+    Token emptyMethod = Token(TokenType::Identifier, "", keyword.line);
+    return std::make_unique<Super>(keyword, emptyMethod);
   }
 
   // Handle opaque types: some Protocol

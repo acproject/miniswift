@@ -3,6 +3,7 @@
 #include "../Environment.h"
 #include "../ErrorHandling.h"
 #include "Method.h"
+#include "Property.h"
 #include <algorithm>
 #include <stdexcept>
 
@@ -200,18 +201,35 @@ Value SuperHandler::getSuperProperty(const std::string& currentClass,
         throw std::runtime_error("Class " + currentClass + " has no superclass");
     }
     
+    // 首先尝试从self对象的属性容器中获取属性
+    try {
+        Value selfObject = environment->get(Token{TokenType::Identifier, "self", 0});
+        if (selfObject.isClass()) {
+            auto& classInstance = selfObject.asClass();
+            if (classInstance->properties && classInstance->properties->hasProperty(propertyName)) {
+                // 检查这个属性是否定义在父类中
+                auto* classPropManager = interpreter_.getClassPropertyManager(superclass);
+                if (classPropManager && classPropManager->getProperty(propertyName)) {
+                    // 属性确实定义在父类中，返回属性值
+                    return classInstance->properties->getProperty(interpreter_, propertyName);
+                }
+            }
+        }
+    } catch (const std::runtime_error&) {
+        // 如果获取self失败，继续尝试其他方式
+    }
+    
     // 在父类中查找方法
     auto method = inheritanceManager_.findMethodRecursive(superclass, propertyName);
     if (method) {
         // 创建一个包含当前环境（包括self）的函数对象
         // 这样当函数被调用时，self 对象会被正确传递
-// 创建一个可调用的函数对象
         auto callable = std::make_shared<Function>(method.get(), environment);
         return Value(callable);
     }
     
-    // 如果不是方法，可能是属性（暂时不支持）
-    throw std::runtime_error("Property '" + propertyName + "' not found in superclass " + superclass);
+    // 如果既不是属性也不是方法
+    throw std::runtime_error("Failed to access super member '" + propertyName + "': Property '" + propertyName + "' not found in superclass " + superclass);
 }
 
 void SuperHandler::setSuperProperty(const std::string& currentClass,
@@ -224,8 +242,26 @@ void SuperHandler::setSuperProperty(const std::string& currentClass,
         throw std::runtime_error("Class " + currentClass + " has no superclass");
     }
     
-    // 在环境中设置父类的属性
-    // 这里需要根据具体的属性存储机制来实现
+    // 尝试从self对象的属性容器中设置属性
+    try {
+        Value selfObject = environment->get(Token{TokenType::Identifier, "self", 0});
+        if (selfObject.isClass()) {
+            auto& classInstance = selfObject.asClass();
+            if (classInstance->properties && classInstance->properties->hasProperty(propertyName)) {
+                // 检查这个属性是否定义在父类中
+                auto* classPropManager = interpreter_.getClassPropertyManager(superclass);
+                if (classPropManager && classPropManager->getProperty(propertyName)) {
+                    // 属性确实定义在父类中，设置属性值
+                    classInstance->properties->setProperty(interpreter_, propertyName, value);
+                    return;
+                }
+            }
+        }
+    } catch (const std::runtime_error&) {
+        // 如果获取self失败，抛出异常
+    }
+    
+    throw std::runtime_error("Failed to set super property '" + propertyName + "': Property not found in superclass " + superclass);
 }
 
 // ============================================================================
@@ -298,8 +334,8 @@ bool OverrideValidator::isFinalMethod(const std::string& className,
 // ClassInstanceManager Implementation
 // ============================================================================
 
-ClassInstanceManager::ClassInstanceManager(InheritanceManager& inheritanceManager)
-    : inheritanceManager_(inheritanceManager) {}
+ClassInstanceManager::ClassInstanceManager(InheritanceManager& inheritanceManager, Interpreter& interpreter)
+    : inheritanceManager_(inheritanceManager), interpreter_(interpreter) {}
 
 std::shared_ptr<ClassInstance> ClassInstanceManager::createInstance(const std::string& className,
                                                                    const std::vector<Value>& initArgs) {
@@ -310,11 +346,16 @@ std::shared_ptr<ClassInstance> ClassInstanceManager::createInstance(const std::s
     // 创建类实例
     auto instance = std::make_shared<ClassInstance>(className);
     
-    // 初始化继承链中的所有属性
-    auto inheritanceChain = inheritanceManager_.getInheritanceChain(className);
-    for (const auto& ancestorClass : inheritanceChain) {
-        // 这里需要根据具体的属性初始化机制来实现
-        // 暂时跳过
+    // 创建支持继承的属性容器
+    // 获取类的属性管理器
+    auto* classPropManager = interpreter_.getClassPropertyManager(className);
+    if (classPropManager) {
+        // 使用支持继承的构造函数创建属性容器
+        instance->properties = std::make_unique<InstancePropertyContainer>(
+            *classPropManager, interpreter_.getCurrentEnvironment(), interpreter_, className);
+        
+        // 初始化所有属性的默认值（包括继承的属性）
+        instance->properties->initializeDefaultsWithInheritance(interpreter_, className);
     }
     
     return instance;

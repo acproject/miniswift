@@ -149,7 +149,7 @@ private:
  */
 class ClassInstanceManager {
 public:
-  ClassInstanceManager(InheritanceManager &inheritanceManager);
+  ClassInstanceManager(InheritanceManager &inheritanceManager, Interpreter &interpreter);
 
   // 创建类实例
   std::shared_ptr<ClassInstance>
@@ -171,6 +171,7 @@ public:
 
 private:
   InheritanceManager &inheritanceManager_;
+  Interpreter &interpreter_;
 };
 
 } // namespace miniswift

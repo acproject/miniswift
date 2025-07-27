@@ -1909,6 +1909,18 @@ void Interpreter::visit(const FallthroughStmt& stmt) {
 void Interpreter::visit(const Call& expr) {
     std::cout << "DEBUG: Call expression detected" << std::endl;
     
+    // Debug: print callee type
+    if (auto memberAccess = dynamic_cast<const MemberAccess*>(expr.callee.get())) {
+        std::cout << "DEBUG: Callee is MemberAccess: " << memberAccess->member.lexeme << std::endl;
+        if (auto superExpr = dynamic_cast<const Super*>(memberAccess->object.get())) {
+            std::cout << "DEBUG: MemberAccess object is Super" << std::endl;
+        }
+    } else if (auto superExpr = dynamic_cast<const Super*>(expr.callee.get())) {
+        std::cout << "DEBUG: Callee is Super directly" << std::endl;
+    } else {
+        std::cout << "DEBUG: Callee is neither MemberAccess nor Super" << std::endl;
+    }
+    
     Value calleeValue = evaluate(*expr.callee);
     
     // Check if callee is MemberAccess
@@ -1946,6 +1958,41 @@ void Interpreter::visit(const Call& expr) {
                 auto classInstance = std::make_shared<ClassInstance>(fullTypeName, std::move(propContainer));
                 result = Value(classInstance);
                 return;
+            }
+        }
+        
+        // Check if this is a super method call: super.method()
+        if (auto superExpr = dynamic_cast<const Super*>(memberAccess->object.get())) {
+            std::cout << "DEBUG: This is a super method call via MemberAccess: " << memberAccess->member.lexeme << std::endl;
+            
+            // Get current method class context from environment
+            std::string currentMethodClass;
+            try {
+                Value methodClassContext = environment->get(Token(TokenType::Identifier, "__current_method_class__", 0));
+                if (methodClassContext.type == ValueType::String) {
+                    currentMethodClass = std::get<std::string>(methodClassContext.value);
+                    std::cout << "DEBUG: Found __current_method_class__: " << currentMethodClass << std::endl;
+                } else {
+                    std::cout << "DEBUG: __current_method_class__ is not a string" << std::endl;
+                    throw std::runtime_error("super can only be used within class methods");
+                }
+            } catch (const std::runtime_error& e) {
+                std::cout << "DEBUG: Failed to get __current_method_class__: " << e.what() << std::endl;
+                throw std::runtime_error("super can only be used within class methods");
+            }
+            
+            // Evaluate arguments
+            std::vector<Value> arguments;
+            for (const auto& argument : expr.arguments) {
+                arguments.push_back(evaluate(*argument));
+            }
+            
+            // Use SuperHandler to call the super method
+            try {
+                result = superHandler->callSuperMethod(currentMethodClass, memberAccess->member.lexeme, arguments, environment);
+                return;
+            } catch (const std::runtime_error& e) {
+                throw std::runtime_error("Failed to call super method '" + memberAccess->member.lexeme + "': " + e.what());
             }
         }
         

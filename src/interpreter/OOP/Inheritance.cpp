@@ -6,6 +6,7 @@
 #include "Property.h"
 #include <algorithm>
 #include <stdexcept>
+#include <iostream>
 
 namespace miniswift {
 
@@ -172,7 +173,7 @@ Value SuperHandler::callSuperMethod(const std::string& currentClass,
     }
     
     // 创建方法调用环境，自动绑定 self
-    auto methodEnv = std::make_shared<MethodCallEnvironment>(environment, selfObject);
+    auto methodEnv = std::make_shared<MethodCallEnvironment>(environment, selfObject, &interpreter_);
     
     // 绑定参数
     if (arguments.size() != method->parameters.size()) {
@@ -204,18 +205,47 @@ Value SuperHandler::getSuperProperty(const std::string& currentClass,
     // 首先尝试从self对象的属性容器中获取属性
     try {
         Value selfObject = environment->get(Token{TokenType::Identifier, "self", 0});
+        std::cout << "DEBUG: Found self object, trying to access property: " << propertyName << std::endl;
         if (selfObject.isClass()) {
             auto& classInstance = selfObject.asClass();
-            if (classInstance->properties && classInstance->properties->hasProperty(propertyName)) {
-                // 检查这个属性是否定义在父类中
-                auto* classPropManager = interpreter_.getClassPropertyManager(superclass);
-                if (classPropManager && classPropManager->getProperty(propertyName)) {
-                    // 属性确实定义在父类中，返回属性值
-                    return classInstance->properties->getProperty(interpreter_, propertyName);
+            std::cout << "DEBUG: Self is class instance of: " << classInstance->getClassName() << std::endl;
+            if (classInstance->properties) {
+                std::cout << "DEBUG: Properties container exists" << std::endl;
+                 
+                 // 列出所有属性
+                 auto allProps = classInstance->properties->getAllPropertyNames();
+                 std::cout << "DEBUG: All properties in container: ";
+                 for (const auto& prop : allProps) {
+                     std::cout << prop << " ";
+                 }
+                 std::cout << std::endl;
+                 
+                 bool hasProperty = classInstance->properties->hasProperty(propertyName);
+                 std::cout << "DEBUG: hasProperty(" << propertyName << ") = " << hasProperty << std::endl;
+                if (hasProperty) {
+                    // 检查这个属性是否定义在父类中
+                    auto* classPropManager = interpreter_.getClassPropertyManager(superclass);
+                    std::cout << "DEBUG: Checking superclass property manager for: " << superclass << std::endl;
+                    if (classPropManager) {
+                        auto* propDef = classPropManager->getProperty(propertyName);
+                        std::cout << "DEBUG: Property definition in superclass: " << (propDef ? "found" : "not found") << std::endl;
+                        if (propDef) {
+                            // 属性确实定义在父类中，返回属性值
+                            std::cout << "DEBUG: Returning property value from instance" << std::endl;
+                            return classInstance->properties->getProperty(interpreter_, propertyName);
+                        }
+                    } else {
+                        std::cout << "DEBUG: No property manager for superclass: " << superclass << std::endl;
+                    }
+                } else {
+                    std::cout << "DEBUG: Property not found in instance properties" << std::endl;
                 }
+            } else {
+                std::cout << "DEBUG: No properties container" << std::endl;
             }
         }
-    } catch (const std::runtime_error&) {
+    } catch (const std::runtime_error& e) {
+        std::cout << "DEBUG: Exception in getSuperProperty: " << e.what() << std::endl;
         // 如果获取self失败，继续尝试其他方式
     }
     

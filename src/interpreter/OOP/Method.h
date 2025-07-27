@@ -8,6 +8,8 @@
 #include "../Value.h"
 #include "../Environment.h"
 #include "../../parser/AST.h"
+#include "../../parser/Parameter.h"
+#include "Property.h"
 
 namespace miniswift {
 
@@ -26,7 +28,8 @@ enum class MethodType {
 struct MethodDefinition {
     Token name;
     MethodType methodType;
-    std::vector<Token> parameters;
+    std::vector<Parameter> parameters;
+    Token returnType;
     std::unique_ptr<BlockStmt> body;
     bool isStatic;
     
@@ -115,7 +118,7 @@ public:
                     const std::vector<Value>& arguments, const Value& selfValue);
     
     // 获取方法（返回 Callable 值）
-    Value getMethod(const std::string& name, const Value& selfValue);
+    Value getMethod(const std::string& name, const Value& selfValue, Interpreter& interpreter);
     
     // 检查方法是否存在
     bool hasMethod(const std::string& name) const;
@@ -128,19 +131,40 @@ private:
     std::shared_ptr<Environment> environment_;
 };
 
+// 前向声明
+class Interpreter;
+
 // 方法调用环境 - 为方法调用创建特殊环境，包含 self 绑定
 class MethodCallEnvironment : public Environment {
 public:
-    MethodCallEnvironment(std::shared_ptr<Environment> enclosing, const Value& selfValue)
-        : Environment(enclosing), selfValue_(selfValue) {
+    MethodCallEnvironment(std::shared_ptr<Environment> enclosing, const Value& selfValue, Interpreter* interpreter = nullptr)
+        : Environment(enclosing), selfValue_(selfValue), interpreter_(interpreter) {
         // 在环境中定义 self
         define("self", selfValue_);
+    }
+    
+    // 重写 get 方法以支持属性访问
+    Value get(const Token& name) override {
+        // 首先尝试从普通环境中获取
+        try {
+            return Environment::get(name);
+        } catch (const std::runtime_error&) {
+            // 如果在普通环境中找不到，尝试从 self 对象的属性中获取
+            if (interpreter_ && selfValue_.isClass()) {
+                const auto& classInstance = selfValue_.asClass();
+                if (classInstance->properties && classInstance->properties->hasProperty(name.lexeme)) {
+                    return classInstance->properties->getProperty(*interpreter_, name.lexeme);
+                }
+            }
+            throw; // 重新抛出原始异常
+        }
     }
     
     const Value& getSelf() const { return selfValue_; }
     
 private:
     Value selfValue_;
+    Interpreter* interpreter_;
 };
 
 } // namespace miniswift

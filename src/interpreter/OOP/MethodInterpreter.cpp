@@ -74,21 +74,13 @@ Value MethodInterpreter::getMemberValue(const Value& object, const std::string& 
                 auto methodInstance = methodManager->createMethodInstance(memberName, globals);
                 if (methodInstance) {
                     // 返回绑定了 self 的 Callable
-                    std::vector<Token> params;
-                    for (const auto& param : methodDef->parameters) {
-                        params.push_back(param);
-                    }
-                    
                     auto closureEnv = std::make_shared<MethodCallEnvironment>(globals, object);
                     
                     // 创建 FunctionStmt 来包装方法
                     Token emptyReturnType{TokenType::Identifier, "", 0};
-                    Token emptyType{TokenType::Identifier, "", 0};
                     
-                    std::vector<Parameter> parameters;
-                    for (const auto& param : params) {
-                        parameters.emplace_back(param, emptyType);
-                    }
+                    // 参数已经是 Parameter 类型
+                    std::vector<Parameter> parameters = methodDef->parameters;
                     
                     auto funcStmt = std::make_shared<FunctionStmt>(
                         methodDef->name,
@@ -114,21 +106,13 @@ Value MethodInterpreter::getMemberValue(const Value& object, const std::string& 
                 auto methodInstance = methodManager->createMethodInstance(memberName, globals);
                 if (methodInstance) {
                     // 返回绑定了 self 的 Callable
-                    std::vector<Token> params;
-                    for (const auto& param : methodDef->parameters) {
-                        params.push_back(param);
-                    }
-                    
                     auto closureEnv = std::make_shared<MethodCallEnvironment>(globals, object);
                     
                     // 创建 FunctionStmt 来包装方法
                     Token emptyReturnType{TokenType::Identifier, "", 0};
-                    Token emptyType{TokenType::Identifier, "", 0};
                     
-                    std::vector<Parameter> parameters;
-                    for (const auto& param : params) {
-                        parameters.emplace_back(param, emptyType);
-                    }
+                    // 直接使用 methodDef->parameters，它已经是 Parameter 类型
+                    std::vector<Parameter> parameters = methodDef->parameters;
                     
                     auto funcStmt = std::make_shared<FunctionStmt>(
                         methodDef->name,
@@ -250,9 +234,10 @@ MethodDefinition MethodInterpreter::createMethodDefinition(const FunctionStmt& f
     MethodDefinition methodDef(funcStmt.name, MethodType::INSTANCE, false);
     
     // 复制参数
-    for (const auto& param : funcStmt.parameters) {
-        methodDef.parameters.push_back(param.name);
-    }
+    methodDef.parameters = funcStmt.parameters;
+    
+    // 复制返回类型
+    methodDef.returnType = funcStmt.returnType;
     
     // 复制方法体
     methodDef.body = std::unique_ptr<BlockStmt>(static_cast<BlockStmt*>(funcStmt.body->clone().release()));

@@ -38,7 +38,7 @@ Value MethodValue::call(Interpreter& interpreter, const std::vector<Value>& argu
         if (!selfValue) {
             throw std::runtime_error("Instance method called without self value");
         }
-        methodEnv = std::make_shared<MethodCallEnvironment>(environment_, *selfValue);
+        methodEnv = std::make_shared<MethodCallEnvironment>(environment_, *selfValue, &interpreter);
     }
     
     // 绑定参数
@@ -47,13 +47,13 @@ Value MethodValue::call(Interpreter& interpreter, const std::vector<Value>& argu
         // 直接绑定所有用户参数到对应的参数名
         for (size_t i = 0; i < arguments.size(); ++i) {
             if (i < definition_.parameters.size()) {
-                methodEnv->define(definition_.parameters[i].lexeme, arguments[i]);
+                methodEnv->define(definition_.parameters[i].name.lexeme, arguments[i]);
             }
         }
     } else {
         // 对于静态方法，直接绑定所有参数
         for (size_t i = 0; i < definition_.parameters.size(); ++i) {
-            methodEnv->define(definition_.parameters[i].lexeme, arguments[i]);
+            methodEnv->define(definition_.parameters[i].name.lexeme, arguments[i]);
         }
     }
     
@@ -132,7 +132,7 @@ Value InstanceMethodContainer::callMethod(Interpreter& interpreter, const std::s
     return it->second->call(interpreter, arguments, &selfValue);
 }
 
-Value InstanceMethodContainer::getMethod(const std::string& name, const Value& selfValue) {
+Value InstanceMethodContainer::getMethod(const std::string& name, const Value& selfValue, Interpreter& interpreter) {
     auto it = methods_.find(name);
     if (it == methods_.end()) {
         throw std::runtime_error("Undefined method '" + name + "'");
@@ -142,17 +142,14 @@ Value InstanceMethodContainer::getMethod(const std::string& name, const Value& s
     const auto& methodDef = it->second->getDefinition();
     
     // 创建一个闭包环境，包含 self
-    auto closureEnv = std::make_shared<MethodCallEnvironment>(environment_, selfValue);
+    auto closureEnv = std::make_shared<MethodCallEnvironment>(environment_, selfValue, &interpreter);
     
     // 创建一个 FunctionStmt 来包装方法
       Token emptyReturnType{TokenType::Identifier, "", 0}; // 空返回类型
       Token emptyType{TokenType::Identifier, "", 0}; // 空类型
       
-      // 将 Token 参数转换为 Parameter
-      std::vector<Parameter> parameters;
-      for (const auto& param : methodDef.parameters) {
-          parameters.emplace_back(param, emptyType);
-      }
+      // 参数已经是 Parameter 类型
+      std::vector<Parameter> parameters = methodDef.parameters;
       
       auto funcStmt = new FunctionStmt(
           methodDef.name,

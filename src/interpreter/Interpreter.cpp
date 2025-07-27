@@ -266,7 +266,12 @@ void Interpreter::visit(const VarExpr& expr) {
                 std::cout << "DEBUG: Property '" << expr.name.lexeme << "' not found in class" << std::endl;
                 if (classValue->properties) {
                     std::cout << "DEBUG: Available properties in class:" << std::endl;
-                    // Add debug info about available properties
+                    auto availableProps = classValue->properties->getAllPropertyNames();
+                    for (const auto& prop : availableProps) {
+                        std::cout << "  - " << prop << std::endl;
+                    }
+                } else {
+                    std::cout << "DEBUG: No property container found" << std::endl;
                 }
             }
         } catch (const std::runtime_error& e) {
@@ -2151,7 +2156,7 @@ void Interpreter::visit(const Call& expr) {
         
         // Create new environment for super method execution
         auto previous = environment;
-        environment = std::make_shared<Environment>(globals);
+        environment = std::make_shared<Environment>(previous); // 使用当前环境作为父环境，而不是 globals
         
         // Set current class context for nested super calls
         environment->define("__current_class__", Value(superclass), false, "String");

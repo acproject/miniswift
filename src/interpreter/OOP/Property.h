@@ -170,6 +170,9 @@ public:
     // 初始化所有存储属性的默认值（支持继承）
     void initializeDefaultsWithInheritance(Interpreter& interpreter, const std::string& className);
     
+    // 获取所有属性名称（用于调试）
+    std::vector<std::string> getAllPropertyNames() const;
+    
 private:
     std::unordered_map<std::string, std::unique_ptr<PropertyValue>> properties_;
     std::shared_ptr<Environment> environment_;

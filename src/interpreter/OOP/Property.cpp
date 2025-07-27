@@ -342,6 +342,14 @@ void InstancePropertyContainer::initializeDefaultsWithInheritance(Interpreter &i
   }
 }
 
+std::vector<std::string> InstancePropertyContainer::getAllPropertyNames() const {
+  std::vector<std::string> names;
+  for (const auto& [name, propValue] : properties_) {
+    names.push_back(name);
+  }
+  return names;
+}
+
 // PropertyAccessorEnvironment 实现
 
 void PropertyAccessorEnvironment::assign(const Token &name,

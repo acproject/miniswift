@@ -2,6 +2,7 @@
 #include "../Interpreter.h"
 #include "../Environment.h"
 #include "../ErrorHandling.h"
+#include "Method.h"
 #include <algorithm>
 #include <stdexcept>
 
@@ -161,8 +162,16 @@ Value SuperHandler::callSuperMethod(const std::string& currentClass,
         throw std::runtime_error("Method " + methodName + " not found in superclass " + superclass);
     }
     
-    // 创建新的环境用于方法执行
-    auto methodEnv = std::make_shared<Environment>(environment);
+    // 从当前环境中获取 self 对象
+    Value selfObject;
+    try {
+        selfObject = environment->get(Token{TokenType::Identifier, "self", 0});
+    } catch (const std::runtime_error&) {
+        throw std::runtime_error("Cannot call super method without self context");
+    }
+    
+    // 创建方法调用环境，自动绑定 self
+    auto methodEnv = std::make_shared<MethodCallEnvironment>(environment, selfObject);
     
     // 绑定参数
     if (arguments.size() != method->parameters.size()) {
@@ -194,7 +203,9 @@ Value SuperHandler::getSuperProperty(const std::string& currentClass,
     // 在父类中查找方法
     auto method = inheritanceManager_.findMethodRecursive(superclass, propertyName);
     if (method) {
-        // 创建一个可调用的函数对象
+        // 创建一个包含当前环境（包括self）的函数对象
+        // 这样当函数被调用时，self 对象会被正确传递
+// 创建一个可调用的函数对象
         auto callable = std::make_shared<Function>(method.get(), environment);
         return Value(callable);
     }

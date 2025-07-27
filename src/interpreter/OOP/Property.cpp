@@ -1,8 +1,10 @@
 #include "Property.h"
 #include "../Environment.h"
 #include "../Interpreter.h"
+#include "Inheritance.h"
 #include <stdexcept>
 #include <iostream>
+#include <algorithm>
 
 namespace miniswift {
 
@@ -192,6 +194,44 @@ InstancePropertyContainer::InstancePropertyContainer(
   }
 }
 
+// 支持继承的构造函数
+InstancePropertyContainer::InstancePropertyContainer(
+    const PropertyManager &manager, std::shared_ptr<Environment> env, 
+    Interpreter& interpreter, const std::string& className)
+    : environment_(env) {
+  // 获取继承管理器
+  auto* inheritanceManager = interpreter.getInheritanceManager();
+  if (inheritanceManager) {
+    // 获取继承链（从根类到当前类）
+    auto inheritanceChain = inheritanceManager->getInheritanceChain(className);
+    std::reverse(inheritanceChain.begin(), inheritanceChain.end());
+    
+    // 为继承链中的每个类创建属性
+    for (const auto& ancestorClass : inheritanceChain) {
+      auto* classPropManager = interpreter.getClassPropertyManager(ancestorClass);
+      if (classPropManager) {
+        for (const auto& propDef : classPropManager->getAllProperties()) {
+          const std::string& propName = propDef.name.lexeme;
+          
+          // 检查是否已有该属性（避免重复）
+          if (properties_.find(propName) == properties_.end()) {
+            auto propValue = std::make_unique<PropertyValue>(propDef, env);
+            propValue->setContainer(this);
+            properties_[propName] = std::move(propValue);
+          }
+        }
+      }
+    }
+  } else {
+    // 如果没有继承管理器，回退到普通构造
+    for (const auto &propDef : manager.getAllProperties()) {
+      auto propValue = std::make_unique<PropertyValue>(propDef, env);
+      propValue->setContainer(this);
+      properties_[propDef.name.lexeme] = std::move(propValue);
+    }
+  }
+}
+
 // Copy constructor
 InstancePropertyContainer::InstancePropertyContainer(
     const InstancePropertyContainer &other)
@@ -255,6 +295,49 @@ void InstancePropertyContainer::initializeDefaults(Interpreter &interpreter) {
         !propValue->isInitialized()) {
       Value defaultValue = interpreter.evaluate(*def.defaultValue);
       propValue->setValue(interpreter, defaultValue);
+    }
+  }
+}
+
+void InstancePropertyContainer::initializeDefaultsWithInheritance(Interpreter &interpreter, const std::string &className) {
+  // 获取继承管理器
+  auto* inheritanceManager = interpreter.getInheritanceManager();
+  if (!inheritanceManager) {
+    // 如果没有继承管理器，回退到普通初始化
+    initializeDefaults(interpreter);
+    return;
+  }
+  
+  // 获取继承链（从根类到当前类）
+  auto inheritanceChain = inheritanceManager->getInheritanceChain(className);
+  std::reverse(inheritanceChain.begin(), inheritanceChain.end());
+  
+  // 为继承链中的每个类初始化属性
+  for (const auto& ancestorClass : inheritanceChain) {
+    auto* classPropManager = interpreter.getClassPropertyManager(ancestorClass);
+    if (classPropManager) {
+      // 为当前祖先类的每个属性初始化默认值
+      for (const auto& propDef : classPropManager->getAllProperties()) {
+        const std::string& propName = propDef.name.lexeme;
+        
+        // 检查当前容器中是否已有该属性
+        auto it = properties_.find(propName);
+        if (it == properties_.end()) {
+          // 如果属性不存在，创建新的属性实例
+          auto propValue = std::make_unique<PropertyValue>(propDef, environment_);
+          propValue->setContainer(this);
+          properties_[propName] = std::move(propValue);
+          it = properties_.find(propName);
+        }
+        
+        // 初始化存储属性的默认值
+        if (propDef.propertyType == PropertyType::STORED && 
+            propDef.defaultValue && 
+            !it->second->isInitialized()) {
+          Value defaultValue = interpreter.evaluate(*propDef.defaultValue);
+          it->second->setValue(interpreter, defaultValue);
+        }
+      }
     }
   }
 }

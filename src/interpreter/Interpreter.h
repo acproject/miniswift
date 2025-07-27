@@ -171,9 +171,6 @@ private:
     void printValueInline(const Value& val);
     std::string valueToString(const Value& val);
     
-    // Property system helpers
-    PropertyManager* getStructPropertyManager(const std::string& structName);
-    PropertyManager* getClassPropertyManager(const std::string& className);
     void registerStructProperties(const std::string& structName, const std::vector<StructMember>& members);
     void registerClassProperties(const std::string& className, const std::vector<StructMember>& members);
     
@@ -192,6 +189,13 @@ public:
     // Enhanced member access with property support
     virtual Value getMemberValue(const Value& object, const std::string& memberName);
     void setMemberValue(Value& object, const std::string& memberName, const Value& value);
+    
+    // Property system helpers
+    PropertyManager* getStructPropertyManager(const std::string& structName);
+    PropertyManager* getClassPropertyManager(const std::string& className);
+    
+    // Inheritance system access
+    InheritanceManager* getInheritanceManager() const { return inheritanceManager.get(); }
 
 private:
 

@@ -145,6 +145,10 @@ class InstancePropertyContainer {
 public:
     explicit InstancePropertyContainer(const PropertyManager& manager, std::shared_ptr<Environment> env);
     
+    // 支持继承的构造函数
+    InstancePropertyContainer(const PropertyManager& manager, std::shared_ptr<Environment> env, 
+                            Interpreter& interpreter, const std::string& className);
+    
     // Copy constructor
     InstancePropertyContainer(const InstancePropertyContainer& other);
     
@@ -162,6 +166,9 @@ public:
     
     // 初始化所有存储属性的默认值
     void initializeDefaults(Interpreter& interpreter);
+    
+    // 初始化所有存储属性的默认值（支持继承）
+    void initializeDefaultsWithInheritance(Interpreter& interpreter, const std::string& className);
     
 private:
     std::unordered_map<std::string, std::unique_ptr<PropertyValue>> properties_;

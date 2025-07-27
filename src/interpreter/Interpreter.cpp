@@ -230,34 +230,47 @@ void Interpreter::visit(const VarExpr& expr) {
         // If variable not found, try to find it as a member of 'self'
         try {
             Value selfValue = environment->get(Token{TokenType::Identifier, "self", 0});
+            std::cout << "DEBUG: Found self object, trying to access property: " << expr.name.lexeme << std::endl;
             if (selfValue.isStruct()) {
                 auto& structValue = selfValue.asStruct();
                 // Try property system first
                 if (structValue.properties && structValue.properties->hasProperty(expr.name.lexeme)) {
+                    std::cout << "DEBUG: Found property in struct property system" << std::endl;
                     result = structValue.properties->getProperty(*this, expr.name.lexeme);
                     return;
                 }
                 // Fallback to legacy member access
                 auto it = structValue.members->find(expr.name.lexeme);
                 if (it != structValue.members->end()) {
+                    std::cout << "DEBUG: Found property in struct legacy members" << std::endl;
                     result = it->second;
                     return;
                 }
+                std::cout << "DEBUG: Property not found in struct" << std::endl;
             } else if (selfValue.isClass()) {
                 auto& classValue = selfValue.asClass();
+                std::cout << "DEBUG: Self is a class instance: " << classValue->className << std::endl;
                 // Try property system first
                 if (classValue->properties && classValue->properties->hasProperty(expr.name.lexeme)) {
+                    std::cout << "DEBUG: Found property in class property system" << std::endl;
                     result = classValue->properties->getProperty(*this, expr.name.lexeme);
                     return;
                 }
                 // Fallback to legacy member access
                 auto it = classValue->members->find(expr.name.lexeme);
                 if (it != classValue->members->end()) {
+                    std::cout << "DEBUG: Found property in class legacy members" << std::endl;
                     result = it->second;
                     return;
                 }
+                std::cout << "DEBUG: Property '" << expr.name.lexeme << "' not found in class" << std::endl;
+                if (classValue->properties) {
+                    std::cout << "DEBUG: Available properties in class:" << std::endl;
+                    // Add debug info about available properties
+                }
             }
-        } catch (const std::runtime_error&) {
+        } catch (const std::runtime_error& e) {
+            std::cout << "DEBUG: Failed to get self object: " << e.what() << std::endl;
             // 'self' not found, continue with original error
         }
         
@@ -1924,7 +1937,7 @@ void Interpreter::visit(const Call& expr) {
             if (auto* classPropManager = getClassPropertyManager(fullTypeName)) {
                 // Create a new class instance
                 auto propContainer = std::make_unique<InstancePropertyContainer>(*classPropManager, environment);
-                propContainer->initializeDefaults(*this);
+                propContainer->initializeDefaultsWithInheritance(*this, fullTypeName);
                 auto classInstance = std::make_shared<ClassInstance>(fullTypeName, std::move(propContainer));
                 result = Value(classInstance);
                 return;
@@ -1966,6 +1979,7 @@ void Interpreter::visit(const Call& expr) {
             auto callable = method.asFunction();
             
             if (callable->isFunction) {
+                std::cout << "DEBUG: Executing method call through MemberAccess path" << std::endl;
                 // For inherited methods, the function definition doesn't include 'self' parameter
                 // but we need to execute it in the context of the current object
                 std::vector<Value> arguments;
@@ -2014,6 +2028,7 @@ void Interpreter::visit(const Call& expr) {
                 deferStack.push(std::vector<std::unique_ptr<Stmt>>());
                 
                 // Bind 'self' parameter for instance method
+                std::cout << "DEBUG: Binding self parameter in MemberAccess path" << std::endl;
                 environment->define("self", object, false, "Self");
                 
                 // Bind the actual method parameters
@@ -2373,9 +2388,9 @@ void Interpreter::visit(const LabeledCall& expr) {
         
         // Check if this is a class constructor
         if (auto* classPropManager = getClassPropertyManager(typeName)) {
-            // Create a new class instance
-            auto propContainer = std::make_unique<InstancePropertyContainer>(*classPropManager, environment);
-            propContainer->initializeDefaults(*this);
+            // Create a new class instance with inheritance support
+            auto propContainer = std::make_unique<InstancePropertyContainer>(*classPropManager, environment, *this, typeName);
+            propContainer->initializeDefaultsWithInheritance(*this, typeName);
             ClassInstance classInstance(typeName, std::move(propContainer));
             
             // Copy subscripts from static manager to instance
@@ -2465,11 +2480,15 @@ void Interpreter::visit(const LabeledCall& expr) {
                 // Create new defer stack level for this method
                 deferStack.push(std::vector<std::unique_ptr<Stmt>>());
                 
-                // Bind parameters
+                // Bind 'self' parameter for instance method
+                std::cout << "DEBUG: Binding self parameter in second method call path" << std::endl;
+                environment->define("self", object, false, "Self");
+                
+                // Bind parameters (skip the first argument which is 'self')
                 for (size_t i = 0; i < callable->functionDecl->parameters.size(); ++i) {
                     environment->define(
                         callable->functionDecl->parameters[i].name.lexeme,
-                        arguments[i],
+                        arguments[i + 1], // Skip the 'self' argument
                         false, // parameters are not const
                         callable->functionDecl->parameters[i].type.lexeme
                     );
@@ -3143,10 +3162,10 @@ void Interpreter::visit(const StructInit& expr) {
 
     
     if (classPropManager) {
-        // Create class instance
+        // Create class instance with inheritance support
 
         
-        auto propContainer = std::make_unique<InstancePropertyContainer>(*classPropManager, environment);
+        auto propContainer = std::make_unique<InstancePropertyContainer>(*classPropManager, environment, *this, expr.structName.lexeme);
         
         // Initialize provided members
         for (const auto& member : expr.members) {
@@ -3155,8 +3174,8 @@ void Interpreter::visit(const StructInit& expr) {
             propContainer->setProperty(*this, member.first.lexeme, memberValue);
         }
         
-        // Initialize default values for unspecified properties
-        propContainer->initializeDefaults(*this);
+        // Initialize default values for unspecified properties (with inheritance support)
+        propContainer->initializeDefaultsWithInheritance(*this, expr.structName.lexeme);
         
         auto classInstance = std::make_shared<ClassInstance>(expr.structName.lexeme, std::move(propContainer));
         

@@ -5,6 +5,7 @@
 #include <vector>
 #include <memory>
 #include <unordered_map>
+#include <iostream>
 #include "../Value.h"
 #include "../Environment.h"
 #include "../../parser/AST.h"
@@ -145,18 +146,41 @@ public:
     
     // 重写 get 方法以支持属性访问
     Value get(const Token& name) override {
-        // 首先尝试从普通环境中获取
+        // std::cout << "DEBUG: MethodCallEnvironment::get called for variable: " << name.lexeme << std::endl;
         try {
-            return Environment::get(name);
+            // First try to get from the current environment
+            // std::cout << "DEBUG: Trying to get from current environment: " << name.lexeme << std::endl;
+            Value result = Environment::get(name);
+            // std::cout << "DEBUG: Found variable in environment: " << name.lexeme << std::endl;
+            return result;
         } catch (const std::runtime_error&) {
-            // 如果在普通环境中找不到，尝试从 self 对象的属性中获取
+            // std::cout << "DEBUG: Variable not found in environment, trying self properties: " << name.lexeme << std::endl;
+            // If not found, try to get from self's properties
             if (interpreter_ && selfValue_.isClass()) {
                 const auto& classInstance = selfValue_.asClass();
-                if (classInstance->properties && classInstance->properties->hasProperty(name.lexeme)) {
-                    return classInstance->properties->getProperty(*interpreter_, name.lexeme);
+                // std::cout << "DEBUG: Checking self properties for: " << name.lexeme << std::endl;
+                // std::cout << "DEBUG: Self class name: " << classInstance->getClassName() << std::endl;
+                if (classInstance->properties) {
+                    // std::cout << "DEBUG: Properties container exists" << std::endl;
+                    auto allProps = classInstance->properties->getAllPropertyNames();
+                    // std::cout << "DEBUG: All properties: ";
+                    // for (const auto& prop : allProps) {
+                    //     std::cout << prop << " ";
+                    // }
+                    // std::cout << std::endl;
+                    if (classInstance->properties->hasProperty(name.lexeme)) {
+                        // std::cout << "DEBUG: Found property in self: " << name.lexeme << std::endl;
+                        return classInstance->properties->getProperty(*interpreter_, name.lexeme);
+                    }
+                    // std::cout << "DEBUG: Property not found in self: " << name.lexeme << std::endl;
+                } else {
+                    // std::cout << "DEBUG: No properties container in self" << std::endl;
                 }
+            } else {
+                // std::cout << "DEBUG: No self object or properties available" << std::endl;
             }
-            throw; // 重新抛出原始异常
+            // Re-throw the original exception if not found in self either
+            throw std::runtime_error("Undefined variable '" + name.lexeme + "'");
         }
     }
     

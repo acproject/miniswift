@@ -152,11 +152,15 @@ Value SuperHandler::callSuperMethod(const std::string& currentClass,
                                    const std::string& methodName,
                                    const std::vector<Value>& arguments,
                                    std::shared_ptr<Environment> environment) {
+    // std::cout << "DEBUG: SuperHandler::callSuperMethod called for " << currentClass << "::" << methodName << std::endl;
+    
     // 获取父类名称
     std::string superclass = inheritanceManager_.getSuperclass(currentClass);
     if (superclass.empty()) {
         throw std::runtime_error("Class " + currentClass + " has no superclass");
     }
+    
+    // std::cout << "DEBUG: Found superclass: " << superclass << std::endl;
     
     // 在父类中查找方法
     auto method = inheritanceManager_.findMethodRecursive(superclass, methodName);
@@ -164,16 +168,24 @@ Value SuperHandler::callSuperMethod(const std::string& currentClass,
         throw std::runtime_error("Method " + methodName + " not found in superclass " + superclass);
     }
     
+    // std::cout << "DEBUG: Found method in superclass: " << methodName << std::endl;
+    
     // 从当前环境中获取 self 对象
     Value selfObject;
     try {
         selfObject = environment->get(Token{TokenType::Identifier, "self", 0});
+        // std::cout << "DEBUG: Found self object in environment" << std::endl;
     } catch (const std::runtime_error&) {
         throw std::runtime_error("Cannot call super method without self context");
     }
     
     // 创建方法调用环境，自动绑定 self
     auto methodEnv = std::make_shared<MethodCallEnvironment>(environment, selfObject, &interpreter_);
+    // std::cout << "DEBUG: Created MethodCallEnvironment for super method call" << std::endl;
+    
+    // 设置当前方法类上下文，这对于super方法中访问属性很重要
+    methodEnv->define("__current_method_class__", Value(superclass), false, "String");
+    methodEnv->define("__current_class__", Value(superclass), false, "String");
     
     // 绑定参数
     if (arguments.size() != method->parameters.size()) {
@@ -184,11 +196,14 @@ Value SuperHandler::callSuperMethod(const std::string& currentClass,
         methodEnv->define(method->parameters[i].name.lexeme, arguments[i]);
     }
     
-    // 执行方法体
+    // std::cout << "DEBUG: About to execute super method body" << std::endl;
+    
+    // 使用MethodCallEnvironment执行方法体
     try {
         interpreter_.executeWithEnvironment(*method->body, methodEnv);
         return Value(); // void return
     } catch (const ReturnException& returnEx) {
+        // std::cout << "DEBUG: Super method returned value" << std::endl;
         return *returnEx.value;
     }
 }
@@ -252,9 +267,26 @@ Value SuperHandler::getSuperProperty(const std::string& currentClass,
     // 在父类中查找方法
     auto method = inheritanceManager_.findMethodRecursive(superclass, propertyName);
     if (method) {
-        // 创建一个包含当前环境（包括self）的函数对象
-        // 这样当函数被调用时，self 对象会被正确传递
-        auto callable = std::make_shared<Function>(method.get(), environment);
+        std::cout << "DEBUG: Found method in superclass, creating special Function object" << std::endl;
+        // 创建一个特殊的环境来标记这是一个super方法调用
+        auto superEnv = std::make_shared<Environment>(environment);
+        superEnv->define("__is_super_method__", Value(true));
+        superEnv->define("__super_class__", Value(superclass));
+        superEnv->define("__super_method__", Value(propertyName));
+        
+        std::cout << "DEBUG: Created super environment with special markers" << std::endl;
+        
+        // 创建一个包含特殊标记的函数对象
+        auto callable = std::make_shared<Function>(method.get(), superEnv);
+        
+        // 验证标记是否正确设置
+        try {
+            Value testMarker = callable->closure->get(Token{TokenType::Identifier, "__is_super_method__", 0});
+            std::cout << "DEBUG: Verification - __is_super_method__ = " << (testMarker.type == ValueType::Bool && std::get<bool>(testMarker.value) ? "true" : "false") << std::endl;
+        } catch (const std::runtime_error& e) {
+            std::cout << "DEBUG: Failed to verify __is_super_method__ marker: " << e.what() << std::endl;
+        }
+        
         return Value(callable);
     }
     

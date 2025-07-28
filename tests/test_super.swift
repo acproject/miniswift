@@ -19,8 +19,8 @@ class Dog : Animal {
     }
     
     override func getName() -> String {
-        let parentName = super.name // 直接访问父类属性 可以成功
-        // let parentName = super.getName()  // 调用父类方法获取名称，会出现Undefined variable 'name'
+        // let parentName = super.name // 直接访问父类属性 可以成功
+        let parentName = super.getName()  // 调用父类方法获取名称，会出现Undefined variable 'name'
         return "Dog named " + parentName
     }
 }

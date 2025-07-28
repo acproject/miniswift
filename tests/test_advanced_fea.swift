@@ -98,14 +98,14 @@ func main() {
     
     // 测试2: 枚举和业务逻辑
     print("2. 测试枚举和业务逻辑:")
-    // let processor = TaskProcessor(processorId: "MAIN_PROC")
+    let processor = TaskProcessor(processorId: "MAIN_PROC")
     
-    // let result1 = processor.processTask(taskId: 1, data: "测试数据")
-    // print("   处理成功: \(result1)")
+    let result1 = processor.processTask(taskId: 1, data: "测试数据")
+    print("   处理成功: \(result1)")
     
-    // let status = processor.getStatus(taskId: 5)
-    // print("   任务状态: \(status)")
-    // print("")
+    let status = processor.getStatus(taskId: 5)
+    print("   任务状态: \(status)")
+    print("")
     
     // 测试3: 递归函数
     print("3. 测试递归函数:")
@@ -130,9 +130,9 @@ func main() {
     
     // 测试5: 异步处理
     print("5. 测试异步处理:")
-    // let asyncResult = await processUserAsync(userId: 10)
-    // print("   \(asyncResult)")
-    // print("")
+    let asyncResult = await processUserAsync(userId: 10)
+    print("   \(asyncResult)")
+    print("")
     
     // 测试6: 循环和计算
     print("6. 测试循环和计算:")
@@ -157,13 +157,13 @@ func main() {
     print("   用户2: \(user2.getInfo())")
     print("   用户3: \(user3.getInfo())")
     
-    // let processor2 = TaskProcessor(processorId: "USER_PROC")
-    // let result2 = processor2.processTask(taskId: user2.id, data: user2.name)
-    // let result3 = processor2.processTask(taskId: user3.id, data: user3.name)
+    let processor2 = TaskProcessor(processorId: "USER_PROC")
+    let result2 = processor2.processTask(taskId: user2.id, data: user2.name)
+    let result3 = processor2.processTask(taskId: user3.id, data: user3.name)
     
-    // print("   处理结果2: \(result2)")
-    // print("   处理结果3: \(result3)")
-    // print("")
+    print("   处理结果2: \(result2)")
+    print("   处理结果3: \(result3)")
+    print("")
     
     // 测试8: 综合应用
     print("8. 综合应用测试:")

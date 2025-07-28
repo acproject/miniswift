@@ -2045,10 +2045,15 @@ void Interpreter::visit(const Call& expr) {
                     arguments.push_back(evaluate(*argument));
                 }
                 
-                // Check parameter count - inherited methods should match exactly
-                if (arguments.size() != callable->functionDecl->parameters.size()) {
+                // Check parameter count - for class methods, the first parameter is 'self'
+                // so we need to account for that when checking argument count
+                size_t expectedArgs = callable->functionDecl->parameters.size();
+                if (expectedArgs > 0 && callable->functionDecl->parameters[0].name.lexeme == "self") {
+                    expectedArgs -= 1; // Subtract 1 for the self parameter
+                }
+                if (arguments.size() != expectedArgs) {
                     throw std::runtime_error("Expected " + 
-                        std::to_string(callable->functionDecl->parameters.size()) + 
+                        std::to_string(expectedArgs) + 
                         " arguments but got " + std::to_string(arguments.size()) + ".");
                 }
                 
@@ -2083,15 +2088,21 @@ void Interpreter::visit(const Call& expr) {
                 // Create new defer stack level for this method
                 deferStack.push(std::vector<std::unique_ptr<Stmt>>());
                 
-                // Bind 'self' parameter for instance method
-                // std::cout << "DEBUG: Binding self parameter in MemberAccess path" << std::endl;
-                environment->define("self", object, false, "Self");
+                // Bind parameters - handle self parameter if present
+                size_t paramStartIndex = 0;
+                if (callable->functionDecl->parameters.size() > 0 && 
+                    callable->functionDecl->parameters[0].name.lexeme == "self") {
+                    // Bind self parameter
+                    environment->define("self", object, false, "Self");
+                    paramStartIndex = 1; // Skip self parameter when binding user arguments
+                }
                 
-                // Bind the actual method parameters
-                for (size_t i = 0; i < callable->functionDecl->parameters.size(); ++i) {
+                // Bind the actual method parameters (excluding self)
+                for (size_t i = paramStartIndex; i < callable->functionDecl->parameters.size(); ++i) {
+                    size_t argIndex = i - paramStartIndex;
                     environment->define(
                         callable->functionDecl->parameters[i].name.lexeme,
-                        arguments[i], // Use arguments directly
+                        arguments[argIndex],
                         false, // parameters are not const
                         callable->functionDecl->parameters[i].type.lexeme
                     );
@@ -2539,36 +2550,70 @@ void Interpreter::visit(const LabeledCall& expr) {
         }
         
         if (method.isFunction()) {
-            // This is a method call - prepare arguments with 'self' as first parameter
+            // This is a method call - handle struct and class methods differently
             std::vector<Value> arguments;
-            arguments.push_back(object); // Add 'self' as first argument
-            
-            // Add the provided arguments
-            for (const auto& argument : expr.arguments) {
-                arguments.push_back(evaluate(*argument));
-            }
             
             auto callable = method.asFunction();
             
             if (callable->isFunction) {
-                // Handle function call with self parameter
-                // For instance methods, we need to account for the implicit 'self' parameter
-                // The method definition doesn't include 'self' in its parameter count
-                size_t expectedArgs = callable->functionDecl->parameters.size();
-                size_t actualArgs = arguments.size() - 1; // Subtract 1 for the 'self' parameter we added
-                
-                if (actualArgs != expectedArgs) {
-                    throw std::runtime_error("Expected " + 
-                        std::to_string(expectedArgs) + 
-                        " arguments but got " + std::to_string(actualArgs) + ".");
-                }
+                // Determine if this is a struct or class method
+                bool isStructMethod = object.isStruct();
+                bool isClassMethod = object.isClass();
                 
                 // Create new environment for function execution
                 auto previous = environment;
                 environment = std::make_shared<Environment>(callable->closure);
                 
-                // Set current class context for super keyword support
-                if (object.isClass()) {
+                if (isStructMethod) {
+                    // For struct methods, add self as first argument (like before)
+                    arguments.push_back(object);
+                    
+                    // Add the provided arguments
+                    for (const auto& argument : expr.arguments) {
+                        arguments.push_back(evaluate(*argument));
+                    }
+                    
+                    // Check parameter count (including self)
+                    size_t expectedArgs = callable->functionDecl->parameters.size();
+                    size_t actualArgs = arguments.size();
+                    
+                    if (actualArgs != expectedArgs) {
+                        throw std::runtime_error("Expected " + 
+                            std::to_string(expectedArgs) + 
+                            " arguments but got " + std::to_string(actualArgs) + ".");
+                    }
+                    
+                    // Create new defer stack level for this method
+                    deferStack.push(std::vector<std::unique_ptr<Stmt>>());
+                    
+                    // Bind parameters (including self as first parameter)
+                    for (size_t i = 0; i < callable->functionDecl->parameters.size(); ++i) {
+                        environment->define(
+                            callable->functionDecl->parameters[i].name.lexeme,
+                            arguments[i],
+                            false, // parameters are not const
+                            callable->functionDecl->parameters[i].type.lexeme
+                        );
+                    }
+                } else if (isClassMethod) {
+                    // For class methods, don't add self as argument parameter
+                    
+                    // Add the provided arguments only
+                    for (const auto& argument : expr.arguments) {
+                        arguments.push_back(evaluate(*argument));
+                    }
+                    
+                    // Check parameter count (without self)
+                    size_t expectedArgs = callable->functionDecl->parameters.size();
+                    size_t actualArgs = arguments.size();
+                    
+                    if (actualArgs != expectedArgs) {
+                        throw std::runtime_error("Expected " + 
+                            std::to_string(expectedArgs) + 
+                            " arguments but got " + std::to_string(actualArgs) + ".");
+                    }
+                    
+                    // Set current class context for super keyword support
                     auto classInstance = object.asClass();
                     environment->define("__current_class__", Value(classInstance->getClassName()), false, "String");
                     
@@ -2586,24 +2631,24 @@ void Interpreter::visit(const LabeledCall& expr) {
                         }
                     }
                     environment->define("__current_method_class__", Value(methodDefiningClass), false, "String");
-                    // std::cout << "DEBUG: Set __current_method_class__ to: " << methodDefiningClass << " for method: " << memberAccess->member.lexeme << std::endl;
-                }
-                
-                // Create new defer stack level for this method
-                deferStack.push(std::vector<std::unique_ptr<Stmt>>());
-                
-                // Bind 'self' parameter for instance method
-                // std::cout << "DEBUG: Binding self parameter in second method call path" << std::endl;
-                environment->define("self", object, false, "Self");
-                
-                // Bind parameters (skip the first argument which is 'self')
-                for (size_t i = 0; i < callable->functionDecl->parameters.size(); ++i) {
-                    environment->define(
-                        callable->functionDecl->parameters[i].name.lexeme,
-                        arguments[i + 1], // Skip the 'self' argument
-                        false, // parameters are not const
-                        callable->functionDecl->parameters[i].type.lexeme
-                    );
+                    
+                    // Bind 'self' to the object instance for class methods
+                    environment->define("self", object, false, "Class");
+                    
+                    // Create new defer stack level for this method
+                    deferStack.push(std::vector<std::unique_ptr<Stmt>>());
+                    
+                    // Bind parameters (user arguments only, no self)
+                    for (size_t i = 0; i < callable->functionDecl->parameters.size(); ++i) {
+                        environment->define(
+                            callable->functionDecl->parameters[i].name.lexeme,
+                            arguments[i],
+                            false, // parameters are not const
+                            callable->functionDecl->parameters[i].type.lexeme
+                        );
+                    }
+                } else {
+                    throw std::runtime_error("Method call on unsupported object type");
                 }
                 
                 try {
@@ -3036,6 +3081,20 @@ void Interpreter::visit(const ClassStmt& stmt) {
             // Clear the nested context by setting it to empty string
             environment->assign(Token(TokenType::Identifier, "__nested_context__", 0), Value(std::string()));
         }
+    }
+    
+    // Register class methods directly (without self parameter)
+    for (const auto& method : stmt.methods) {
+        // Store the original method directly
+        std::string mangledName = typeName + "." + method->name.lexeme;
+        
+        // Create a shared_ptr from the unique_ptr (non-owning)
+        std::shared_ptr<FunctionStmt> sharedMethod(method.get(), [](FunctionStmt*) {});
+        methodFunctions[mangledName] = sharedMethod;
+        
+        // Create callable and register in global environment
+        auto callable = std::make_shared<Function>(method.get(), globals);
+        globals->define(mangledName, Value(callable), false, "Function");
     }
     
     // Register inheritance relationship
@@ -3507,9 +3566,7 @@ Value Interpreter::getMemberValue(const Value& object, const std::string& member
             Value extensionMethod = globals->get(Token(TokenType::Identifier, mangledName, 0));
 
             if (extensionMethod.type == ValueType::Function) {
-                // Create a bound method that includes the struct instance as 'self'
-                auto function = extensionMethod.asFunction();
-                // For now, return the function directly - the Call visitor will handle binding
+                // Return the function directly - the Call visitor will handle self binding
                 return extensionMethod;
             }
         } catch (const std::runtime_error& e) {

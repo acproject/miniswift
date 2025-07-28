@@ -142,22 +142,25 @@ void SemanticAnalyzer::visit(const Unary& expr) {
 }
 
 void SemanticAnalyzer::visit(const VarExpr& expr) {
-    // auto symbol = symbolTable->lookup(expr.name.lexeme);
-    // if (!symbol) {
-    //     reportError("Undefined variable: " + expr.name.lexeme, expr.name.line, expr.name.column);
-    //     currentExpressionType = typeSystem->getErrorType();
-    //     return;
-    // }
+    // 简化实现：从当前TypedProgram查找符号类型
+    if (currentTypedProgram) {
+        auto symbolType = currentTypedProgram->getSymbolType(expr.name.lexeme);
+        if (symbolType) {
+            currentExpressionType = symbolType;
+            
+            // 创建TypedVarExpr并添加到当前表达式映射
+            auto originalVarExpr = std::unique_ptr<VarExpr>(static_cast<VarExpr*>(expr.clone().release()));
+            auto typedVarExpr = std::make_unique<TypedVarExpr>(std::move(originalVarExpr), symbolType);
+            
+            // 将类型映射添加到TypedProgram
+            currentTypedProgram->addTypeMapping(&expr, symbolType);
+            return;
+        }
+    }
     
-    // if (symbol->kind != SymbolKind::Variable) {
-    //     reportError("Expected variable, got " + symbolKindToString(symbol->kind),
-    //                expr.name.line, expr.name.column);
-    //     currentExpressionType = typeSystem->getErrorType();
-    //     return;
-    // }
-    
-    // auto varSymbol = static_cast<VariableSymbol*>(symbol.get());
-    // currentExpressionType = varSymbol->type;
+    // 如果找不到变量，报告错误
+    reportError("Undefined variable: " + expr.name.lexeme, expr.name.line);
+    currentExpressionType = typeSystem->getErrorType();
 }
 
 void SemanticAnalyzer::visit(const Assign& expr) {
@@ -457,6 +460,16 @@ void SemanticAnalyzer::visit(const VarStmt& stmt) {
                 varType = stringType;
             } else {
                 varType = voidType;
+            }
+        } else if (auto call = dynamic_cast<const Call*>(stmt.initializer.get())) {
+            // 处理构造函数调用，如 Dog()
+            if (auto varExpr = dynamic_cast<const VarExpr*>(call->callee.get())) {
+                // 假设构造函数名就是类型名
+                std::string typeName = varExpr->name.lexeme;
+                // 创建用户定义类型
+                varType = std::make_shared<UserDefinedType>(TypeKind::Class, typeName);
+            } else {
+                varType = intType; // 默认类型
             }
         } else {
             varType = intType; // 默认类型
@@ -808,6 +821,116 @@ void SemanticAnalyzer::visit(const FunctionStmt& stmt) {
                         typedStatements.push_back(std::move(typedExprStmt));
                         std::cerr << "DEBUG: Added TypedExprStmt with TypedCall from PrintStmt, typedStatements size: " << typedStatements.size() << std::endl;
                     }
+                } else if (auto varStmt = dynamic_cast<const VarStmt*>(s.get())) {
+                    std::cerr << "DEBUG: Found VarStmt in function body" << std::endl;
+                    // 处理变量声明语句
+                    varStmt->accept(*this);
+                    
+                    // 创建TypedVarStmt并添加到typedStatements
+                    // 注意：varStmt->accept(*this)已经创建了TypedVarStmt并添加到currentTypedProgram
+                    // 但我们需要将它添加到当前函数的typedStatements中
+                    
+                    // 创建基本类型（简化实现）
+                    auto intType = std::make_shared<PrimitiveType>(TypeKind::Int, "Int");
+                    auto stringType = std::make_shared<PrimitiveType>(TypeKind::String, "String");
+                    auto voidType = std::make_shared<PrimitiveType>(TypeKind::Void, "Void");
+                    
+                    // 确定变量类型
+                    std::shared_ptr<Type> varType;
+                    if (!varStmt->type.lexeme.empty()) {
+                        if (varStmt->type.lexeme == "Int") {
+                            varType = intType;
+                        } else if (varStmt->type.lexeme == "String") {
+                            varType = stringType;
+                        } else {
+                            varType = voidType; // 默认类型
+                        }
+                    } else if (varStmt->initializer) {
+                        // 根据初始化器推断类型
+                        std::cerr << "DEBUG: Has initializer, checking type..." << std::endl;
+                        std::cerr << "DEBUG: Initializer type name: " << typeid(*varStmt->initializer).name() << std::endl;
+                        if (auto literal = dynamic_cast<const Literal*>(varStmt->initializer.get())) {
+                            std::cerr << "DEBUG: Initializer is a literal" << std::endl;
+                            switch (literal->value.type) {
+                                case TokenType::IntegerLiteral:
+                                    varType = intType;
+                                    break;
+                                case TokenType::StringLiteral:
+                                    varType = stringType;
+                                    break;
+                                default:
+                                    varType = voidType;
+                                    break;
+                            }
+                        } else if (auto call = dynamic_cast<const Call*>(varStmt->initializer.get())) {
+                            std::cerr << "DEBUG: Initializer is a call expression" << std::endl;
+                            if (auto varExpr = dynamic_cast<const VarExpr*>(call->callee.get())) {
+                                std::cerr << "DEBUG: Call callee is: " << varExpr->name.lexeme << std::endl;
+                                // 对于构造函数调用，直接设置类型
+                                varType = std::make_shared<UserDefinedType>(TypeKind::Class, varExpr->name.lexeme);
+                                std::cerr << "DEBUG: Set varType to class: " << varExpr->name.lexeme << std::endl;
+                            } else {
+                                varType = voidType; // 默认类型
+                            }
+                        } else if (auto labeledCall = dynamic_cast<const LabeledCall*>(varStmt->initializer.get())) {
+                            std::cerr << "DEBUG: Initializer is a labeled call expression" << std::endl;
+                            if (auto varExpr = dynamic_cast<const VarExpr*>(labeledCall->callee.get())) {
+                                std::cerr << "DEBUG: LabeledCall callee is: " << varExpr->name.lexeme << std::endl;
+                                // 对于构造函数调用，直接设置类型
+                                varType = std::make_shared<UserDefinedType>(TypeKind::Class, varExpr->name.lexeme);
+                                std::cerr << "DEBUG: Set varType to class: " << varExpr->name.lexeme << std::endl;
+                            } else {
+                                varType = voidType; // 默认类型
+                            }
+                        } else {
+                            std::cerr << "DEBUG: Initializer is neither literal nor call" << std::endl;
+                            varType = voidType; // 默认类型
+                        }
+                    } else {
+                        varType = voidType; // 默认类型
+                    }
+                    
+                    // 创建类型化的初始化器（如果存在）
+                    std::unique_ptr<TypedExpr> typedInitializer = nullptr;
+                    if (varStmt->initializer) {
+                        if (auto call = dynamic_cast<const Call*>(varStmt->initializer.get())) {
+                            // 处理构造函数调用，如 Dog()
+                            auto originalCall = std::unique_ptr<Call>(static_cast<Call*>(call->clone().release()));
+                            
+                            // 创建类型化的callee
+                            std::unique_ptr<TypedExpr> typedCallee = nullptr;
+                            if (auto varExpr = dynamic_cast<const VarExpr*>(call->callee.get())) {
+                                auto originalVarExpr = std::unique_ptr<VarExpr>(static_cast<VarExpr*>(varExpr->clone().release()));
+                                // 对于构造函数调用，类型应该是被构造的类型
+                                auto constructorType = std::make_shared<UserDefinedType>(TypeKind::Class, varExpr->name.lexeme);
+                                typedCallee = std::make_unique<TypedVarExpr>(std::move(originalVarExpr), constructorType);
+                                varType = constructorType; // 更新变量类型为构造的类型
+                            }
+                            
+                            // 创建类型化的参数
+                            std::vector<std::unique_ptr<TypedExpr>> typedArgs;
+                            for (const auto& arg : call->arguments) {
+                                // 处理参数...
+                            }
+                            
+                            if (typedCallee) {
+                                typedInitializer = std::make_unique<TypedCall>(std::move(originalCall), varType, std::move(typedCallee), std::move(typedArgs));
+                            }
+                        }
+                    }
+                    
+                    // 创建TypedVarStmt
+                    std::cerr << "DEBUG: About to create TypedVarStmt for variable: " << varStmt->name.lexeme << std::endl;
+                    std::cerr << "DEBUG: varType kind: " << static_cast<int>(varType->getKind()) << std::endl;
+                    std::cerr << "DEBUG: varType toString: " << varType->toString() << std::endl;
+                    
+                    auto originalVarStmt = std::unique_ptr<VarStmt>(static_cast<VarStmt*>(varStmt->clone().release()));
+                    auto typedVarStmt = std::make_unique<TypedVarStmt>(
+                        std::move(originalVarStmt), varType, std::move(typedInitializer));
+                    
+                    std::cerr << "DEBUG: Created TypedVarStmt for variable: " << varStmt->name.lexeme << std::endl;
+                    typedStatements.push_back(std::move(typedVarStmt));
+                    std::cerr << "DEBUG: Added TypedVarStmt to typedStatements, size now: " << typedStatements.size() << std::endl;
                 } else {
                     // 对于其他类型的语句，先简单处理
                     s->accept(*this);
@@ -874,6 +997,51 @@ void SemanticAnalyzer::visit(const StructStmt& stmt) {
 
 void SemanticAnalyzer::visit(const ClassStmt& stmt) {
     std::cerr << "DEBUG: SemanticAnalyzer::visit(ClassStmt) called for class: " << stmt.name.lexeme << std::endl;
+    std::cerr << "DEBUG: Class has " << stmt.methods.size() << " methods" << std::endl;
+    
+    // 分析类中的方法
+    for (const auto& method : stmt.methods) {
+        std::cerr << "DEBUG: Processing method: " << method->name.lexeme << " in class " << stmt.name.lexeme << std::endl;
+        
+        // 创建方法的完整名称（类名.方法名）
+        std::string fullMethodName = stmt.name.lexeme + "." + method->name.lexeme;
+        
+        // 创建基本类型
+        auto voidType = std::make_shared<PrimitiveType>(TypeKind::Void, "Void");
+        auto intType = std::make_shared<PrimitiveType>(TypeKind::Int, "Int");
+        auto stringType = std::make_shared<PrimitiveType>(TypeKind::String, "String");
+        
+        // 解析参数类型
+        std::vector<std::shared_ptr<Type>> paramTypes;
+        for (const auto& param : method->parameters) {
+            if (param.type.lexeme == "Int") {
+                paramTypes.push_back(intType);
+            } else if (param.type.lexeme == "String") {
+                paramTypes.push_back(stringType);
+            } else {
+                paramTypes.push_back(voidType);
+            }
+        }
+        
+        // 解析返回类型
+        std::shared_ptr<Type> returnType;
+        if (method->returnType.lexeme == "Int") {
+            returnType = intType;
+        } else if (method->returnType.lexeme == "String") {
+            returnType = stringType;
+        } else {
+            returnType = voidType;
+        }
+        
+        // 创建函数类型
+        auto funcType = std::make_shared<FunctionType>(paramTypes, returnType);
+        
+        // 注册方法到TypedProgram
+        if (currentTypedProgram) {
+            currentTypedProgram->addFunctionSignature(fullMethodName, funcType);
+            std::cerr << "DEBUG: Registered method " << fullMethodName << " with signature" << std::endl;
+        }
+    }
     
     // 创建TypedClassStmt
     auto originalStmt = std::unique_ptr<ClassStmt>(static_cast<ClassStmt*>(stmt.clone().release()));

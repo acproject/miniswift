@@ -1,5 +1,4 @@
 // 测试super关键字功能
-
 class Animal {
     var name: String = "Unknown"
     
@@ -25,7 +24,12 @@ class Dog : Animal {
     }
 }
 
-let dog = Dog()
-dog.name = "Buddy"
-print("Name: " + dog.getName())
-dog.speak()
+@main
+func main() {
+    let dog = Dog()
+    dog.name = "Buddy"
+    print("Name: " + dog.getName())
+    dog.speak()
+}
+
+main()

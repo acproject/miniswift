@@ -112,13 +112,18 @@ CodeGenResult LLVMCodeGenerator::generateModule(const std::string& moduleName, c
         
 
         
-        // 第二遍：生成函数、结构体和类声明
+        // 第二遍：首先生成结构体和类声明（确保类型在使用前被注册）
         for (const auto& stmt : program.getStatements()) {
-            if (auto typedFuncStmt = dynamic_cast<const TypedFunctionStmt*>(stmt.get())) {
-                generateStatement(*stmt);
-            } else if (auto typedStructStmt = dynamic_cast<const TypedStructStmt*>(stmt.get())) {
+            if (auto typedStructStmt = dynamic_cast<const TypedStructStmt*>(stmt.get())) {
                 generateStatement(*stmt);
             } else if (auto typedClassStmt = dynamic_cast<const TypedClassStmt*>(stmt.get())) {
+                generateStatement(*stmt);
+            }
+        }
+        
+        // 第三遍：生成函数声明
+        for (const auto& stmt : program.getStatements()) {
+            if (auto typedFuncStmt = dynamic_cast<const TypedFunctionStmt*>(stmt.get())) {
                 generateStatement(*stmt);
             }
         }
@@ -208,10 +213,11 @@ CodeGenResult LLVMCodeGenerator::generateModule(const std::string& moduleName, c
                 }
             }
             
-            // 生成所有顶层语句到main函数中
-            for (const TypedStmt* stmt : topLevelStatements) {
-                generateStatement(*stmt);
-            }
+            // 当有@main属性时，不处理顶层语句，因为@main函数已经是程序入口点
+            // 顶层语句（如main()调用）会与@main函数内的作用域冲突
+            // for (const TypedStmt* stmt : topLevelStatements) {
+            //     generateStatement(*stmt);
+            // }
             
             // 如果main函数没有显式返回，添加默认返回值0
             if (!builder_->GetInsertBlock()->getTerminator()) {
@@ -759,29 +765,63 @@ void LLVMCodeGenerator::visit(const TypedExprStmt& stmt) {
 }
 
 void LLVMCodeGenerator::visit(const TypedVarStmt& stmt) {
+    std::cerr << "DEBUG: Visiting TypedVarStmt" << std::endl;
+    
     // 生成变量声明
+    std::cerr << "DEBUG: Converting Swift type to LLVM type" << std::endl;
     llvm::Type* varType = convertSwiftTypeToLLVM(stmt.getDeclaredType());
+    std::cerr << "DEBUG: Type conversion completed" << std::endl;
+    
     // 从原始VarStmt获取变量名
     const VarStmt* originalVarStmt = static_cast<const VarStmt*>(&stmt.getOriginalStmt());
+    std::cerr << "DEBUG: Variable name: " << originalVarStmt->name.lexeme << std::endl;
+    
+    std::cerr << "DEBUG: Allocating variable" << std::endl;
     llvm::Value* alloca = allocateVariable(originalVarStmt->name.lexeme, varType);
+    std::cerr << "DEBUG: Variable allocated" << std::endl;
     
     // 如果有初始化器，生成初始化代码
     if (stmt.getInitializer()) {
-        llvm::Value* initValue = generateExpression(*stmt.getInitializer());
-        builder_->CreateStore(initValue, alloca);
+        std::cerr << "DEBUG: Has initializer, generating initializer for variable: " << originalVarStmt->name.lexeme << std::endl;
+        std::cerr << "DEBUG: Initializer type: " << typeid(*stmt.getInitializer()).name() << std::endl;
+        
+        try {
+            llvm::Value* initValue = generateExpression(*stmt.getInitializer());
+            std::cerr << "DEBUG: Initializer generated successfully" << std::endl;
+            if (initValue) {
+                std::cerr << "DEBUG: Storing initializer value" << std::endl;
+                builder_->CreateStore(initValue, alloca);
+                std::cerr << "DEBUG: Initializer value stored" << std::endl;
+            } else {
+                std::cerr << "DEBUG: Initializer value is null" << std::endl;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "DEBUG: Exception during initializer generation: " << e.what() << std::endl;
+            throw;
+        } catch (...) {
+            std::cerr << "DEBUG: Unknown exception during initializer generation" << std::endl;
+            throw;
+        }
+    } else {
+        std::cerr << "DEBUG: No initializer for variable: " << originalVarStmt->name.lexeme << std::endl;
     }
     
     // 记录变量信息
+    std::cerr << "DEBUG: Declaring variable in symbol table" << std::endl;
     // TODO: 正确获取isConst信息
     declareVariable(originalVarStmt->name.lexeme, VariableInfo(alloca, varType, false)); // 暂时设为false
+    std::cerr << "DEBUG: Finished visiting TypedVarStmt for: " << originalVarStmt->name.lexeme << std::endl;
 }
 
 void LLVMCodeGenerator::visit(const TypedBlockStmt& stmt) {
+    std::cerr << "DEBUG: Visiting TypedBlockStmt with " << stmt.getStatements().size() << " statements" << std::endl;
     enterScope();
     for (const auto& s : stmt.getStatements()) {
+        std::cerr << "DEBUG: Processing statement in TypedBlockStmt: " << typeid(*s).name() << std::endl;
         generateStatement(*s);
     }
     exitScope();
+    std::cerr << "DEBUG: Finished visiting TypedBlockStmt" << std::endl;
 }
 
 void LLVMCodeGenerator::visit(const TypedIfStmt& stmt) {
@@ -859,9 +899,15 @@ void LLVMCodeGenerator::visit(const TypedClassStmt& stmt) {
 
 // 私有辅助方法实现
 llvm::Type* LLVMCodeGenerator::convertSwiftTypeToLLVM(const std::shared_ptr<Type>& swiftType) {
+    std::cerr << "DEBUG: convertSwiftTypeToLLVM called" << std::endl;
+    
     if (!swiftType) {
+        std::cerr << "DEBUG: swiftType is null, returning void type" << std::endl;
         return builder_->getVoidTy();
     }
+    
+    std::cerr << "DEBUG: swiftType kind: " << static_cast<int>(swiftType->getKind()) << std::endl;
+    std::cerr << "DEBUG: swiftType toString: " << swiftType->toString() << std::endl;
     
     switch (swiftType->getKind()) {
         case TypeKind::Int:
@@ -882,6 +928,27 @@ llvm::Type* LLVMCodeGenerator::convertSwiftTypeToLLVM(const std::shared_ptr<Type
             return getTupleType(std::static_pointer_cast<TupleType>(swiftType));
         case TypeKind::Function:
             return getFunctionType(std::static_pointer_cast<FunctionType>(swiftType));
+        case TypeKind::Struct:
+        case TypeKind::Class: {
+            // 处理自定义类/结构体类型
+            std::string typeName;
+            if (auto primitiveType = std::dynamic_pointer_cast<PrimitiveType>(swiftType)) {
+                typeName = primitiveType->getName();
+            } else if (auto userDefinedType = std::dynamic_pointer_cast<UserDefinedType>(swiftType)) {
+                typeName = userDefinedType->getName();
+            } else {
+                reportError("Unknown struct/class type: " + swiftType->toString());
+                return builder_->getVoidTy();
+            }
+            
+            auto typeIt = types_.find(typeName);
+            if (typeIt != types_.end()) {
+                // 返回指向该类型的指针
+                return llvm::PointerType::getUnqual(typeIt->second.llvmType);
+            }
+            reportError("Unknown struct/class type: " + typeName);
+            return builder_->getVoidTy();
+        }
         default:
             reportError("Unsupported type conversion: " + swiftType->toString());
             return builder_->getVoidTy();
@@ -986,6 +1053,149 @@ llvm::Value* LLVMCodeGenerator::generateExpression(const Expr* expr) {
         return nullptr;
     } else if (auto grouping = dynamic_cast<const Grouping*>(expr)) {
         return generateExpression(grouping->expression.get());
+    } else if (auto assign = dynamic_cast<const Assign*>(expr)) {
+        // 处理赋值表达式
+        if (auto varExpr = dynamic_cast<const VarExpr*>(assign->target.get())) {
+            // 简单变量赋值
+            VariableInfo* varInfo = lookupVariable(varExpr->name.lexeme);
+            if (!varInfo) {
+                reportError("Undefined variable: " + varExpr->name.lexeme);
+                return nullptr;
+            }
+            
+            if (varInfo->isConst) {
+                reportError("Cannot assign to constant variable: " + varExpr->name.lexeme);
+                return nullptr;
+            }
+            
+            llvm::Value* value = generateExpression(assign->value.get());
+            if (!value) {
+                reportError("Failed to generate value for assignment");
+                return nullptr;
+            }
+            
+            builder_->CreateStore(value, varInfo->value);
+            return value;
+        } else if (auto memberAccess = dynamic_cast<const MemberAccess*>(assign->target.get())) {
+            // 成员访问赋值 (如 obj.property = value)
+            if (auto objVarExpr = dynamic_cast<const VarExpr*>(memberAccess->object.get())) {
+                const std::string& objectName = objVarExpr->name.lexeme;
+                const std::string& memberName = memberAccess->member.lexeme;
+                
+                // 查找对象变量
+                VariableInfo* objInfo = lookupVariable(objectName);
+                if (!objInfo) {
+                    reportError("Undefined object: " + objectName);
+                    return nullptr;
+                }
+                
+                // 生成赋值的值
+                llvm::Value* value = generateExpression(assign->value.get());
+                if (!value) {
+                    reportError("Failed to generate value for member assignment");
+                    return nullptr;
+                }
+                
+                // 加载对象指针
+                llvm::Value* objPtr = builder_->CreateLoad(objInfo->type, objInfo->value, objectName);
+                
+                // 简化实现：假设成员是第一个字段（索引0）
+                // 实际实现中需要根据成员名查找正确的索引
+                // 直接使用 GEP 访问结构体成员
+                std::vector<llvm::Value*> indices = {
+                    llvm::ConstantInt::get(builder_->getInt32Ty(), 0), // 结构体索引
+                    llvm::ConstantInt::get(builder_->getInt32Ty(), 0)  // 成员索引（简化为第一个成员）
+                };
+                llvm::Value* memberPtr = builder_->CreateGEP(objInfo->type, objPtr, indices, memberName + "_ptr");
+                
+                // 存储值到成员
+                builder_->CreateStore(value, memberPtr);
+                return value;
+            } else {
+                reportError("Complex member access assignment not supported yet");
+                return nullptr;
+            }
+        } else {
+            reportError("Unsupported assignment target");
+            return nullptr;
+        }
+    } else if (auto labeledCall = dynamic_cast<const LabeledCall*>(expr)) {
+        // 处理带标签的函数调用（如 dog.speak()）
+        // 检查是否是成员访问调用
+        if (auto memberAccess = dynamic_cast<const MemberAccess*>(labeledCall->callee.get())) {
+            // 获取对象和方法名
+            if (auto varExpr = dynamic_cast<const VarExpr*>(memberAccess->object.get())) {
+                const std::string& objectName = varExpr->name.lexeme;
+                const std::string& methodName = memberAccess->member.lexeme;
+                
+                // 查找对象变量
+            VariableInfo* objInfo = lookupVariable(objectName);
+            if (!objInfo) {
+                reportError("Undefined object: " + objectName);
+                return nullptr;
+            }
+            
+            // 加载对象
+            llvm::Value* objValue = builder_->CreateLoad(objInfo->type, objInfo->value, objectName);
+            
+            // 查找方法函数，需要根据对象类型来确定正确的方法名
+            // 首先需要确定对象的类型名
+            std::string className;
+            
+            // 从对象的LLVM类型中获取类名
+             if (objInfo->type->isPointerTy()) {
+                 // 在LLVM 18+中，需要通过其他方式获取指针指向的类型
+                 // 这里我们需要从变量信息中获取类型名
+                 // 简化实现：从types_映射中查找匹配的类型
+                 for (const auto& typeEntry : types_) {
+                     if (typeEntry.second.llvmType->isStructTy()) {
+                         llvm::StructType* structType = llvm::cast<llvm::StructType>(typeEntry.second.llvmType);
+                         llvm::Type* ptrType = llvm::PointerType::getUnqual(structType);
+                         if (ptrType == objInfo->type) {
+                             className = typeEntry.first;
+                             break;
+                         }
+                     }
+                 }
+             }
+            
+            if (className.empty()) {
+                reportError("Cannot determine class name for object: " + objectName);
+                return nullptr;
+            }
+            
+            // 构造完整的方法名：ClassName.methodName
+            std::string fullMethodName = className + "." + methodName;
+            
+            auto funcIt = functions_.find(fullMethodName);
+            if (funcIt != functions_.end()) {
+                llvm::Function* function = funcIt->second.function;
+                
+                // 生成参数（第一个参数是self）
+                std::vector<llvm::Value*> args;
+                args.push_back(objValue); // self参数
+                
+                for (const auto& arg : labeledCall->arguments) {
+                    llvm::Value* argValue = generateExpression(arg.get());
+                    if (argValue) {
+                        args.push_back(argValue);
+                    }
+                }
+                
+                // 调用方法
+                return builder_->CreateCall(function, args, methodName + "_call");
+            } else {
+                reportError("Undefined method: " + methodName);
+                return nullptr;
+            }
+            } else {
+                reportError("Complex object method calls not supported yet");
+                return nullptr;
+            }
+        } else {
+            reportError("Unsupported labeled call type");
+            return nullptr;
+        }
     } else if (auto call = dynamic_cast<const Call*>(expr)) {
         // 处理函数调用
         if (auto varExpr = dynamic_cast<const VarExpr*>(call->callee.get())) {
@@ -1030,25 +1240,55 @@ llvm::Value* LLVMCodeGenerator::generateExpression(const Expr* expr) {
                 
                 return nullptr; // print函数没有返回值
             } else {
-                // 查找用户定义的函数
-                auto funcIt = functions_.find(funcName);
-                if (funcIt != functions_.end()) {
-                    llvm::Function* function = funcIt->second.function;
+                // 检查是否是类构造函数调用
+                auto typeIt = types_.find(funcName);
+                if (typeIt != types_.end() && typeIt->second.llvmType->isStructTy()) {
+                    // 这是一个类构造函数调用
+                    llvm::StructType* classType = llvm::cast<llvm::StructType>(typeIt->second.llvmType);
                     
-                    // 生成参数
-                    std::vector<llvm::Value*> args;
-                    for (const auto& arg : call->arguments) {
-                        llvm::Value* argValue = generateExpression(arg.get());
-                        if (argValue) {
-                            args.push_back(argValue);
-                        }
+                    // 分配内存给类实例
+                    llvm::Function* mallocFunc = module_->getFunction("malloc");
+                    if (!mallocFunc) {
+                        reportError("malloc function not found for class instantiation");
+                        return nullptr;
                     }
                     
-                    // 调用函数
-                    return builder_->CreateCall(function, args, funcName + "_call");
+                    // 计算类的大小
+                    llvm::Value* classSize = llvm::ConstantInt::get(builder_->getInt64Ty(), 
+                        module_->getDataLayout().getTypeAllocSize(classType));
+                    
+                    // 调用malloc分配内存
+                    llvm::Value* rawPtr = builder_->CreateCall(mallocFunc, {classSize}, "class_alloc");
+                    
+                    // 转换为正确的类型
+                    llvm::Value* classPtr = builder_->CreateBitCast(rawPtr, 
+                        llvm::PointerType::getUnqual(classType), "class_ptr");
+                    
+                    // 初始化类成员为默认值
+                    // 这里简化处理，实际应该调用构造函数
+                    
+                    return classPtr;
                 } else {
-                    reportError("Undefined function: " + funcName);
-                    return nullptr;
+                    // 查找用户定义的函数
+                    auto funcIt = functions_.find(funcName);
+                    if (funcIt != functions_.end()) {
+                        llvm::Function* function = funcIt->second.function;
+                        
+                        // 生成参数
+                        std::vector<llvm::Value*> args;
+                        for (const auto& arg : call->arguments) {
+                            llvm::Value* argValue = generateExpression(arg.get());
+                            if (argValue) {
+                                args.push_back(argValue);
+                            }
+                        }
+                        
+                        // 调用函数
+                        return builder_->CreateCall(function, args, funcName + "_call");
+                    } else {
+                        reportError("Undefined function or class: " + funcName);
+                        return nullptr;
+                    }
                 }
             }
         } else {
@@ -1210,7 +1450,17 @@ void LLVMCodeGenerator::generateStatement(const Stmt* stmt) {
                         varType = builder_->getInt64Ty();
                         break;
                 }
-            }
+            } else if (auto call = dynamic_cast<const Call*>(varStmt->initializer.get())) {
+                 // 检查是否是类构造函数调用
+                 if (auto varExpr = dynamic_cast<const VarExpr*>(call->callee.get())) {
+                      std::string className = varExpr->name.lexeme;
+                      auto typeIt = types_.find(className);
+                      if (typeIt != types_.end()) {
+                            // 这是一个类构造函数调用，变量类型应该是指向该类的指针
+                            varType = llvm::PointerType::getUnqual(typeIt->second.llvmType);
+                        }
+                  }
+             }
         }
         
         llvm::Value* alloca = allocateVariable(varStmt->name.lexeme, varType);
@@ -1284,8 +1534,8 @@ void LLVMCodeGenerator::generateStatement(const Stmt* stmt) {
                 
                 llvm::FunctionType* methodType = llvm::FunctionType::get(returnType, paramTypes, false);
                 
-                // 创建方法函数，使用类名前缀
-                std::string methodName = classStmt->name.lexeme + "_" + funcMethod->name.lexeme;
+                // 创建方法函数，使用类名.方法名的命名约定
+                std::string methodName = classStmt->name.lexeme + "." + funcMethod->name.lexeme;
                 llvm::Function* methodFunc = llvm::Function::Create(
                     methodType, llvm::Function::ExternalLinkage, methodName, module_.get());
                 
@@ -1352,7 +1602,7 @@ void LLVMCodeGenerator::generateStatement(const Stmt* stmt) {
         }
         
         // 记录类类型信息
-        // TODO: 添加类类型记录机制
+        types_.emplace(classStmt->name.lexeme, TypeInfo(classType, nullptr, false, 0));
         
     } else {
         reportWarning("Unsupported raw statement type, skipping");
@@ -1547,6 +1797,23 @@ llvm::Value* LLVMCodeGenerator::generateFunctionCall(const TypedCall& call) {
     if (functionName == "print") {
         reportWarning("DEBUG: Calling generatePrintCall");
         return generatePrintCall(call);
+    }
+    
+    // 检查是否是类构造函数调用
+    auto typeIt = types_.find(functionName);
+    if (typeIt != types_.end()) {
+        reportWarning("DEBUG: Generating class constructor call for: " + functionName);
+        // 这是一个类构造函数调用
+        llvm::Type* classType = typeIt->second.llvmType;
+        
+        // 分配内存给类实例
+        llvm::Value* instance = builder_->CreateAlloca(classType, nullptr, functionName + "_instance");
+        
+        // 初始化类实例（简化实现，暂时不调用构造函数）
+        // TODO: 如果类有显式构造函数，应该调用它
+        
+        // 返回实例指针
+        return instance;
     }
     
     auto funcIt = functions_.find(functionName);
@@ -1810,28 +2077,41 @@ void LLVMCodeGenerator::exitScope() {
 }
 
 VariableInfo* LLVMCodeGenerator::lookupVariable(const std::string& name) {
+    std::cerr << "DEBUG: Looking up variable: " << name << std::endl;
+    std::cerr << "DEBUG: Scope stack size: " << scopeStack_.size() << std::endl;
+    
     // 从当前作用域向上查找
     for (auto it = scopeStack_.rbegin(); it != scopeStack_.rend(); ++it) {
+        std::cerr << "DEBUG: Checking scope with " << it->localVariables.size() << " variables" << std::endl;
         auto varIt = it->localVariables.find(name);
         if (varIt != it->localVariables.end()) {
+            std::cerr << "DEBUG: Found variable " << name << " in local scope" << std::endl;
             return &varIt->second;
         }
     }
     
     // 查找全局变量
+    std::cerr << "DEBUG: Checking global variables (" << variables_.size() << " total)" << std::endl;
     auto globalIt = variables_.find(name);
     if (globalIt != variables_.end()) {
+        std::cerr << "DEBUG: Found variable " << name << " in global scope" << std::endl;
         return &globalIt->second;
     }
     
+    std::cerr << "DEBUG: Variable " << name << " not found" << std::endl;
     return nullptr;
 }
 
 void LLVMCodeGenerator::declareVariable(const std::string& name, const VariableInfo& info) {
+    std::cerr << "DEBUG: Declaring variable: " << name << std::endl;
+    std::cerr << "DEBUG: Scope stack size: " << scopeStack_.size() << std::endl;
+    
     if (!scopeStack_.empty()) {
         scopeStack_.back().localVariables[name] = info;
+        std::cerr << "DEBUG: Added variable " << name << " to local scope" << std::endl;
     } else {
         variables_[name] = info;
+        std::cerr << "DEBUG: Added variable " << name << " to global scope" << std::endl;
     }
 }
 

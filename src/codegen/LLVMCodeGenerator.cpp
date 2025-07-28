@@ -95,14 +95,16 @@ CodeGenResult LLVMCodeGenerator::generateModule(const std::string& moduleName, c
                     hasMainAttribute = true;
         
                 }
+                // 结构体声明不是顶层语句，在第二遍中处理
             } else if (auto typedClassStmt = dynamic_cast<const TypedClassStmt*>(stmt.get())) {
                 const auto& originalClassStmt = static_cast<const ClassStmt&>(typedClassStmt->getOriginalStmt());
                 if (originalClassStmt.isMain) {
                     hasMainAttribute = true;
         
                 }
+                // 类声明不是顶层语句，在第二遍中处理
             } else {
-                // 收集顶层语句（非函数声明）
+                // 收集顶层语句（非函数、结构体、类声明）
                 topLevelStatements.push_back(stmt.get());
     
             }
@@ -110,9 +112,13 @@ CodeGenResult LLVMCodeGenerator::generateModule(const std::string& moduleName, c
         
 
         
-        // 第二遍：生成函数声明
+        // 第二遍：生成函数、结构体和类声明
         for (const auto& stmt : program.getStatements()) {
             if (auto typedFuncStmt = dynamic_cast<const TypedFunctionStmt*>(stmt.get())) {
+                generateStatement(*stmt);
+            } else if (auto typedStructStmt = dynamic_cast<const TypedStructStmt*>(stmt.get())) {
+                generateStatement(*stmt);
+            } else if (auto typedClassStmt = dynamic_cast<const TypedClassStmt*>(stmt.get())) {
                 generateStatement(*stmt);
             }
         }
@@ -821,7 +827,34 @@ void LLVMCodeGenerator::visit(const TypedStructStmt& stmt) {
 }
 
 void LLVMCodeGenerator::visit(const TypedClassStmt& stmt) {
-    generateClassType(stmt);
+    llvm::StructType* classType = generateClassType(stmt);
+    
+    // 获取原始ClassStmt以获取类名
+    const auto& originalClassStmt = static_cast<const ClassStmt&>(stmt.getOriginalStmt());
+    
+    // 将类类型注册到类型映射中
+    if (classType) {
+        reportWarning("Registered class type: " + originalClassStmt.name.lexeme);
+        
+        // 创建Swift类型（使用PrimitiveType作为占位符）
+        auto swiftType = std::make_shared<PrimitiveType>(TypeKind::Struct, originalClassStmt.name.lexeme); // 使用Struct作为类的类型
+        
+        // 将类类型存储到types_映射中
+        types_.emplace(originalClassStmt.name.lexeme, TypeInfo(classType, swiftType, false, 0));
+        
+        // 创建一个全局变量来强制LLVM在IR中包含类型定义
+        std::string globalVarName = "__class_type_" + originalClassStmt.name.lexeme;
+        llvm::GlobalVariable* globalVar = new llvm::GlobalVariable(
+            *module_,
+            classType,
+            true, // isConstant
+            llvm::GlobalValue::InternalLinkage,
+            llvm::Constant::getNullValue(classType),
+            globalVarName
+        );
+        
+        reportWarning("Added class type to type registry and created global reference: " + originalClassStmt.name.lexeme);
+    }
 }
 
 // 私有辅助方法实现
@@ -1141,6 +1174,186 @@ void LLVMCodeGenerator::generateStatement(const Stmt* stmt) {
         if (exprStmt->expression) {
             generateExpression(exprStmt->expression.get());
         }
+    } else if (auto varStmt = dynamic_cast<const VarStmt*>(stmt)) {
+        // 处理变量声明
+        llvm::Type* varType = builder_->getInt64Ty(); // 默认类型，应该根据实际类型推断
+        
+        // 根据类型标记确定LLVM类型
+        if (!varStmt->type.lexeme.empty()) {
+            if (varStmt->type.lexeme == "Int") {
+                varType = builder_->getInt64Ty();
+            } else if (varStmt->type.lexeme == "String") {
+                varType = llvm::PointerType::getUnqual(*context_);
+            } else if (varStmt->type.lexeme == "Bool") {
+                varType = builder_->getInt1Ty();
+            } else if (varStmt->type.lexeme == "Double") {
+                varType = builder_->getDoubleTy();
+            }
+        } else if (varStmt->initializer) {
+            // 根据初始化器推断类型
+            if (auto literal = dynamic_cast<const Literal*>(varStmt->initializer.get())) {
+                switch (literal->value.type) {
+                    case TokenType::IntegerLiteral:
+                        varType = builder_->getInt64Ty();
+                        break;
+                    case TokenType::FloatingLiteral:
+                        varType = builder_->getDoubleTy();
+                        break;
+                    case TokenType::StringLiteral:
+                        varType = llvm::PointerType::getUnqual(*context_);
+                        break;
+                    case TokenType::True:
+                    case TokenType::False:
+                        varType = builder_->getInt1Ty();
+                        break;
+                    default:
+                        varType = builder_->getInt64Ty();
+                        break;
+                }
+            }
+        }
+        
+        llvm::Value* alloca = allocateVariable(varStmt->name.lexeme, varType);
+        
+        // 如果有初始化器，生成初始化代码
+        if (varStmt->initializer) {
+            llvm::Value* initValue = generateExpression(varStmt->initializer.get());
+            if (initValue) {
+                builder_->CreateStore(initValue, alloca);
+            }
+        }
+        
+        // 记录变量信息
+        declareVariable(varStmt->name.lexeme, VariableInfo(alloca, varType, varStmt->isConst));
+        
+    } else if (auto classStmt = dynamic_cast<const ClassStmt*>(stmt)) {
+        // 处理类声明
+        reportWarning("Class declaration found: " + classStmt->name.lexeme);
+        
+        // 创建类的结构体类型
+        std::vector<llvm::Type*> memberTypes;
+        
+        // 添加基类指针（如果有继承）
+        if (!classStmt->superclass.lexeme.empty()) {
+            memberTypes.push_back(llvm::PointerType::getUnqual(*context_));
+        }
+        
+        // 添加成员变量类型
+        for (const auto& member : classStmt->members) {
+            // StructMember直接访问，不需要dynamic_cast
+            llvm::Type* memberType = builder_->getInt64Ty(); // 默认类型
+            if (!member.type.lexeme.empty()) {
+                if (member.type.lexeme == "String") {
+                    memberType = llvm::PointerType::getUnqual(*context_);
+                } else if (member.type.lexeme == "Int") {
+                    memberType = builder_->getInt64Ty();
+                } else if (member.type.lexeme == "Bool") {
+                    memberType = builder_->getInt1Ty();
+                } else if (member.type.lexeme == "Double") {
+                    memberType = builder_->getDoubleTy();
+                }
+            }
+            memberTypes.push_back(memberType);
+        }
+        
+        // 创建结构体类型
+        llvm::StructType* classType = llvm::StructType::create(*context_, memberTypes, classStmt->name.lexeme);
+        
+        // 生成类的方法
+        for (const auto& method : classStmt->methods) {
+            if (auto funcMethod = dynamic_cast<const FunctionStmt*>(method.get())) {
+                // 为类方法添加self参数
+                std::vector<llvm::Type*> paramTypes;
+                paramTypes.push_back(llvm::PointerType::getUnqual(classType)); // self参数
+                
+                for (const auto& param : funcMethod->parameters) {
+                    paramTypes.push_back(builder_->getInt64Ty()); // 默认参数类型
+                }
+                
+                // 确定返回类型
+                llvm::Type* returnType = builder_->getVoidTy();
+                if (!funcMethod->returnType.lexeme.empty()) {
+                    if (funcMethod->returnType.lexeme == "String") {
+                        returnType = llvm::PointerType::getUnqual(*context_);
+                    } else if (funcMethod->returnType.lexeme == "Int") {
+                        returnType = builder_->getInt64Ty();
+                    } else if (funcMethod->returnType.lexeme == "Bool") {
+                        returnType = builder_->getInt1Ty();
+                    }
+                }
+                
+                llvm::FunctionType* methodType = llvm::FunctionType::get(returnType, paramTypes, false);
+                
+                // 创建方法函数，使用类名前缀
+                std::string methodName = classStmt->name.lexeme + "_" + funcMethod->name.lexeme;
+                llvm::Function* methodFunc = llvm::Function::Create(
+                    methodType, llvm::Function::ExternalLinkage, methodName, module_.get());
+                
+                // 保存当前函数
+                llvm::Function* prevFunction = currentFunction_;
+                currentFunction_ = methodFunc;
+                
+                // 创建入口基本块
+                llvm::BasicBlock* entryBB = createBasicBlock("entry", methodFunc);
+                builder_->SetInsertPoint(entryBB);
+                
+                // 进入新作用域
+                enterScope();
+                
+                // 为参数创建alloca并存储参数值
+                auto argIt = methodFunc->arg_begin();
+                
+                // 第一个参数是self
+                llvm::Value* selfAlloca = allocateVariable("self", llvm::PointerType::getUnqual(classType));
+                builder_->CreateStore(&*argIt, selfAlloca);
+                declareVariable("self", VariableInfo(selfAlloca, llvm::PointerType::getUnqual(classType)));
+                ++argIt;
+                
+                // 其他参数
+                for (size_t i = 0; i < funcMethod->parameters.size(); ++i, ++argIt) {
+                    llvm::Type* paramType = paramTypes[i + 1]; // +1因为第一个是self
+                    llvm::Value* alloca = allocateVariable(funcMethod->parameters[i].name.lexeme, paramType);
+                    builder_->CreateStore(&*argIt, alloca);
+                    declareVariable(funcMethod->parameters[i].name.lexeme, VariableInfo(alloca, paramType));
+                }
+                
+                // 生成方法体
+                generateStatement(funcMethod->body.get());
+                
+                // 如果方法没有显式返回，添加默认返回
+                if (!builder_->GetInsertBlock()->getTerminator()) {
+                    if (returnType->isVoidTy()) {
+                        builder_->CreateRetVoid();
+                    } else {
+                        llvm::Value* defaultValue = llvm::Constant::getNullValue(returnType);
+                        builder_->CreateRet(defaultValue);
+                    }
+                }
+                
+                // 退出作用域
+                exitScope();
+                
+                // 恢复之前的函数
+                currentFunction_ = prevFunction;
+                
+                // 记录方法信息
+                std::vector<std::string> paramNames;
+                paramNames.push_back("self");
+                for (const auto& param : funcMethod->parameters) {
+                    paramNames.push_back(param.name.lexeme);
+                }
+                
+                auto voidType = typeSystem_->getVoidType();
+                std::vector<std::shared_ptr<Type>> swiftParamTypes;
+                auto swiftFuncType = std::make_shared<FunctionType>(swiftParamTypes, voidType);
+                
+                functions_[methodName] = FunctionInfo(methodFunc, swiftFuncType, paramNames);
+            }
+        }
+        
+        // 记录类类型信息
+        // TODO: 添加类类型记录机制
+        
     } else {
         reportWarning("Unsupported raw statement type, skipping");
     }
@@ -1780,8 +1993,157 @@ llvm::StructType* LLVMCodeGenerator::generateStructType(const TypedStructStmt& s
 }
 
 llvm::StructType* LLVMCodeGenerator::generateClassType(const TypedClassStmt& classStmt) {
-    reportError("Class type generation not implemented yet");
-    return nullptr;
+    // 获取原始ClassStmt
+    const auto& originalClassStmt = static_cast<const ClassStmt&>(classStmt.getOriginalStmt());
+    
+    reportWarning("Generating class type: " + originalClassStmt.name.lexeme);
+    
+    // 创建类的结构体类型
+    std::vector<llvm::Type*> memberTypes;
+    
+    // 添加基类指针（如果有继承）
+    if (!originalClassStmt.superclass.lexeme.empty()) {
+        memberTypes.push_back(llvm::PointerType::getUnqual(*context_));
+    }
+    
+    // 添加成员变量类型
+    for (const auto& member : originalClassStmt.members) {
+        llvm::Type* memberType = builder_->getInt64Ty(); // 默认类型
+        if (!member.type.lexeme.empty()) {
+            if (member.type.lexeme == "Int") {
+                memberType = builder_->getInt64Ty();
+            } else if (member.type.lexeme == "String") {
+                memberType = llvm::PointerType::getUnqual(*context_);
+            } else if (member.type.lexeme == "Bool") {
+                memberType = builder_->getInt1Ty();
+            } else if (member.type.lexeme == "Double") {
+                memberType = builder_->getDoubleTy();
+            }
+        }
+        memberTypes.push_back(memberType);
+    }
+    
+    // 创建结构体类型
+    llvm::StructType* classType = llvm::StructType::create(*context_, memberTypes, originalClassStmt.name.lexeme);
+    
+    // 生成类的方法
+    for (const auto& method : originalClassStmt.methods) {
+        if (auto funcStmt = dynamic_cast<const FunctionStmt*>(method.get())) {
+            // 创建方法的参数类型（包括self参数）
+            std::vector<llvm::Type*> paramTypes;
+            paramTypes.push_back(llvm::PointerType::getUnqual(classType)); // self参数
+            
+            // 添加其他参数
+            for (const auto& param : funcStmt->parameters) {
+                llvm::Type* paramType = builder_->getInt64Ty(); // 默认类型
+                if (!param.type.lexeme.empty()) {
+                    if (param.type.lexeme == "Int") {
+                        paramType = builder_->getInt64Ty();
+                    } else if (param.type.lexeme == "String") {
+                        paramType = llvm::PointerType::getUnqual(*context_);
+                    } else if (param.type.lexeme == "Bool") {
+                        paramType = builder_->getInt1Ty();
+                    } else if (param.type.lexeme == "Double") {
+                        paramType = builder_->getDoubleTy();
+                    }
+                }
+                paramTypes.push_back(paramType);
+            }
+            
+            // 确定返回类型
+            llvm::Type* returnType = builder_->getVoidTy();
+            if (!funcStmt->returnType.lexeme.empty() && funcStmt->returnType.lexeme != "Void") {
+                if (funcStmt->returnType.lexeme == "Int") {
+                    returnType = builder_->getInt64Ty();
+                } else if (funcStmt->returnType.lexeme == "String") {
+                    returnType = llvm::PointerType::getUnqual(*context_);
+                } else if (funcStmt->returnType.lexeme == "Bool") {
+                    returnType = builder_->getInt1Ty();
+                } else if (funcStmt->returnType.lexeme == "Double") {
+                    returnType = builder_->getDoubleTy();
+                }
+            }
+            
+            // 创建方法函数类型
+            llvm::FunctionType* methodType = llvm::FunctionType::get(returnType, paramTypes, false);
+            
+            // 创建方法函数（使用类名.方法名的命名约定）
+            std::string methodName = originalClassStmt.name.lexeme + "." + funcStmt->name.lexeme;
+            llvm::Function* methodFunc = llvm::Function::Create(
+                methodType, llvm::Function::ExternalLinkage, methodName, module_.get());
+            
+            // 设置参数名称
+            auto argIt = methodFunc->arg_begin();
+            argIt->setName("self");
+            ++argIt;
+            for (const auto& param : funcStmt->parameters) {
+                argIt->setName(param.name.lexeme);
+                ++argIt;
+            }
+            
+            // 生成方法体
+            if (funcStmt->body) {
+                llvm::BasicBlock* methodBB = createBasicBlock("entry", methodFunc);
+                builder_->SetInsertPoint(methodBB);
+                
+                // 保存当前函数上下文
+                llvm::Function* prevFunction = currentFunction_;
+                currentFunction_ = methodFunc;
+                
+                // 进入新的作用域
+                enterScope();
+                
+                // 声明self参数
+                llvm::Value* selfAlloca = builder_->CreateAlloca(llvm::PointerType::getUnqual(classType), nullptr, "self.addr");
+                builder_->CreateStore(&*methodFunc->arg_begin(), selfAlloca);
+                declareVariable("self", VariableInfo(selfAlloca, llvm::PointerType::getUnqual(classType), false));
+                
+                // 声明其他参数
+                argIt = methodFunc->arg_begin();
+                ++argIt; // 跳过self
+                for (const auto& param : funcStmt->parameters) {
+                    llvm::Type* paramType = argIt->getType();
+                    llvm::Value* paramAlloca = builder_->CreateAlloca(paramType, nullptr, param.name.lexeme + ".addr");
+                    builder_->CreateStore(&*argIt, paramAlloca);
+                    declareVariable(param.name.lexeme, VariableInfo(paramAlloca, paramType, false));
+                    ++argIt;
+                }
+                
+                // 生成方法体
+                generateStatement(funcStmt->body.get());
+                
+                // 如果没有显式返回，添加默认返回
+                if (!builder_->GetInsertBlock()->getTerminator()) {
+                    if (returnType->isVoidTy()) {
+                        builder_->CreateRetVoid();
+                    } else {
+                        // 返回默认值
+                        llvm::Value* defaultValue = nullptr;
+                        if (returnType->isIntegerTy()) {
+                            defaultValue = llvm::ConstantInt::get(returnType, 0);
+                        } else if (returnType->isFloatingPointTy()) {
+                            defaultValue = llvm::ConstantFP::get(returnType, 0.0);
+                        } else if (returnType->isPointerTy()) {
+                            defaultValue = llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(returnType));
+                        }
+                        if (defaultValue) {
+                            builder_->CreateRet(defaultValue);
+                        } else {
+                            builder_->CreateRetVoid();
+                        }
+                    }
+                }
+                
+                // 退出作用域
+                exitScope();
+                
+                // 恢复函数上下文
+                currentFunction_ = prevFunction;
+            }
+        }
+    }
+    
+    return classType;
 }
 
 void LLVMCodeGenerator::generateSwiftRuntimeSupport() {

@@ -873,52 +873,19 @@ void SemanticAnalyzer::visit(const StructStmt& stmt) {
 }
 
 void SemanticAnalyzer::visit(const ClassStmt& stmt) {
-    // 简化实现
-    /*
-    // 检查类名是否已存在
-    if (symbolTable->lookupInCurrentScope(stmt.name)) {
-        reportError("Class already declared: " + stmt.name);
-        return;
+    std::cerr << "DEBUG: SemanticAnalyzer::visit(ClassStmt) called for class: " << stmt.name.lexeme << std::endl;
+    
+    // 创建TypedClassStmt
+    auto originalStmt = std::unique_ptr<ClassStmt>(static_cast<ClassStmt*>(stmt.clone().release()));
+    auto typedClassStmt = std::make_unique<TypedClassStmt>(std::move(originalStmt));
+    
+    std::cerr << "DEBUG: Created TypedClassStmt for class: " << stmt.name.lexeme << std::endl;
+    
+    // 添加到当前TypedProgram
+    if (currentTypedProgram) {
+        currentTypedProgram->addStatement(std::move(typedClassStmt));
+        std::cerr << "DEBUG: Added TypedClassStmt to currentTypedProgram" << std::endl;
     }
-    
-    // 创建类类型
-    auto classType = std::make_shared<UserDefinedType>();
-    classType->name = stmt.name;
-    classType->kind = TypeKind::Class;
-    
-    // 处理继承
-    if (!stmt.superclass.empty()) {
-        auto superType = typeSystem->getTypeByName(stmt.superclass);
-        if (!superType) {
-            reportError("Unknown superclass: " + stmt.superclass);
-        } else if (superType->getKind() != TypeKind::Class) {
-            reportError("Superclass must be a class type");
-        } else {
-            classType->superType = superType;
-        }
-    }
-    
-    // 注册类型（需要先注册以支持递归引用）
-    typeSystem->registerUserDefinedType(classType);
-    
-    // 进入类作用域
-    symbolTable->enterScope();
-    
-    // 分析类成员
-    for (const auto& member : stmt.members) {
-        member->accept(*this);
-    }
-    
-    symbolTable->exitScope();
-    
-    // 创建类型符号
-    auto typeSymbol = std::make_shared<TypeSymbol>();
-    typeSymbol->name = stmt.name;
-    typeSymbol->type = classType;
-    typeSymbol->accessLevel = AccessLevel::Internal;
-    
-    symbolTable->define(stmt.name, typeSymbol);
-    */
 }
 
 // 私有辅助方法实现（移除不存在的方法）

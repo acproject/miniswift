@@ -2043,59 +2043,20 @@ std::unique_ptr<Stmt> Parser::structDeclaration() {
       isMutating = true;
     }
 
-    if (match({TokenType::Func})) {
-      // Parse method declaration
-      auto method = std::unique_ptr<FunctionStmt>(
-          static_cast<FunctionStmt *>(functionDeclaration().release()));
-      method->accessLevel = memberAccessLevel;
-      method->isMutating = isMutating;
-      methods.push_back(std::move(method));
-    } else if (isMutating) {
-      throw std::runtime_error("Expect 'func' after 'mutating'.");
-    } else if (match({TokenType::Init})) {
-      // Parse initializer declaration
-      auto init = std::unique_ptr<InitStmt>(
-          static_cast<InitStmt *>(initDeclaration().release()));
-      init->accessLevel = memberAccessLevel;
-      initializers.push_back(std::move(init));
-    } else if (match({TokenType::Deinit})) {
-      // Parse deinitializer declaration
-      if (deinitializer) {
-        throw std::runtime_error("Multiple deinitializers not allowed.");
-      }
-      deinitializer = std::unique_ptr<DeinitStmt>(
-          static_cast<DeinitStmt *>(deinitDeclaration().release()));
-    } else if (match({TokenType::Subscript})) {
-      // Parse subscript declaration
-      auto subscript = std::unique_ptr<SubscriptStmt>(
-          static_cast<SubscriptStmt *>(subscriptDeclaration().release()));
-      subscript->accessLevel = memberAccessLevel;
-      subscript->setterAccessLevel = memberSetterAccessLevel;
-      subscripts.push_back(std::move(subscript));
-    } else if (match({TokenType::Struct})) {
-      // Parse nested struct declaration
-      auto nestedStruct = structDeclaration();
-      nestedTypes.push_back(std::move(nestedStruct));
-    } else if (match({TokenType::Class})) {
-      // Parse nested class declaration
-      auto nestedClass = classDeclaration();
-      nestedTypes.push_back(std::move(nestedClass));
-    } else if (match({TokenType::Enum})) {
-      // Parse nested enum declaration
-      auto nestedEnum = enumDeclaration();
-      nestedTypes.push_back(std::move(nestedEnum));
-    } else if (match({TokenType::Var, TokenType::Let})) {
+    if (match({TokenType::Var, TokenType::Let})) {
       // Parse member declaration
       bool isVar = previous().type == TokenType::Var;
 
       consume(TokenType::Identifier, "Expect member name.");
       Token memberName = previous();
 
-      consume(TokenType::Colon, "Expect ':' after member name.");
-      Token memberType = parseType();
-
+      Token memberType = Token(TokenType::Nil, "", memberName.line);
       std::unique_ptr<Expr> defaultValue = nullptr;
       std::vector<PropertyAccessor> accessors;
+
+      if (match({TokenType::Colon})) {
+        memberType = parseType();
+      }
 
       if (match({TokenType::Equal})) {
         defaultValue = expression();
@@ -2147,12 +2108,58 @@ std::unique_ptr<Stmt> Parser::structDeclaration() {
         consume(TokenType::RBrace, "Expect '}' after property accessors.");
       }
 
+      // If no type annotation and no initializer, that's an error
+      if (memberType.type == TokenType::Nil && !defaultValue && accessors.empty()) {
+        throw std::runtime_error("Variable must have either a type annotation or an initializer.");
+      }
+
       StructMember member(memberName, memberType, std::move(defaultValue),
                           isVar, memberAccessLevel, memberSetterAccessLevel);
       member.accessors = std::move(accessors);
       members.push_back(std::move(member));
 
       match({TokenType::Semicolon}); // Optional semicolon
+    } else if (match({TokenType::Func})) {
+      // Parse method declaration
+      auto method = std::unique_ptr<FunctionStmt>(
+          static_cast<FunctionStmt *>(functionDeclaration().release()));
+      method->accessLevel = memberAccessLevel;
+      method->isMutating = isMutating;
+      methods.push_back(std::move(method));
+    } else if (isMutating) {
+      throw std::runtime_error("Expect 'func' after 'mutating'.");
+    } else if (match({TokenType::Init})) {
+      // Parse initializer declaration
+      auto init = std::unique_ptr<InitStmt>(
+          static_cast<InitStmt *>(initDeclaration().release()));
+      init->accessLevel = memberAccessLevel;
+      initializers.push_back(std::move(init));
+    } else if (match({TokenType::Deinit})) {
+      // Parse deinitializer declaration
+      if (deinitializer) {
+        throw std::runtime_error("Multiple deinitializers not allowed.");
+      }
+      deinitializer = std::unique_ptr<DeinitStmt>(
+          static_cast<DeinitStmt *>(deinitDeclaration().release()));
+    } else if (match({TokenType::Subscript})) {
+      // Parse subscript declaration
+      auto subscript = std::unique_ptr<SubscriptStmt>(
+          static_cast<SubscriptStmt *>(subscriptDeclaration().release()));
+      subscript->accessLevel = memberAccessLevel;
+      subscript->setterAccessLevel = memberSetterAccessLevel;
+      subscripts.push_back(std::move(subscript));
+    } else if (match({TokenType::Struct})) {
+      // Parse nested struct declaration
+      auto nestedStruct = structDeclaration();
+      nestedTypes.push_back(std::move(nestedStruct));
+    } else if (match({TokenType::Class})) {
+      // Parse nested class declaration
+      auto nestedClass = classDeclaration();
+      nestedTypes.push_back(std::move(nestedClass));
+    } else if (match({TokenType::Enum})) {
+      // Parse nested enum declaration
+      auto nestedEnum = enumDeclaration();
+      nestedTypes.push_back(std::move(nestedEnum));
     } else {
       throw std::runtime_error(
           "Expect 'var', 'let', 'func', 'init', 'deinit', 'subscript', "
@@ -2278,12 +2285,20 @@ std::unique_ptr<Stmt> Parser::classDeclaration() {
       consume(TokenType::Identifier, "Expect member name.");
       Token memberName = previous();
 
-      consume(TokenType::Colon, "Expect ':' after member name.");
-      Token memberType = parseType();
-
+      Token memberType = Token(TokenType::Nil, "", memberName.line);
       std::unique_ptr<Expr> defaultValue = nullptr;
+
+      if (match({TokenType::Colon})) {
+        memberType = parseType();
+      }
+
       if (match({TokenType::Equal})) {
         defaultValue = expression();
+      }
+
+      // If no type annotation and no initializer, that's an error
+      if (memberType.type == TokenType::Nil && !defaultValue) {
+        throw std::runtime_error("Variable must have either a type annotation or an initializer.");
       }
 
       members.emplace_back(memberName, memberType, std::move(defaultValue),

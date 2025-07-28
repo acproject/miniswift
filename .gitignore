@@ -29,3 +29,6 @@ test_string_print
 miniswift
 .cache/
 .cache/**
+
+SwiftSource
+SwiftSource/**

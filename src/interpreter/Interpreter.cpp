@@ -228,59 +228,58 @@ void Interpreter::visit(const VarExpr& expr) {
     try {
         result = environment->get(expr.name);
     } catch (const std::runtime_error&) {
-        // If variable not found, try to find it as a member of 'self'
+        // If variable not found, try to find it as a member of 'self' only if we're in a method context
+        bool inMethodContext = false;
         try {
-            Value selfValue = environment->get(Token{TokenType::Identifier, "self", 0});
-            std::cout << "DEBUG: Found self object, trying to access property: " << expr.name.lexeme << std::endl;
-            if (selfValue.isStruct()) {
-                auto& structValue = selfValue.asStruct();
-                // Try property system first
-                if (structValue.properties && structValue.properties->hasProperty(expr.name.lexeme)) {
-                    std::cout << "DEBUG: Found property in struct property system" << std::endl;
-                    result = structValue.properties->getProperty(*this, expr.name.lexeme);
-                    return;
-                }
-                // Fallback to legacy member access
-                auto it = structValue.members->find(expr.name.lexeme);
-                if (it != structValue.members->end()) {
-                    std::cout << "DEBUG: Found property in struct legacy members" << std::endl;
-                    result = it->second;
-                    return;
-                }
-                std::cout << "DEBUG: Property not found in struct" << std::endl;
-            } else if (selfValue.isClass()) {
-                auto& classValue = selfValue.asClass();
-                std::cout << "DEBUG: Self is a class instance: " << classValue->className << std::endl;
-                // Try property system first
-                if (classValue->properties && classValue->properties->hasProperty(expr.name.lexeme)) {
-                    std::cout << "DEBUG: Found property in class property system" << std::endl;
-                    result = classValue->properties->getProperty(*this, expr.name.lexeme);
-                    return;
-                }
-                // Fallback to legacy member access
-                auto it = classValue->members->find(expr.name.lexeme);
-                if (it != classValue->members->end()) {
-                    std::cout << "DEBUG: Found property in class legacy members" << std::endl;
-                    result = it->second;
-                    return;
-                }
-                std::cout << "DEBUG: Property '" << expr.name.lexeme << "' not found in class" << std::endl;
-                if (classValue->properties) {
-                    std::cout << "DEBUG: Available properties in class:" << std::endl;
-                    auto availableProps = classValue->properties->getAllPropertyNames();
-                    for (const auto& prop : availableProps) {
-                        std::cout << "  - " << prop << std::endl;
-                    }
-                } else {
-                    std::cout << "DEBUG: No property container found" << std::endl;
-                }
+            // Check if we're in a method context by looking for method-specific environment variables
+            environment->get(Token{TokenType::Identifier, "__current_class__", 0});
+            inMethodContext = true;
+        } catch (const std::runtime_error&) {
+            // Check for struct method context
+            try {
+                environment->get(Token{TokenType::Identifier, "__current_method_class__", 0});
+                inMethodContext = true;
+            } catch (const std::runtime_error&) {
+                // Not in method context
             }
-        } catch (const std::runtime_error& e) {
-            std::cout << "DEBUG: Failed to get self object: " << e.what() << std::endl;
-            // 'self' not found, continue with original error
         }
         
-        // Re-throw original error if member not found in self
+        if (inMethodContext) {
+            try {
+                Value selfValue = environment->get(Token{TokenType::Identifier, "self", 0});
+                if (selfValue.isStruct()) {
+                    auto& structValue = selfValue.asStruct();
+                    // Try property system first
+                    if (structValue.properties && structValue.properties->hasProperty(expr.name.lexeme)) {
+                        result = structValue.properties->getProperty(*this, expr.name.lexeme);
+                        return;
+                    }
+                    // Fallback to legacy member access
+                    auto it = structValue.members->find(expr.name.lexeme);
+                    if (it != structValue.members->end()) {
+                        result = it->second;
+                        return;
+                    }
+                } else if (selfValue.isClass()) {
+                    auto& classValue = selfValue.asClass();
+                    // Try property system first
+                    if (classValue->properties && classValue->properties->hasProperty(expr.name.lexeme)) {
+                        result = classValue->properties->getProperty(*this, expr.name.lexeme);
+                        return;
+                    }
+                    // Fallback to legacy member access
+                    auto it = classValue->members->find(expr.name.lexeme);
+                    if (it != classValue->members->end()) {
+                        result = it->second;
+                        return;
+                    }
+                }
+            } catch (const std::runtime_error& e) {
+                // 'self' not found, continue with original error
+            }
+        }
+        
+        // Re-throw original error if member not found in self or not in method context
         throw std::runtime_error("Undefined variable '" + expr.name.lexeme + "'");
     }
 }
@@ -1912,21 +1911,17 @@ void Interpreter::visit(const Call& expr) {
     
     // Debug: print callee type
     if (auto memberAccess = dynamic_cast<const MemberAccess*>(expr.callee.get())) {
-        std::cout << "DEBUG: Callee is MemberAccess: " << memberAccess->member.lexeme << std::endl;
         if (auto superExpr = dynamic_cast<const Super*>(memberAccess->object.get())) {
-            std::cout << "DEBUG: MemberAccess object is Super" << std::endl;
+            // This is a super method call via MemberAccess
         }
     } else if (auto superExpr = dynamic_cast<const Super*>(expr.callee.get())) {
-        std::cout << "DEBUG: Callee is Super directly" << std::endl;
-    } else {
-        std::cout << "DEBUG: Callee is neither MemberAccess nor Super" << std::endl;
+        // This is a direct super call
     }
     
     // Check if this is a super method call BEFORE evaluating the callee
     if (auto memberAccess = dynamic_cast<const MemberAccess*>(expr.callee.get())) {
-        std::cout << "DEBUG: Checking if MemberAccess object is Super..." << std::endl;
         if (auto superExpr = dynamic_cast<const Super*>(memberAccess->object.get())) {
-            std::cout << "DEBUG: This is a super method call via MemberAccess: " << memberAccess->member.lexeme << std::endl;
+            // This is a super method call via MemberAccess
             
             // Get current method class context from environment
             std::string currentMethodClass;
@@ -1964,7 +1959,7 @@ void Interpreter::visit(const Call& expr) {
     
     // Check if callee is MemberAccess
     if (auto memberAccess = dynamic_cast<const MemberAccess*>(expr.callee.get())) {
-        std::cout << "DEBUG: This is a member access call: " << memberAccess->member.lexeme << std::endl;
+        // This is a member access call
 
         
         // First check if this is a nested type constructor call
@@ -2037,13 +2032,17 @@ void Interpreter::visit(const Call& expr) {
             if (callable->isFunction) {
                 std::cout << "DEBUG: Executing method call through MemberAccess path" << std::endl;
                 // For inherited methods, the function definition doesn't include 'self' parameter
-                // but we need to execute it in the context of the current object
-                std::vector<Value> arguments;
-                
-                // Add the provided arguments (no self parameter for inherited methods)
-                for (const auto& argument : expr.arguments) {
-                    arguments.push_back(evaluate(*argument));
-                }
+        // but we need to execute it in the context of the current object
+        std::vector<Value> arguments;
+        
+        // Add the provided arguments (no self parameter for inherited methods)
+        std::cout << "DEBUG: About to evaluate arguments for method call" << std::endl;
+        for (size_t i = 0; i < expr.arguments.size(); ++i) {
+            std::cout << "DEBUG: Evaluating argument " << i << std::endl;
+            arguments.push_back(evaluate(*expr.arguments[i]));
+            std::cout << "DEBUG: Argument " << i << " evaluated successfully" << std::endl;
+        }
+        std::cout << "DEBUG: All arguments evaluated successfully" << std::endl;
                 
                 // Check parameter count - for class methods, the first parameter is 'self'
                 // so we need to account for that when checking argument count
@@ -2061,7 +2060,13 @@ void Interpreter::visit(const Call& expr) {
                 
                 // Create new environment for function execution
                 auto previous = environment;
-                environment = std::make_shared<Environment>(callable->closure);
+                // If the callable's closure is already a MethodCallEnvironment, use it directly
+                // Otherwise, create a new Environment
+                if (auto methodCallEnv = std::dynamic_pointer_cast<MethodCallEnvironment>(callable->closure)) {
+                    environment = methodCallEnv;
+                } else {
+                    environment = std::make_shared<Environment>(callable->closure);
+                }
                 
                 // Set current class context for super keyword support
                 if (object.isClass()) {
@@ -2090,11 +2095,28 @@ void Interpreter::visit(const Call& expr) {
                 
                 // Bind parameters - handle self parameter if present
                 size_t paramStartIndex = 0;
+                
+                // Check if the callable's closure is already a MethodCallEnvironment
+                // If so, self is already bound and we shouldn't bind it again
+                bool selfAlreadyBound = false;
+                if (auto methodCallEnv = std::dynamic_pointer_cast<MethodCallEnvironment>(callable->closure)) {
+                    selfAlreadyBound = true;
+                    std::cout << "DEBUG: Found MethodCallEnvironment, self already bound" << std::endl;
+                } else {
+                    std::cout << "DEBUG: No MethodCallEnvironment found, self not bound" << std::endl;
+                }
+                
                 if (callable->functionDecl->parameters.size() > 0 && 
-                    callable->functionDecl->parameters[0].name.lexeme == "self") {
-                    // Bind self parameter
+                    callable->functionDecl->parameters[0].name.lexeme == "self" && 
+                    !selfAlreadyBound) {
+                    // Bind self parameter only if not already bound
                     environment->define("self", object, false, "Self");
                     paramStartIndex = 1; // Skip self parameter when binding user arguments
+                } else if (callable->functionDecl->parameters.size() > 0 && 
+                           callable->functionDecl->parameters[0].name.lexeme == "self" && 
+                           selfAlreadyBound) {
+                    // Self is already bound in MethodCallEnvironment, skip it
+                    paramStartIndex = 1;
                 }
                 
                 // Bind the actual method parameters (excluding self)
@@ -2109,9 +2131,11 @@ void Interpreter::visit(const Call& expr) {
                 }
                 
                 try {
+                    std::cout << "DEBUG: About to execute method body for struct method" << std::endl;
                     // Execute function body
                     callable->functionDecl->body->accept(*this);
                     
+                    std::cout << "DEBUG: Method body execution completed successfully" << std::endl;
                     // Execute deferred statements before function exits
                     executeDeferredStatements();
                     
@@ -2266,9 +2290,13 @@ void Interpreter::visit(const Call& expr) {
     }
     
     std::vector<Value> arguments;
-    for (const auto& argument : expr.arguments) {
-        arguments.push_back(evaluate(*argument));
+    std::cout << "DEBUG: About to evaluate " << expr.arguments.size() << " arguments for function call" << std::endl;
+    for (size_t i = 0; i < expr.arguments.size(); ++i) {
+        std::cout << "DEBUG: Evaluating argument " << i << " for function call" << std::endl;
+        arguments.push_back(evaluate(*expr.arguments[i]));
+        std::cout << "DEBUG: Argument " << i << " evaluated successfully for function call" << std::endl;
     }
+    std::cout << "DEBUG: All arguments evaluated for function call" << std::endl;
     
     auto callable = callee.asFunction();
     
@@ -2549,67 +2577,121 @@ void Interpreter::visit(const LabeledCall& expr) {
             throw;
         }
         
+        std::cout << "DEBUG: Method value type - isFunction: " << method.isFunction() << std::endl;
         if (method.isFunction()) {
             // This is a method call - handle struct and class methods differently
             std::vector<Value> arguments;
             
             auto callable = method.asFunction();
+            std::cout << "DEBUG: Callable isFunction: " << callable->isFunction << std::endl;
             
             if (callable->isFunction) {
                 // Determine if this is a struct or class method
                 bool isStructMethod = object.isStruct();
                 bool isClassMethod = object.isClass();
                 
+                std::cout << "DEBUG: Method call detected - isStruct: " << isStructMethod 
+                         << ", isClass: " << isClassMethod << std::endl;
+                if (isClassMethod) {
+                    std::cout << "DEBUG: Class method call for method: " << memberAccess->member.lexeme << std::endl;
+                }
+                if (isStructMethod) {
+                    std::cout << "DEBUG: Struct method call for method: " << memberAccess->member.lexeme << std::endl;
+                }
+                
                 // Create new environment for function execution
                 auto previous = environment;
-                environment = std::make_shared<Environment>(callable->closure);
+                // For struct methods, create environment that can access both the method's closure and the current environment
+                environment = std::make_shared<Environment>(previous);
                 
                 if (isStructMethod) {
-                    // For struct methods, add self as first argument (like before)
-                    arguments.push_back(object);
-                    
-                    // Add the provided arguments
-                    for (const auto& argument : expr.arguments) {
-                        arguments.push_back(evaluate(*argument));
-                    }
-                    
-                    // Check parameter count (including self)
-                    size_t expectedArgs = callable->functionDecl->parameters.size();
-                    size_t actualArgs = arguments.size();
-                    
-                    if (actualArgs != expectedArgs) {
-                        throw std::runtime_error("Expected " + 
-                            std::to_string(expectedArgs) + 
-                            " arguments but got " + std::to_string(actualArgs) + ".");
-                    }
-                    
                     // Create new defer stack level for this method
                     deferStack.push(std::vector<std::unique_ptr<Stmt>>());
                     
-                    // Bind parameters (including self as first parameter)
-                    for (size_t i = 0; i < callable->functionDecl->parameters.size(); ++i) {
+                    // Set current method context for struct methods
+                    auto structValue = object.asStruct();
+                    environment->define("__current_method_class__", Value(structValue.structName), false, "String");
+                    
+                    // Bind self parameter FIRST before evaluating arguments
+                    environment->define("self", object, false, "Self");
+                    
+                    // Now evaluate arguments after self is bound
+                    std::vector<Value> userArguments;
+                    for (const auto& argument : expr.arguments) {
+                        userArguments.push_back(evaluate(*argument));
+                    }
+                    
+                    // Check parameter count (excluding self)
+                    size_t expectedUserArgs = callable->functionDecl->parameters.size() - 1; // -1 for self
+                    size_t actualUserArgs = userArguments.size();
+                    
+                    if (actualUserArgs != expectedUserArgs) {
+                        throw std::runtime_error("Expected " + 
+                            std::to_string(expectedUserArgs) + 
+                            " arguments but got " + std::to_string(actualUserArgs) + ".");
+                    }
+                    
+                    // Bind user parameters by matching labels to external parameter names
+                    std::vector<Value> orderedUserArguments(userArguments.size());
+                    
+                    for (size_t i = 0; i < expr.argumentLabels.size(); ++i) {
+                        const std::string& label = expr.argumentLabels[i].lexeme;
+                        bool found = false;
+                        
+                        // Find the parameter with matching external name (skip self parameter at index 0)
+                        for (size_t j = 1; j < callable->functionDecl->parameters.size(); ++j) {
+                            const auto& param = callable->functionDecl->parameters[j];
+                            // Handle both labeled parameters and unlabeled parameters (with "_")
+                            if ((param.externalName.lexeme == label) || 
+                                (param.externalName.lexeme == "_" && label.empty())) {
+                                orderedUserArguments[j-1] = userArguments[i]; // j-1 because we skip self
+                                found = true;
+                                break;
+                            }
+                        }
+                        
+                        if (!found) {
+                            // For unlabeled arguments, try to match by position
+                            if (label.empty() && i+1 < callable->functionDecl->parameters.size()) {
+                                const auto& param = callable->functionDecl->parameters[i+1]; // +1 to skip self
+                                if (param.externalName.lexeme == "_") {
+                                    orderedUserArguments[i] = userArguments[i];
+                                    found = true;
+                                }
+                            }
+                        }
+                        
+                        if (!found) {
+                            throw std::runtime_error("No parameter found for argument label '" + label + "'");
+                        }
+                    }
+                    
+                    // Bind user parameters in the correct order (skip self parameter at index 0)
+                    for (size_t i = 1; i < callable->functionDecl->parameters.size(); ++i) {
                         environment->define(
                             callable->functionDecl->parameters[i].name.lexeme,
-                            arguments[i],
+                            orderedUserArguments[i-1], // i-1 because we skip self
                             false, // parameters are not const
                             callable->functionDecl->parameters[i].type.lexeme
                         );
                     }
                 } else if (isClassMethod) {
-                    // For class methods, don't add self as argument parameter
-                    
-                    // Add the provided arguments only
+                    // For class methods, evaluate arguments first
+                    std::vector<Value> userArguments;
                     for (const auto& argument : expr.arguments) {
-                        arguments.push_back(evaluate(*argument));
+                        userArguments.push_back(evaluate(*argument));
                     }
                     
-                    // Check parameter count (without self)
-                    size_t expectedArgs = callable->functionDecl->parameters.size();
-                    size_t actualArgs = arguments.size();
+                    // Check parameter count (excluding self parameter)
+                    size_t expectedUserArgs = callable->functionDecl->parameters.size();
+                    if (expectedUserArgs > 0 && callable->functionDecl->parameters[0].name.lexeme == "self") {
+                        expectedUserArgs -= 1; // Exclude self parameter
+                    }
+                    size_t actualArgs = userArguments.size();
                     
-                    if (actualArgs != expectedArgs) {
+                    if (actualArgs != expectedUserArgs) {
                         throw std::runtime_error("Expected " + 
-                            std::to_string(expectedArgs) + 
+                            std::to_string(expectedUserArgs) + 
                             " arguments but got " + std::to_string(actualArgs) + ".");
                     }
                     
@@ -2638,11 +2720,52 @@ void Interpreter::visit(const LabeledCall& expr) {
                     // Create new defer stack level for this method
                     deferStack.push(std::vector<std::unique_ptr<Stmt>>());
                     
-                    // Bind parameters (user arguments only, no self)
-                    for (size_t i = 0; i < callable->functionDecl->parameters.size(); ++i) {
+                    // Bind parameters by matching labels to external parameter names (skip self)
+                    size_t paramStartIndex = 0;
+                    if (callable->functionDecl->parameters.size() > 0 && 
+                        callable->functionDecl->parameters[0].name.lexeme == "self") {
+                        paramStartIndex = 1; // Skip self parameter
+                    }
+                    
+                    std::vector<Value> orderedArguments(userArguments.size());
+                    
+                    for (size_t i = 0; i < expr.argumentLabels.size(); ++i) {
+                        const std::string& label = expr.argumentLabels[i].lexeme;
+                        bool found = false;
+                        
+                        // Find the parameter with matching external name (skip self parameter)
+                        for (size_t j = paramStartIndex; j < callable->functionDecl->parameters.size(); ++j) {
+                            const auto& param = callable->functionDecl->parameters[j];
+                            // Handle both labeled parameters and unlabeled parameters (with "_")
+                            if ((param.externalName.lexeme == label) || 
+                                (param.externalName.lexeme == "_" && label.empty())) {
+                                orderedArguments[j - paramStartIndex] = userArguments[i];
+                                found = true;
+                                break;
+                            }
+                        }
+                        
+                        if (!found) {
+                            // For unlabeled arguments, try to match by position
+                            if (label.empty() && (i + paramStartIndex) < callable->functionDecl->parameters.size()) {
+                                const auto& param = callable->functionDecl->parameters[i + paramStartIndex];
+                                if (param.externalName.lexeme == "_") {
+                                    orderedArguments[i] = userArguments[i];
+                                    found = true;
+                                }
+                            }
+                        }
+                        
+                        if (!found) {
+                            throw std::runtime_error("No parameter found for argument label '" + label + "'");
+                        }
+                    }
+                    
+                    // Bind parameters in the correct order (skip self parameter)
+                    for (size_t i = paramStartIndex; i < callable->functionDecl->parameters.size(); ++i) {
                         environment->define(
                             callable->functionDecl->parameters[i].name.lexeme,
-                            arguments[i],
+                            orderedArguments[i - paramStartIndex],
                             false, // parameters are not const
                             callable->functionDecl->parameters[i].type.lexeme
                         );
@@ -2682,8 +2805,8 @@ void Interpreter::visit(const LabeledCall& expr) {
     }
     
     std::vector<Value> arguments;
-    for (const auto& argument : expr.arguments) {
-        arguments.push_back(evaluate(*argument));
+    for (size_t i = 0; i < expr.arguments.size(); ++i) {
+        arguments.push_back(evaluate(*expr.arguments[i]));
     }
     
     auto callable = callee.asFunction();
@@ -3630,6 +3753,19 @@ Value Interpreter::getMemberValue(const Value& object, const std::string& member
         } else {
             throw std::runtime_error("Array has no member '" + memberName + "'");
         }
+    } else if (object.type == ValueType::String) {
+        // Handle built-in string properties
+        if (memberName == "isEmpty") {
+            // Return whether string is empty
+            const auto& str = std::get<std::string>(object.value);
+            return Value(str.empty());
+        } else if (memberName == "count") {
+            // Return string length
+            const auto& str = std::get<std::string>(object.value);
+            return Value(static_cast<int>(str.length()));
+        } else {
+            throw std::runtime_error("String has no member '" + memberName + "'");
+        }
     } else if (object.isDictionary()) {
         // Handle super object (Dictionary type with __super_class__ key)
         const auto& dict = object.asDictionaryRef();
@@ -4417,9 +4553,22 @@ void Interpreter::visit(const AwaitExpr& expr) {
     // 3. Wait for the async operation to complete
     // 4. Resume with the result
     
-    std::cout << "Awaiting expression..." << std::endl;
+    std::cout << "DEBUG: AwaitExpr - Awaiting expression..." << std::endl;
+    
+    // Check what type of expression we're awaiting
+    if (auto labeledCall = dynamic_cast<const LabeledCall*>(expr.expression.get())) {
+        std::cout << "DEBUG: AwaitExpr - Expression is LabeledCall" << std::endl;
+        if (auto varExpr = dynamic_cast<const VarExpr*>(labeledCall->callee.get())) {
+            std::cout << "DEBUG: AwaitExpr - LabeledCall callee is VarExpr: " << varExpr->name.lexeme << std::endl;
+        } else if (auto memberAccess = dynamic_cast<const MemberAccess*>(labeledCall->callee.get())) {
+            std::cout << "DEBUG: AwaitExpr - LabeledCall callee is MemberAccess" << std::endl;
+        } else {
+            std::cout << "DEBUG: AwaitExpr - LabeledCall callee is other type" << std::endl;
+        }
+    }
+    
     result = evaluate(*expr.expression);
-    std::cout << "Await completed." << std::endl;
+    std::cout << "DEBUG: AwaitExpr - Await completed." << std::endl;
 }
 
 void Interpreter::visit(const TaskExpr& expr) {

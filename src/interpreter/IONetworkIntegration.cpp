@@ -345,8 +345,10 @@ void IONetworkRegistry::registerNetworkFunctions(Environment& globalEnv) {
 }
 
 void IONetworkRegistry::registerFileOperations(Environment& env) {
-    // 这里可以注册文件操作函数到环境中
-    // 由于Value和Environment的具体实现限制，这里只是占位符
+    // 注册文件操作函数到环境中
+    // 由于当前架构限制，这里暂时只是占位符
+    // 实际的函数调用需要在解释器层面处理
+    // TODO: 实现内置函数注册机制
 }
 
 void IONetworkRegistry::registerDirectoryOperations(Environment& env) {

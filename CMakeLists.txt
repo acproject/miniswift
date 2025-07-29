@@ -96,6 +96,15 @@ set(CONCURRENCY_SOURCES
     src/interpreter/Concurrency/ConcurrencyRuntime.cpp
 )
 
+# IO and Network modules
+set(IO_SOURCES
+    src/interpreter/IO/IORuntime.cpp
+)
+
+set(NETWORK_SOURCES
+    src/interpreter/Network/NetworkRuntime.cpp
+)
+
 set(SEMANTIC_SOURCES
     src/semantic/SemanticAnalyzer.cpp
     src/semantic/SymbolTable.cpp
@@ -245,7 +254,7 @@ endif()
 # Use zstd and LLVM libraries
 set(ALL_LIBS ${ZSTD_LIBRARY} ${llvm_libs})
 
-# Combine all sources (including CODEGEN and CONCURRENCY)
+# Combine all sources (including CODEGEN, CONCURRENCY, IO and NETWORK)
 set(ALL_SOURCES
     ${MAIN_SOURCES}
     ${LEXER_SOURCES}
@@ -256,6 +265,8 @@ set(ALL_SOURCES
     ${SEMANTIC_SOURCES}
     ${CODEGEN_SOURCES}
     ${CONCURRENCY_SOURCES}
+    ${IO_SOURCES}
+    ${NETWORK_SOURCES}
 )
 
 # Create the executable

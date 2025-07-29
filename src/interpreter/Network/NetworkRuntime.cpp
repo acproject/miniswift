@@ -5,6 +5,21 @@
 #include <cstring>
 #include <regex>
 
+#ifdef _WIN32
+    #include <winsock2.h>
+    #include <ws2tcpip.h>
+    #include <windows.h>
+    #pragma comment(lib, "ws2_32.lib")
+    // Windows下的poll函数映射
+    #define poll WSAPoll
+    #define pollfd WSAPOLLFD
+    #define POLLIN POLLRDNORM
+    // Windows下的ssize_t定义
+    typedef int ssize_t;
+#else
+    #include <poll.h>
+#endif
+
 namespace miniswift {
 
 // AsyncNetworkOperation 实现
@@ -142,7 +157,11 @@ void Socket::close() {
     std::lock_guard<std::mutex> lock(mutex_);
     
     if (sockfd_ != -1) {
+#ifdef _WIN32
+        closesocket(sockfd_);
+#else
         ::close(sockfd_);
+#endif
         sockfd_ = -1;
         connected_ = false;
         listening_ = false;
@@ -186,6 +205,10 @@ bool Socket::setNonBlocking(bool nonBlocking) {
         return false;
     }
     
+#ifdef _WIN32
+    u_long mode = nonBlocking ? 1 : 0;
+    return ioctlsocket(sockfd_, FIONBIO, &mode) == 0;
+#else
     int flags = fcntl(sockfd_, F_GETFL, 0);
     if (flags == -1) {
         return false;
@@ -198,6 +221,7 @@ bool Socket::setNonBlocking(bool nonBlocking) {
     }
     
     return fcntl(sockfd_, F_SETFL, flags) == 0;
+#endif
 }
 
 bool Socket::setReuseAddress(bool reuse) {
@@ -206,7 +230,7 @@ bool Socket::setReuseAddress(bool reuse) {
     }
     
     int optval = reuse ? 1 : 0;
-    return setsockopt(sockfd_, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)) == 0;
+    return setsockopt(sockfd_, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&optval), sizeof(optval)) == 0;
 }
 
 bool Socket::setKeepAlive(bool keepAlive) {
@@ -215,7 +239,7 @@ bool Socket::setKeepAlive(bool keepAlive) {
     }
     
     int optval = keepAlive ? 1 : 0;
-    return setsockopt(sockfd_, SOL_SOCKET, SO_KEEPALIVE, &optval, sizeof(optval)) == 0;
+    return setsockopt(sockfd_, SOL_SOCKET, SO_KEEPALIVE, reinterpret_cast<const char*>(&optval), sizeof(optval)) == 0;
 }
 
 bool Socket::setTimeout(std::chrono::milliseconds timeout) {
@@ -228,8 +252,8 @@ bool Socket::setTimeout(std::chrono::milliseconds timeout) {
     tv.tv_usec = (timeout.count() % 1000) * 1000;
     
     bool result = true;
-    result &= setsockopt(sockfd_, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) == 0;
-    result &= setsockopt(sockfd_, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) == 0;
+    result &= setsockopt(sockfd_, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&tv), sizeof(tv)) == 0;
+        result &= setsockopt(sockfd_, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<const char*>(&tv), sizeof(tv)) == 0;
     
     return result;
 }
@@ -246,7 +270,7 @@ NetworkResult Socket::performSend(const uint8_t* data, size_t size) {
         return result;
     }
     
-    ssize_t bytesSent = ::send(sockfd_, data, size, 0);
+    ssize_t bytesSent = ::send(sockfd_, reinterpret_cast<const char*>(data), size, 0);
     
     if (bytesSent >= 0) {
         result.success = true;
@@ -274,7 +298,7 @@ NetworkResult Socket::performReceive(uint8_t* buffer, size_t maxSize) {
         return result;
     }
     
-    ssize_t bytesReceived = ::recv(sockfd_, buffer, maxSize, 0);
+    ssize_t bytesReceived = ::recv(sockfd_, reinterpret_cast<char*>(buffer), maxSize, 0);
     
     if (bytesReceived > 0) {
         result.success = true;
@@ -298,7 +322,7 @@ NetworkResult Socket::performReceive(uint8_t* buffer, size_t maxSize) {
 TCPSocket::TCPSocket() : Socket(NetworkProtocol::TCP), backlogSize_(10) {
 }
 
-TCPSocket::TCPSocket(int existingSocket) : Socket(NetworkProtocol::TCP), backlogSize_(10) {
+TCPSocket::TCPSocket(socket_t existingSocket) : Socket(NetworkProtocol::TCP), backlogSize_(10) {
     sockfd_ = existingSocket;
     connected_ = true;
 }
@@ -433,8 +457,8 @@ NetworkResult UDPSocket::sendTo(const std::vector<uint8_t>& data, const NetworkA
         return result;
     }
     
-    ssize_t bytesSent = sendto(sockfd_, data.data(), data.size(), 0, 
-                              (struct sockaddr*)&addr, sizeof(addr));
+    ssize_t bytesSent = sendto(sockfd_, reinterpret_cast<const char*>(data.data()), data.size(), 0,
+                               (struct sockaddr*)&addr, sizeof(addr));
     
     if (bytesSent >= 0) {
         result.success = true;
@@ -468,7 +492,7 @@ NetworkResult UDPSocket::receiveFrom(size_t maxSize, NetworkAddress& fromAddress
     struct sockaddr_in addr;
     socklen_t addrLen = sizeof(addr);
     
-    ssize_t bytesReceived = recvfrom(sockfd_, buffer.data(), maxSize, 0,
+    ssize_t bytesReceived = recvfrom(sockfd_, reinterpret_cast<char*>(buffer.data()), maxSize, 0,
                                     (struct sockaddr*)&addr, &addrLen);
     
     if (bytesReceived > 0) {
@@ -517,7 +541,7 @@ bool UDPSocket::enableBroadcast(bool enable) {
     }
     
     int optval = enable ? 1 : 0;
-    return setsockopt(sockfd_, SOL_SOCKET, SO_BROADCAST, &optval, sizeof(optval)) == 0;
+    return setsockopt(sockfd_, SOL_SOCKET, SO_BROADCAST, reinterpret_cast<const char*>(&optval), sizeof(optval)) == 0;
 }
 
 bool UDPSocket::joinMulticastGroup(const std::string& groupAddress) {
@@ -531,7 +555,7 @@ bool UDPSocket::joinMulticastGroup(const std::string& groupAddress) {
     }
     mreq.imr_interface.s_addr = INADDR_ANY;
     
-    return setsockopt(sockfd_, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq)) == 0;
+    return setsockopt(sockfd_, IPPROTO_IP, IP_ADD_MEMBERSHIP, reinterpret_cast<const char*>(&mreq), sizeof(mreq)) == 0;
 }
 
 bool UDPSocket::leaveMulticastGroup(const std::string& groupAddress) {
@@ -545,7 +569,7 @@ bool UDPSocket::leaveMulticastGroup(const std::string& groupAddress) {
     }
     mreq.imr_interface.s_addr = INADDR_ANY;
     
-    return setsockopt(sockfd_, IPPROTO_IP, IP_DROP_MEMBERSHIP, &mreq, sizeof(mreq)) == 0;
+    return setsockopt(sockfd_, IPPROTO_IP, IP_DROP_MEMBERSHIP, reinterpret_cast<const char*>(&mreq), sizeof(mreq)) == 0;
 }
 
 // HTTPClient 实现
@@ -890,11 +914,11 @@ void NetworkScheduler::stop() {
     }
 }
 
-void NetworkScheduler::registerSocket(int sockfd, std::function<void()> handler) {
+void NetworkScheduler::registerSocket(socket_t sockfd, std::function<void()> handler) {
     std::lock_guard<std::mutex> lock(pollMutex_);
     
     pollfd pfd;
-    pfd.fd = sockfd;
+    pfd.fd = static_cast<decltype(pfd.fd)>(sockfd);
     pfd.events = POLLIN;
     pfd.revents = 0;
     
@@ -902,11 +926,11 @@ void NetworkScheduler::registerSocket(int sockfd, std::function<void()> handler)
     fdHandlers_[sockfd] = std::move(handler);
 }
 
-void NetworkScheduler::unregisterSocket(int sockfd) {
+void NetworkScheduler::unregisterSocket(socket_t sockfd) {
     std::lock_guard<std::mutex> lock(pollMutex_);
     
     auto it = std::find_if(pollFds_.begin(), pollFds_.end(),
-                          [sockfd](const pollfd& pfd) { return pfd.fd == sockfd; });
+                          [sockfd](const pollfd& pfd) { return pfd.fd == static_cast<decltype(pfd.fd)>(sockfd); });
     
     if (it != pollFds_.end()) {
         pollFds_.erase(it);
@@ -953,7 +977,7 @@ void NetworkScheduler::workerLoop() {
 void NetworkScheduler::eventLoop() {
     while (running_.load()) {
         std::vector<pollfd> fds;
-        std::unordered_map<int, std::function<void()>> handlers;
+        std::unordered_map<socket_t, std::function<void()>> handlers;
         
         {
             std::lock_guard<std::mutex> lock(pollMutex_);
@@ -1061,7 +1085,12 @@ DNSResolver::DNSResult DNSResolver::performResolve(const std::string& hostname, 
             result.addresses.push_back(host);
         } else {
             result.success = false;
+#ifdef _WIN32
+            // Windows下gai_strerror返回WCHAR*，需要特殊处理
+            result.errorMessage = "Reverse DNS lookup failed: error code " + std::to_string(status);
+#else
             result.errorMessage = "Reverse DNS lookup failed: " + std::string(gai_strerror(status));
+#endif
         }
     } else {
         // 正向DNS解析
@@ -1085,7 +1114,12 @@ DNSResolver::DNSResult DNSResolver::performResolve(const std::string& hostname, 
             freeaddrinfo(res);
         } else {
             result.success = false;
+#ifdef _WIN32
+            // Windows下gai_strerror返回WCHAR*，需要特殊处理
+            result.errorMessage = "DNS lookup failed: error code " + std::to_string(status);
+#else
             result.errorMessage = "DNS lookup failed: " + std::string(gai_strerror(status));
+#endif
         }
     }
     

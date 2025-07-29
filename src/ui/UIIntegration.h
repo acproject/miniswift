@@ -165,7 +165,7 @@ namespace MiniSwift {
             extern const Color CLEAR;
             
             // Predefined fonts
-            extern const Font SYSTEM_FONT;
+            // extern const Font SYSTEM_FONT;
             extern const Font TITLE_FONT;
             extern const Font CAPTION_FONT;
             

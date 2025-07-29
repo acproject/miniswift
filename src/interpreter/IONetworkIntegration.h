@@ -13,14 +13,12 @@
 
 namespace miniswift {
 
-// Forward declarations
 class Interpreter;
 class Environment;
 
-// IO和Network功能的Swift风格包装器
 class IONetworkBridge {
 public:
-    // 文件操作的Swift风格接口
+    // File operations
     static Value readFile(const std::string& path);
     static Value writeFile(const std::string& path, const Value& content);
     static Value fileExists(const std::string& path);
@@ -28,58 +26,57 @@ public:
     static Value copyFile(const std::string& source, const std::string& destination);
     static Value moveFile(const std::string& source, const std::string& destination);
     
-    // 异步文件操作
+    // Async file operations
     static Value readFileAsync(const std::string& path);
     static Value writeFileAsync(const std::string& path, const Value& content);
     
-    // 目录操作
+    // Directory operations
     static Value createDirectory(const std::string& path, bool recursive = false);
     static Value removeDirectory(const std::string& path, bool recursive = false);
     static Value listDirectory(const std::string& path);
     static Value directoryExists(const std::string& path);
     
-    // 网络操作的Swift风格接口
+    // HTTP operations
     static Value httpGet(const std::string& url);
     static Value httpPost(const std::string& url, const Value& data);
     static Value httpPut(const std::string& url, const Value& data);
     static Value httpDelete(const std::string& url);
     
-    // 异步网络操作
+    // Async HTTP operations
     static Value httpGetAsync(const std::string& url);
     static Value httpPostAsync(const std::string& url, const Value& data);
     
-    // TCP Socket操作
+    // Socket operations
     static Value createTCPSocket();
     static Value connectTCP(const Value& socket, const std::string& host, uint16_t port);
     static Value sendTCP(const Value& socket, const Value& data);
     static Value receiveTCP(const Value& socket, size_t maxSize = 4096);
     static Value closeTCP(const Value& socket);
     
-    // UDP Socket操作
+    // UDP operations
     static Value createUDPSocket();
     static Value bindUDP(const Value& socket, const std::string& host, uint16_t port);
     static Value sendToUDP(const Value& socket, const Value& data, const std::string& host, uint16_t port);
     static Value receiveFromUDP(const Value& socket, size_t maxSize = 4096);
     static Value closeUDP(const Value& socket);
     
-    // DNS解析
+    // DNS operations
     static Value resolveHostname(const std::string& hostname);
     static Value reverseResolveIP(const std::string& ipAddress);
     
-    // 错误处理辅助函数
+    // Error handling
     static Value createIOError(const std::string& message);
     static Value createNetworkError(const std::string& message);
     static Value createSuccessResult(const Value& data = Value());
     
 public:
-    // 辅助方法
+    // Conversion utilities
     static Value convertIOResultToValue(const IOResult& result);
     static Value convertNetworkResultToValue(const NetworkResult& result);
     static std::vector<uint8_t> valueToByteArray(const Value& value);
     static Value byteArrayToValue(const std::vector<uint8_t>& data);
 };
 
-// Swift风格的异步操作包装器
 class AsyncOperationWrapper {
 public:
     enum class OperationType {
@@ -99,22 +96,19 @@ public:
     AsyncOperationWrapper(std::shared_ptr<AsyncIOOperation> op);
     AsyncOperationWrapper(std::shared_ptr<AsyncNetworkOperation> op);
     
-    // 等待操作完成
+    // Wait for completion
     Value wait();
     
-    // 检查是否完成
+    // Check if ready
     bool isReady() const;
     
-    // 取消操作
+    // Cancel operation
     void cancel();
     
-    // 设置完成回调
+    // Set completion callback
     void onCompletion(std::function<void(const Value&)> callback);
-    
-    OperationType getType() const { return type_; }
 };
 
-// HTTP客户端的Swift风格包装器
 class HTTPClientWrapper {
 private:
     std::unique_ptr<HTTPClient> client_;
@@ -123,25 +117,24 @@ public:
     HTTPClientWrapper();
     ~HTTPClientWrapper() = default;
     
-    // 配置方法
+    // Configuration
     void setTimeout(int milliseconds);
     void setHeader(const std::string& name, const std::string& value);
     void setKeepAlive(bool keepAlive);
     
-    // HTTP请求方法
+    // Synchronous requests
     Value get(const std::string& url);
     Value post(const std::string& url, const Value& data);
     Value put(const std::string& url, const Value& data);
     Value delete_(const std::string& url);
     
-    // 异步HTTP请求方法
+    // Asynchronous requests
     Value getAsync(const std::string& url);
     Value postAsync(const std::string& url, const Value& data);
     Value putAsync(const std::string& url, const Value& data);
     Value deleteAsync(const std::string& url);
 };
 
-// HTTP服务器的Swift风格包装器
 class HTTPServerWrapper {
 public:
     using RequestHandler = std::function<Value(const Value& request)>;
@@ -155,26 +148,25 @@ public:
     HTTPServerWrapper();
     ~HTTPServerWrapper() = default;
     
-    // 服务器配置
+    // Configuration
     void setMaxConnections(size_t maxConn);
     void setRequestTimeout(int milliseconds);
     
-    // 路由注册
+    // Route management
     void addRoute(const std::string& path, RequestHandler handler);
     void setDefaultHandler(RequestHandler handler);
     
-    // 服务器控制
+    // Server control
     Value start(const std::string& host, uint16_t port);
     void stop();
     bool isRunning() const;
     
 private:
-    // 内部转换函数
+    // Conversion helpers
     Value convertHTTPRequestToValue(const HTTPRequest& request);
     HTTPResponse convertValueToHTTPResponse(const Value& response);
 };
 
-// 文件系统监视器
 class FileSystemWatcher {
 public:
     enum class EventType {
@@ -187,7 +179,7 @@ public:
     struct FileEvent {
         EventType type;
         std::string path;
-        std::string oldPath; // 用于移动事件
+        std::string oldPath;
         std::chrono::system_clock::time_point timestamp;
     };
     
@@ -205,16 +197,15 @@ public:
     
     void start();
     void stop();
-    bool isRunning() const { return running_.load(); }
+    bool isRunning() const;
     
 private:
     void watchLoop();
 };
 
-// IO和Network功能注册器
 class IONetworkRegistry {
 public:
-    // 向解释器注册IO和Network功能
+    // Registration functions
     static void registerIOFunctions(Environment& globalEnv);
     static void registerNetworkFunctions(Environment& globalEnv);
     static void registerAsyncFunctions(Environment& globalEnv);
@@ -222,19 +213,18 @@ public:
     static void registerSocketFunctions(Environment& globalEnv);
     static void registerFileSystemFunctions(Environment& globalEnv);
     
-    // 初始化和清理
+    // Lifecycle
     static void initialize();
     static void shutdown();
     
 private:
-    // 内部注册函数
+    // Internal registration helpers
     static void registerFileOperations(Environment& env);
     static void registerDirectoryOperations(Environment& env);
     static void registerNetworkOperations(Environment& env);
     static void registerAsyncOperations(Environment& env);
 };
 
-// Swift风格的Result类型
 template<typename T>
 struct SwiftResult {
     bool isSuccess;
@@ -242,11 +232,11 @@ struct SwiftResult {
     std::string errorMessage;
     
     SwiftResult() : isSuccess(false) {}
-    SwiftResult(const T& val) : isSuccess(true), value(val) {}
-    SwiftResult(const std::string& error) : isSuccess(false), errorMessage(error) {}
+    SwiftResult(bool success, const T& val, const std::string& error = "")
+        : isSuccess(success), value(val), errorMessage(error) {}
     
     static SwiftResult success(const T& val) {
-        return SwiftResult(val);
+        return SwiftResult(true, val);
     }
     
     static SwiftResult failure(const std::string& error) {
@@ -257,23 +247,20 @@ struct SwiftResult {
     }
     
     bool operator==(const SwiftResult& other) const {
-        if (isSuccess != other.isSuccess) return false;
-        if (isSuccess) return value == other.value;
-        return errorMessage == other.errorMessage;
+        return isSuccess == other.isSuccess && 
+               value == other.value && 
+               errorMessage == other.errorMessage;
     }
 };
 
-// 便捷的类型别名
 using IOResult_Swift = SwiftResult<Value>;
 using NetworkResult_Swift = SwiftResult<Value>;
 using StringResult = SwiftResult<std::string>;
 using BoolResult = SwiftResult<bool>;
 
-// 全局初始化函数
 void initializeIONetworkSupport();
 void shutdownIONetworkSupport();
 
-// 错误代码定义
 namespace IONetworkErrors {
     constexpr const char* FILE_NOT_FOUND = "FileNotFound";
     constexpr const char* PERMISSION_DENIED = "PermissionDenied";
@@ -282,11 +269,11 @@ namespace IONetworkErrors {
     constexpr const char* TIMEOUT = "Timeout";
     constexpr const char* INVALID_URL = "InvalidURL";
     constexpr const char* DNS_RESOLUTION_FAILED = "DNSResolutionFailed";
-    constexpr const char* SOCKET_ERROR = "SocketError";
+    // constexpr const char* SOCKET_ERROR = "SocketError";
     constexpr const char* HTTP_ERROR = "HTTPError";
     constexpr const char* IO_ERROR = "IOError";
 }
 
-} // namespace miniswift
+}
 
-#endif // MINISWIFT_IO_NETWORK_INTEGRATION_H
+#endif

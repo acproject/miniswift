@@ -16,7 +16,7 @@
 
 // 平台特定的网络头文件
 #ifdef _WIN32
-    // Windows网络支持 - 仅在Windows平台编译时包含
+    // Windows网络头文件
     #ifndef WIN32_LEAN_AND_MEAN
         #define WIN32_LEAN_AND_MEAN
     #endif
@@ -29,6 +29,16 @@
     #define SHUT_RDWR SD_BOTH
     typedef int socklen_t;
     typedef SOCKET socket_t;
+    // 解决Windows宏定义冲突
+    #ifdef GET
+        #undef GET
+    #endif
+    #ifdef POST
+        #undef POST
+    #endif
+    #ifdef DELETE
+        #undef DELETE
+    #endif
 #else
     // Unix/Linux/macOS网络支持
     #include <sys/socket.h>

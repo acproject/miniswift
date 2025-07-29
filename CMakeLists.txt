@@ -106,6 +106,13 @@ set(NETWORK_SOURCES
     src/interpreter/Network/NetworkRuntime.cpp
 )
 
+# UI module sources
+set(UI_SOURCES
+    src/ui/UIRuntime.cpp
+    src/ui/GTK4Backend.cpp
+    # src/ui/UIIntegration.cpp  # Temporarily disabled due to Value type dependencies
+)
+
 set(SEMANTIC_SOURCES
     src/semantic/SemanticAnalyzer.cpp
     src/semantic/SymbolTable.cpp
@@ -255,7 +262,24 @@ endif()
 # Use zstd and LLVM libraries
 set(ALL_LIBS ${ZSTD_LIBRARY} ${llvm_libs})
 
-# Combine all sources (including CODEGEN, CONCURRENCY, IO and NETWORK)
+# Check for GTK4 availability
+find_package(PkgConfig QUIET)
+if(PKG_CONFIG_FOUND)
+    pkg_check_modules(GTK4 QUIET gtk4)
+    if(GTK4_FOUND)
+        message(STATUS "GTK4 found: ${GTK4_VERSION}")
+        add_definitions(-DHAVE_GTK4)
+        include_directories(${GTK4_INCLUDE_DIRS})
+        link_directories(${GTK4_LIBRARY_DIRS})
+        add_compile_options(${GTK4_CFLAGS_OTHER})
+    else()
+        message(STATUS "GTK4 not found, UI will use mock implementation")
+    endif()
+else()
+    message(STATUS "PkgConfig not found, UI will use mock implementation")
+endif()
+
+# Combine all sources (including CODEGEN, CONCURRENCY, IO, NETWORK and UI)
 set(ALL_SOURCES
     ${MAIN_SOURCES}
     ${LEXER_SOURCES}
@@ -268,6 +292,7 @@ set(ALL_SOURCES
     ${CONCURRENCY_SOURCES}
     ${IO_SOURCES}
     ${NETWORK_SOURCES}
+    ${UI_SOURCES}
 )
 
 # Create the executable
@@ -287,6 +312,11 @@ if(TARGET ${ZSTD_TARGET})
 else()
     # Fallback to direct library linking
     target_link_libraries(miniswift PRIVATE ${ZSTD_LIBRARY})
+endif()
+
+# Link with GTK4 if available
+if(GTK4_FOUND)
+    target_link_libraries(miniswift PRIVATE ${GTK4_LIBRARIES})
 endif()
 # Add platform-specific system libraries
 if(APPLE)

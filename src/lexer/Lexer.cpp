@@ -12,6 +12,7 @@ static void initializeKeywords() {
   keywords["class"] = TokenType::Class;
   keywords["struct"] = TokenType::Struct;
   keywords["enum"] = TokenType::Enum;
+  keywords["import"] = TokenType::Import;
   keywords["protocol"] = TokenType::Protocol;
   keywords["extension"] = TokenType::Extension;
   keywords["if"] = TokenType::If;

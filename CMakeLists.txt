@@ -99,6 +99,7 @@ set(CONCURRENCY_SOURCES
 # IO and Network modules
 set(IO_SOURCES
     src/interpreter/IO/IORuntime.cpp
+    src/interpreter/IONetworkIntegration.cpp
 )
 
 set(NETWORK_SOURCES

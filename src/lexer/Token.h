@@ -13,6 +13,7 @@ enum class TokenType {
   Class,
   Struct,
   Enum,
+  Import,
   If,
   Else,
   For,

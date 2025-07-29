@@ -22,6 +22,7 @@ private:
     std::unique_ptr<Stmt> classDeclaration();
     std::unique_ptr<Stmt> protocolDeclaration();
     std::unique_ptr<Stmt> extensionDeclaration();
+    std::unique_ptr<Stmt> importDeclaration();
     std::unique_ptr<Stmt> actorDeclaration();
     std::unique_ptr<Stmt> initDeclaration();
     std::unique_ptr<Stmt> deinitDeclaration();

@@ -19,6 +19,13 @@ std::vector<std::unique_ptr<Stmt>> Parser::parse() {
 }
 
 std::vector<std::unique_ptr<Stmt>> Parser::declaration() {
+  // Check for import statement first
+  if (match({TokenType::Import})) {
+    std::vector<std::unique_ptr<Stmt>> result;
+    result.push_back(importDeclaration());
+    return result;
+  }
+
   // Parse optional access level modifier
   AccessLevel accessLevel = AccessLevel::INTERNAL;
   AccessLevel setterAccessLevel = AccessLevel::INTERNAL;
@@ -3674,6 +3681,13 @@ std::unique_ptr<Stmt> Parser::attachedMacroDeclaration() {
   return std::make_unique<AttachedMacroStmt>(
       name, std::move(parameters), std::move(body), AccessLevel::INTERNAL,
       attachmentKind, std::move(nameTokens));
+}
+
+// Parse import declaration: import ModuleName
+std::unique_ptr<Stmt> Parser::importDeclaration() {
+  consume(TokenType::Identifier, "Expect module name after 'import'.");
+  Token moduleName = previous();
+  return std::make_unique<ImportStmt>(moduleName);
 }
 
 } // namespace miniswift

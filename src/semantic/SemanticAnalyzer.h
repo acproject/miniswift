@@ -78,6 +78,7 @@ public:
     void visit(const FreestandingMacroStmt& stmt) override;
     void visit(const AttachedMacroStmt& stmt) override;
     void visit(const ForAwaitStmt& stmt) override;
+    void visit(const ImportStmt& stmt) override;
     
     // AST访问者模式实现 - 表达式
     void visit(const Binary& expr) override;

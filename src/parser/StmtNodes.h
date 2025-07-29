@@ -56,6 +56,8 @@ struct MacroStmt;
 struct ExternalMacroStmt;
 struct FreestandingMacroStmt;
 struct AttachedMacroStmt;
+// Import statement
+struct ImportStmt;
 
 // Visitor for Stmt
 class StmtVisitor {
@@ -104,6 +106,8 @@ public:
   virtual void visit(const ExternalMacroStmt &stmt) = 0;
   virtual void visit(const FreestandingMacroStmt &stmt) = 0;
   virtual void visit(const AttachedMacroStmt &stmt) = 0;
+  // Import statement
+  virtual void visit(const ImportStmt &stmt) = 0;
 };
 
 // Base class for Stmt
@@ -1171,6 +1175,20 @@ struct AttachedMacroStmt : Stmt {
     return std::make_unique<AttachedMacroStmt>(name, std::move(clonedParams),
                                                body ? body->clone() : nullptr,
                                                accessLevel, attachmentKind, names);
+  }
+};
+
+// Import statement
+struct ImportStmt : Stmt {
+  Token moduleName;  // Name of the module to import
+  
+  explicit ImportStmt(Token moduleName)
+      : moduleName(moduleName) {}
+  
+  void accept(StmtVisitor &visitor) const override { visitor.visit(*this); }
+  
+  std::unique_ptr<Stmt> clone() const override {
+    return std::make_unique<ImportStmt>(moduleName);
   }
 };
 

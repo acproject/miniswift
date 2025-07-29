@@ -2,8 +2,10 @@
 #include "OOP/Property.h"
 #include "OOP/Constructor.h"
 #include "OOP/Method.h"
+#include "IONetworkIntegration.h"
 #include <stdexcept>
 #include <iostream>
+#include <fstream>
 
 // Exception class for handling return statements
 class ReturnException : public std::runtime_error {
@@ -27,16 +29,19 @@ Interpreter::Interpreter() {
     
     // Initialize error handling management
     errorPropagator = std::make_unique<ErrorPropagator>();
+    
+    // Register builtin functions
+    registerBuiltinFunctions();
 }
 
 void Interpreter::interpret(const std::vector<std::unique_ptr<Stmt>>& statements) {
-    // std::cout << "Starting interpretation with " << statements.size() << " statements" << std::endl;
-    try {
-        for (const auto& statement : statements) {
+    for (const auto& statement : statements) {
+        try {
             statement->accept(*this);
+        } catch (const std::runtime_error& e) {
+            std::cerr << "Runtime error: " << e.what() << std::endl;
+            throw;
         }
-    } catch (const std::runtime_error& error) {
-        std::cerr << error.what() << std::endl;
     }
 }
 
@@ -1907,7 +1912,14 @@ void Interpreter::visit(const FallthroughStmt& stmt) {
 
 // Execute function call: callee(arguments)
 void Interpreter::visit(const Call& expr) {
-    // std::cout << "DEBUG: Call expression detected" << std::endl;
+    std::cout << "DEBUG: Call expression detected" << std::endl;
+    
+    // Debug: Check callee type
+    if (auto varExpr = dynamic_cast<const VarExpr*>(expr.callee.get())) {
+        std::cout << "DEBUG: VarExpr callee: " << varExpr->name.lexeme << std::endl;
+    } else {
+        std::cout << "DEBUG: Non-VarExpr callee detected" << std::endl;
+    }
     
     // Debug: print callee type
     if (auto memberAccess = dynamic_cast<const MemberAccess*>(expr.callee.get())) {
@@ -2283,7 +2295,140 @@ void Interpreter::visit(const Call& expr) {
         return;
     }
     
+    // Check for builtin functions first
+    if (auto varExpr = dynamic_cast<const VarExpr*>(expr.callee.get())) {
+        std::string functionName = varExpr->name.lexeme;
+        std::cout << "DEBUG: Function call detected: " << functionName << std::endl;
+        if (functionName == "writeFile") {
+            std::cout << "DEBUG: writeFile function call detected" << std::endl;
+            // Check if this is marked as a builtin function
+            try {
+                Value builtinMarker = globals->get(Token{TokenType::Identifier, "__builtin_writeFile", 0});
+                if (builtinMarker.type == ValueType::Bool && std::get<bool>(builtinMarker.value)) {
+                    // Handle builtin writeFile function
+                    if (expr.arguments.size() != 2) {
+                        throw std::runtime_error("writeFile expects exactly 2 arguments: filename and content");
+                    }
+                    
+                    Value filenameValue = evaluate(*expr.arguments[0]);
+                    Value contentValue = evaluate(*expr.arguments[1]);
+                    
+                    if (filenameValue.type != ValueType::String) {
+                        throw std::runtime_error("writeFile: filename must be a string");
+                    }
+                    if (contentValue.type != ValueType::String) {
+                        throw std::runtime_error("writeFile: content must be a string");
+                    }
+                    
+                    std::string filename = std::get<std::string>(filenameValue.value);
+                    std::string content = std::get<std::string>(contentValue.value);
+                    
+                    try {
+                         Value result_value = IONetworkBridge::writeFile(filename, Value(content));
+                         result = Value(); // Return void
+                         return;
+                     } catch (const std::exception& e) {
+                         throw std::runtime_error("writeFile failed: " + std::string(e.what()));
+                     }
+                }
+            } catch (const std::runtime_error&) {
+                // Not a builtin function, continue with normal processing
+            }
+        } else if (functionName == "httpGet") {
+            std::cout << "DEBUG: httpGet function call detected" << std::endl;
+            // Check if this is marked as a builtin function
+            try {
+                Value builtinMarker = globals->get(Token{TokenType::Identifier, "__builtin_httpGet", 0});
+                if (builtinMarker.type == ValueType::Bool && std::get<bool>(builtinMarker.value)) {
+                    // Handle builtin httpGet function
+                    if (expr.arguments.size() != 1) {
+                        throw std::runtime_error("httpGet expects exactly 1 argument: url");
+                    }
+                    
+                    Value urlValue = evaluate(*expr.arguments[0]);
+                    
+                    if (urlValue.type != ValueType::String) {
+                        throw std::runtime_error("httpGet: url must be a string");
+                    }
+                    
+                    std::string url = std::get<std::string>(urlValue.value);
+                    
+                    try {
+                         Value result_value = IONetworkBridge::httpGet(url);
+                         result = result_value;
+                         return;
+                     } catch (const std::exception& e) {
+                         throw std::runtime_error("httpGet failed: " + std::string(e.what()));
+                     }
+                }
+            } catch (const std::runtime_error&) {
+                // Not a builtin function, continue with normal processing
+            }
+        }
+    }
+    
     Value callee = evaluate(*expr.callee);
+    
+    // Debug: Print callee information
+    std::cout << "DEBUG: LabeledCall callee type: " << static_cast<int>(callee.type) << std::endl;
+    if (callee.type == ValueType::String) {
+        std::cout << "DEBUG: LabeledCall callee string value: " << std::get<std::string>(callee.value) << std::endl;
+    }
+    
+    // Check if this is a builtin function string marker
+    if (callee.type == ValueType::String) {
+        std::string calleeStr = std::get<std::string>(callee.value);
+        if (calleeStr == "<builtin_function:writeFile>") {
+            // Handle builtin writeFile function
+            if (expr.arguments.size() != 2) {
+                throw std::runtime_error("writeFile expects exactly 2 arguments: filename and content");
+            }
+            
+            Value filenameValue = evaluate(*expr.arguments[0]);
+            Value contentValue = evaluate(*expr.arguments[1]);
+            
+            if (filenameValue.type != ValueType::String) {
+                throw std::runtime_error("writeFile: filename must be a string");
+            }
+            if (contentValue.type != ValueType::String) {
+                throw std::runtime_error("writeFile: content must be a string");
+            }
+            
+            std::string filename = std::get<std::string>(filenameValue.value);
+            std::string content = std::get<std::string>(contentValue.value);
+            
+            try {
+                Value result_value = IONetworkBridge::writeFile(filename, Value(content));
+                result = Value(); // Return void
+                return;
+            } catch (const std::exception& e) {
+                throw std::runtime_error("writeFile failed: " + std::string(e.what()));
+            }
+        }
+        
+        if (calleeStr == "<builtin_function:httpGet>") {
+            // Handle builtin httpGet function
+            if (expr.arguments.size() != 1) {
+                throw std::runtime_error("httpGet expects exactly 1 argument: url");
+            }
+            
+            Value urlValue = evaluate(*expr.arguments[0]);
+            
+            if (urlValue.type != ValueType::String) {
+                throw std::runtime_error("httpGet: url must be a string");
+            }
+            
+            std::string url = std::get<std::string>(urlValue.value);
+            
+            try {
+                Value result_value = IONetworkBridge::httpGet(url);
+                result = result_value;
+                return;
+            } catch (const std::exception& e) {
+                throw std::runtime_error("httpGet failed: " + std::string(e.what()));
+            }
+        }
+    }
     
     if (!callee.isFunction()) {
         throw std::runtime_error("Can only call functions and closures.");
@@ -2799,6 +2944,74 @@ void Interpreter::visit(const LabeledCall& expr) {
     }
     
     Value callee = evaluate(*expr.callee);
+    
+    // Check for writeFile builtin function
+    if (auto varExpr = dynamic_cast<const VarExpr*>(expr.callee.get())) {
+        const std::string& functionName = varExpr->name.lexeme;
+        if (functionName == "writeFile") {
+            // Check if writeFile is registered as builtin
+            try {
+                Value builtinMarker = environment->get(Token(TokenType::Identifier, "__builtin_writeFile", 0));
+                if (builtinMarker.type == ValueType::Bool && std::get<bool>(builtinMarker.value)) {
+                    // Handle writeFile builtin function
+                    if (expr.arguments.size() != 2) {
+                        throw std::runtime_error("writeFile expects exactly 2 arguments: filename and content");
+                    }
+                    
+                    Value filenameValue = evaluate(*expr.arguments[0]);
+                    Value contentValue = evaluate(*expr.arguments[1]);
+                    
+                    if (filenameValue.type != ValueType::String) {
+                        throw std::runtime_error("writeFile: filename must be a string");
+                    }
+                    if (contentValue.type != ValueType::String) {
+                        throw std::runtime_error("writeFile: content must be a string");
+                    }
+                    
+                    std::string filename = std::get<std::string>(filenameValue.value);
+                    std::string content = std::get<std::string>(contentValue.value);
+                    
+                    std::ofstream file(filename);
+                    if (!file.is_open()) {
+                        throw std::runtime_error("writeFile: Could not open file '" + filename + "' for writing");
+                    }
+                    
+                    file << content;
+                    file.close();
+                    
+                    result = Value(); // Return nil
+                    return;
+                }
+            } catch (const std::runtime_error& e) {
+                // writeFile not registered as builtin, continue with normal function call
+            }
+        } else if (functionName == "httpGet") {
+            // Check if httpGet is registered as builtin
+            try {
+                Value builtinMarker = environment->get(Token(TokenType::Identifier, "__builtin_httpGet", 0));
+                if (builtinMarker.type == ValueType::Bool && std::get<bool>(builtinMarker.value)) {
+                    // Handle httpGet builtin function
+                    if (expr.arguments.size() != 1) {
+                        throw std::runtime_error("httpGet expects exactly 1 argument: url");
+                    }
+                    
+                    Value urlValue = evaluate(*expr.arguments[0]);
+                    
+                    if (urlValue.type != ValueType::String) {
+                        throw std::runtime_error("httpGet: url must be a string");
+                    }
+                    
+                    std::string url = std::get<std::string>(urlValue.value);
+                    
+                    // Call the IONetworkBridge httpGet function
+                    result = IONetworkBridge::httpGet(url);
+                    return;
+                }
+            } catch (const std::runtime_error& e) {
+                // httpGet not registered as builtin, continue with normal function call
+            }
+        }
+    }
     
     if (!callee.isFunction()) {
         throw std::runtime_error("Can only call functions and closures.");
@@ -4771,6 +4984,39 @@ void Interpreter::visit(const AttachedMacroExpr& expr) {
     // For interpreter mode, we'll provide a simple placeholder
     std::cout << "Expanding attached macro: " << expr.macroName.lexeme << std::endl;
     result = Value("<attached_macro:" + expr.macroName.lexeme + ">");
+}
+
+void Interpreter::visit(const ImportStmt& stmt) {
+    // For now, we'll just register that the module has been imported
+    // In a full implementation, this would load the module and make its symbols available
+    std::cout << "Importing module: " << stmt.moduleName.lexeme << std::endl;
+    
+    // TODO: Implement actual module loading and symbol registration
+    // This could involve:
+    // 1. Loading the module file
+    // 2. Parsing the module's public interface
+    // 3. Adding the module's symbols to the current environment
+}
+
+void Interpreter::registerBuiltinFunctions() {
+    // Initialize NetworkRuntime for network operations
+    NetworkRuntime::initialize();
+    
+    // Register writeFile as a special builtin function marker
+    // The actual implementation will be handled in the Call visitor
+    globals->define("__builtin_writeFile", Value(true));
+    
+    // Also register writeFile as a callable function in the global environment
+    globals->define("writeFile", Value("<builtin_function:writeFile>"));
+    
+    // Register httpGet as a special builtin function marker
+    globals->define("__builtin_httpGet", Value(true));
+    
+    // Also register httpGet as a callable function in the global environment
+    globals->define("httpGet", Value("<builtin_function:httpGet>"));
+    
+    std::cout << "Registered builtin function: writeFile" << std::endl;
+    std::cout << "Registered builtin function: httpGet" << std::endl;
 }
 
 } // namespace miniswift

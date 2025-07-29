@@ -65,6 +65,7 @@ public:
     void visit(const ExternalMacroStmt& stmt) override;
     void visit(const FreestandingMacroStmt& stmt) override;
     void visit(const AttachedMacroStmt& stmt) override;
+    void visit(const ImportStmt& stmt) override;
 
     void visit(const Binary& expr) override;
     void visit(const Ternary& expr) override;
@@ -198,6 +199,8 @@ public:
     InheritanceManager* getInheritanceManager() const { return inheritanceManager.get(); }
 
 private:
+    // Builtin functions registration
+    void registerBuiltinFunctions();
 
     Value result;
 };

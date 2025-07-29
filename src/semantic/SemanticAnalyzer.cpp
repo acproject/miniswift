@@ -1226,6 +1226,11 @@ void SemanticAnalyzer::visit(const AttachedMacroStmt& stmt) {
     // 简化实现
 }
 
+void SemanticAnalyzer::visit(const ImportStmt& stmt) {
+    (void)stmt; // 标记参数为有意未使用
+    // 简化实现 - 在完整实现中，这里会处理模块导入的语义分析
+}
+
 // 添加缺失的表达式visit方法（只添加真正缺失的）
 void SemanticAnalyzer::visit(const SubscriptAccess& expr) {
     (void)expr; // 标记参数为有意未使用

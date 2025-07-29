@@ -2060,7 +2060,9 @@ std::unique_ptr<Stmt> Parser::structDeclaration() {
 
       if (match({TokenType::Equal})) {
         defaultValue = expression();
-      } else if (match({TokenType::LBrace})) {
+      }
+      
+      if (match({TokenType::LBrace})) {
         // Parse property accessors
         while (!check(TokenType::RBrace) && !isAtEnd()) {
           if (match({TokenType::Get})) {
@@ -2221,20 +2223,28 @@ std::unique_ptr<Stmt> Parser::classDeclaration() {
   std::vector<std::unique_ptr<SubscriptStmt>> subscripts;
 
   while (!check(TokenType::RBrace) && !isAtEnd()) {
-    // Parse optional access level modifier for class members
+    // Parse optional access level modifier and override keyword for class members
     AccessLevel memberAccessLevel = AccessLevel::INTERNAL;
     AccessLevel memberSetterAccessLevel = AccessLevel::INTERNAL;
+    bool isOverride = false;
 
-    if (isAccessLevelToken(peek().type)) {
+    // Handle override and access level in any order
+    if (match({TokenType::Override})) {
+      isOverride = true;
+      // Check for access level after override
+      if (isAccessLevelToken(peek().type)) {
+        auto accessPair = parseAccessLevelWithSetter();
+        memberAccessLevel = accessPair.first;
+        memberSetterAccessLevel = accessPair.second;
+      }
+    } else if (isAccessLevelToken(peek().type)) {
       auto accessPair = parseAccessLevelWithSetter();
       memberAccessLevel = accessPair.first;
       memberSetterAccessLevel = accessPair.second;
-    }
-
-    // Check for override keyword before func
-    bool isOverride = false;
-    if (match({TokenType::Override})) {
-      isOverride = true;
+      // Check for override after access level
+      if (match({TokenType::Override})) {
+        isOverride = true;
+      }
     }
 
     if (match({TokenType::Func})) {

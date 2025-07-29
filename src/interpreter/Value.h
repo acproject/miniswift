@@ -221,6 +221,7 @@ struct Value {
     Value(bool v) : type(ValueType::Bool), value(v) {}
     Value(int v) : type(ValueType::Int), value(v) {}
     Value(double v) : type(ValueType::Double), value(v) {}
+    Value(const char* v) : type(ValueType::String), value(std::string(v)) {}
     Value(std::string v) : type(ValueType::String), value(v) {}
     Value(Array v) : type(ValueType::Array), value(v) {}
     Value(Dictionary v) : type(ValueType::Dictionary), value(v) {}

@@ -3,6 +3,7 @@
 #include "OOP/Constructor.h"
 #include "OOP/Method.h"
 #include "IONetworkIntegration.h"
+#include "../ui/UIIntegration.h"
 #include <stdexcept>
 #include <iostream>
 #include <fstream>
@@ -1914,11 +1915,104 @@ void Interpreter::visit(const FallthroughStmt& stmt) {
 void Interpreter::visit(const Call& expr) {
     std::cout << "DEBUG: Call expression detected" << std::endl;
     
+    // Debug: Check what type of callee we have
+    if (auto varExpr = dynamic_cast<const VarExpr*>(expr.callee.get())) {
+        std::cout << "DEBUG: Call with VarExpr callee: " << varExpr->name.lexeme << std::endl;
+    } else if (auto memberAccess = dynamic_cast<const MemberAccess*>(expr.callee.get())) {
+        std::cout << "DEBUG: Call with MemberAccess callee" << std::endl;
+    } else {
+        std::cout << "DEBUG: Call with other callee type" << std::endl;
+    }
+    
+    // Handle UI method calls first
+    Value calleeValue = evaluate(*expr.callee);
+    if (calleeValue.type == ValueType::String) {
+        std::string calleeStr = std::get<std::string>(calleeValue.value);
+        if (calleeStr.find("UIMethod:") == 0) {
+            // This is a UI method call
+            size_t firstColon = calleeStr.find(':', 9);
+            if (firstColon != std::string::npos) {
+                std::string methodName = calleeStr.substr(9, firstColon - 9);
+                std::string baseComponent = calleeStr.substr(firstColon + 1);
+                
+                // Evaluate arguments
+                std::vector<Value> arguments;
+                for (const auto& argument : expr.arguments) {
+                    arguments.push_back(evaluate(*argument));
+                }
+                
+                // Build the method call and append to base component
+                std::string methodCall = "." + methodName + "(";
+                for (size_t i = 0; i < arguments.size(); ++i) {
+                    if (i > 0) methodCall += ", ";
+                    methodCall += valueToString(arguments[i]);
+                }
+                methodCall += ")";
+                
+                // Return the modified UI component string with UIMethod prefix for chaining
+                std::string modifiedComponent = baseComponent + methodCall;
+                result = Value(modifiedComponent);
+                return;
+            }
+        }
+    }
+    
+    // Use the already evaluated calleeValue for the rest of the function
+    Value callee = calleeValue;
+    
     // Debug: Check callee type
     if (auto varExpr = dynamic_cast<const VarExpr*>(expr.callee.get())) {
         std::cout << "DEBUG: VarExpr callee: " << varExpr->name.lexeme << std::endl;
     } else {
         std::cout << "DEBUG: Non-VarExpr callee detected" << std::endl;
+    }
+    
+    // Debug: print callee value and type
+    std::cout << "DEBUG: Callee value type: " << static_cast<int>(calleeValue.type) << std::endl;
+    if (calleeValue.type == ValueType::String) {
+        std::cout << "DEBUG: Callee string value: " << std::get<std::string>(calleeValue.value) << std::endl;
+    }
+    
+    // Check if this is a builtin function string marker or static method call
+    if (callee.type == ValueType::String) {
+        std::string calleeStr = std::get<std::string>(callee.value);
+        
+        // Handle builtin static method calls
+        if (calleeStr.find("<builtin_static_method:") == 0 && calleeStr.back() == '>') {
+            std::string methodName = calleeStr.substr(23, calleeStr.length() - 24); // Remove "<builtin_static_method:" and ">"
+            
+            if (methodName == "Font.system") {
+                if (expr.arguments.size() != 1) {
+                    throw std::runtime_error("Font.system expects exactly 1 argument: size");
+                }
+                
+                Value sizeValue = evaluate(*expr.arguments[0]);
+                if (sizeValue.type != ValueType::Double && sizeValue.type != ValueType::Int) {
+                    throw std::runtime_error("Font.system: size must be a number");
+                }
+                
+                double size = (sizeValue.type == ValueType::Double) ? 
+                    std::get<double>(sizeValue.value) : 
+                    static_cast<double>(std::get<int>(sizeValue.value));
+                
+                result = Value("Font.system(size: " + std::to_string(size) + ")");
+                return;
+            }
+        }
+        
+        // Handle Color static method calls
+        if (calleeStr == "Color.red") {
+            result = Value("Color.red");
+            return;
+        }
+        if (calleeStr == "Color.blue") {
+            result = Value("Color.blue");
+            return;
+        }
+        if (calleeStr == "Color.green") {
+            result = Value("Color.green");
+            return;
+        }
     }
     
     // Debug: print callee type
@@ -1967,8 +2061,6 @@ void Interpreter::visit(const Call& expr) {
         }
     }
     
-    Value calleeValue = evaluate(*expr.callee);
-    
     // Check if callee is MemberAccess
     if (auto memberAccess = dynamic_cast<const MemberAccess*>(expr.callee.get())) {
         // This is a member access call
@@ -2009,6 +2101,18 @@ void Interpreter::visit(const Call& expr) {
         
         // Handle method calls on objects (including extension methods)
         Value object = evaluate(*memberAccess->object);
+        
+        // Check if this is a builtin UI type that should have been handled earlier
+        if (object.type == ValueType::String) {
+            std::string objectStr = std::get<std::string>(object.value);
+            if (objectStr.find("<builtin_function:") == 0) {
+                // This should have been handled in the static member section above
+                // If we reach here, it means the member is not recognized
+                std::string typeName = objectStr.substr(18); // Remove "<builtin_function:"
+                typeName = typeName.substr(0, typeName.length() - 1); // Remove ">"
+                throw std::runtime_error("Type '" + typeName + "' has no member '" + memberAccess->member.lexeme + "'");
+            }
+        }
         
         // Check for built-in array methods
         if (object.isArray()) {
@@ -2364,20 +2468,158 @@ void Interpreter::visit(const Call& expr) {
             } catch (const std::runtime_error&) {
                 // Not a builtin function, continue with normal processing
             }
+        } else if (functionName == "Text") {
+            std::cout << "DEBUG: Text UI component call detected" << std::endl;
+            try {
+                Value builtinMarker = globals->get(Token{TokenType::Identifier, "__builtin_Text", 0});
+                if (builtinMarker.type == ValueType::Bool && std::get<bool>(builtinMarker.value)) {
+                    if (expr.arguments.size() != 1) {
+                        throw std::runtime_error("Text expects exactly 1 argument: text content");
+                    }
+                    
+                    Value textValue = evaluate(*expr.arguments[0]);
+                    if (textValue.type != ValueType::String) {
+                        throw std::runtime_error("Text: content must be a string");
+                    }
+                    
+                    // Create a UI component value
+                    result = Value("<UI:Text:" + std::get<std::string>(textValue.value) + ">");
+                    return;
+                }
+            } catch (const std::runtime_error&) {
+                // Not a builtin function, continue with normal processing
+            }
+        } else if (functionName == "Button") {
+            std::cout << "DEBUG: Button UI component call detected" << std::endl;
+            try {
+                Value builtinMarker = globals->get(Token{TokenType::Identifier, "__builtin_Button", 0});
+                if (builtinMarker.type == ValueType::Bool && std::get<bool>(builtinMarker.value)) {
+                    if (expr.arguments.size() < 1) {
+                        throw std::runtime_error("Button expects at least 1 argument");
+                    }
+                    
+                    Value titleValue = evaluate(*expr.arguments[0]);
+                    std::string buttonStr = "Button(" + valueToString(titleValue);
+                    if (expr.arguments.size() > 1) {
+                        Value actionValue = evaluate(*expr.arguments[1]);
+                        buttonStr += ", action: " + valueToString(actionValue);
+                    }
+                    buttonStr += ")";
+                    result = Value(buttonStr);
+                    return;
+                }
+            } catch (const std::runtime_error&) {
+                // Not a builtin function, continue with normal processing
+            }
+        } else if (functionName == "VStack") {
+            std::cout << "DEBUG: VStack UI component call detected" << std::endl;
+            try {
+                Value builtinMarker = globals->get(Token{TokenType::Identifier, "__builtin_VStack", 0});
+                if (builtinMarker.type == ValueType::Bool && std::get<bool>(builtinMarker.value)) {
+                    result = Value("<UI:VStack>");
+                    return;
+                }
+            } catch (const std::runtime_error&) {
+                // Not a builtin function, continue with normal processing
+            }
+        } else if (functionName == "HStack") {
+            std::cout << "DEBUG: HStack UI component call detected" << std::endl;
+            try {
+                Value builtinMarker = globals->get(Token{TokenType::Identifier, "__builtin_HStack", 0});
+                if (builtinMarker.type == ValueType::Bool && std::get<bool>(builtinMarker.value)) {
+                    result = Value("<UI:HStack>");
+                    return;
+                }
+            } catch (const std::runtime_error&) {
+                // Not a builtin function, continue with normal processing
+            }
+        } else if (functionName == "Color") {
+            std::cout << "DEBUG: Color UI component call detected" << std::endl;
+            try {
+                Value builtinMarker = globals->get(Token{TokenType::Identifier, "__builtin_Color", 0});
+                if (builtinMarker.type == ValueType::Bool && std::get<bool>(builtinMarker.value)) {
+                    if (expr.arguments.size() < 1) {
+                        throw std::runtime_error("Color expects at least 1 argument");
+                    }
+                    
+                    std::string colorArgs = "";
+                    for (size_t i = 0; i < expr.arguments.size(); ++i) {
+                        Value argValue = evaluate(*expr.arguments[i]);
+                        if (i > 0) colorArgs += ", ";
+                        colorArgs += valueToString(argValue);
+                    }
+                    
+                    result = Value("<UI:Color(" + colorArgs + ")>");
+                    return;
+                }
+            } catch (const std::runtime_error&) {
+                // Not a builtin function, continue with normal processing
+            }
+        } else if (functionName == "Font") {
+            std::cout << "DEBUG: Font UI component call detected" << std::endl;
+            try {
+                Value builtinMarker = globals->get(Token{TokenType::Identifier, "__builtin_Font", 0});
+                if (builtinMarker.type == ValueType::Bool && std::get<bool>(builtinMarker.value)) {
+                    result = Value("<UI:Font>");
+                    return;
+                }
+            } catch (const std::runtime_error&) {
+                // Not a builtin function, continue with normal processing
+            }
+        } else if (functionName == "UIApplication") {
+            std::cout << "DEBUG: UIApplication call detected" << std::endl;
+            try {
+                Value builtinMarker = globals->get(Token{TokenType::Identifier, "__builtin_UIApplication", 0});
+                if (builtinMarker.type == ValueType::Bool && std::get<bool>(builtinMarker.value)) {
+                    result = Value("<UI:UIApplication>");
+                    return;
+                }
+            } catch (const std::runtime_error&) {
+                // Not a builtin function, continue with normal processing
+            }
         }
     }
     
-    Value callee = evaluate(*expr.callee);
-    
     // Debug: Print callee information
-    std::cout << "DEBUG: LabeledCall callee type: " << static_cast<int>(callee.type) << std::endl;
-    if (callee.type == ValueType::String) {
-        std::cout << "DEBUG: LabeledCall callee string value: " << std::get<std::string>(callee.value) << std::endl;
-    }
+    // std::cout << "DEBUG: LabeledCall expression detected" << std::endl;
     
-    // Check if this is a builtin function string marker
+    // Check if this is a builtin function string marker or static method call
     if (callee.type == ValueType::String) {
         std::string calleeStr = std::get<std::string>(callee.value);
+        
+        // Handle Font.system static method call
+        if (calleeStr == "Font.system") {
+            if (expr.arguments.size() != 1) {
+                throw std::runtime_error("Font.system expects exactly 1 argument: size");
+            }
+            
+            Value sizeValue = evaluate(*expr.arguments[0]);
+            if (sizeValue.type != ValueType::Double && sizeValue.type != ValueType::Int) {
+                throw std::runtime_error("Font.system: size must be a number");
+            }
+            
+            double size = (sizeValue.type == ValueType::Double) ? 
+                std::get<double>(sizeValue.value) : 
+                static_cast<double>(std::get<int>(sizeValue.value));
+            
+            result = Value("Font.system(size: " + std::to_string(size) + ")");
+            return;
+        }
+        
+        // Handle Color static method calls
+        if (calleeStr == "Color.red") {
+            result = Value("Color.red");
+            return;
+        }
+        if (calleeStr == "Color.blue") {
+            result = Value("Color.blue");
+            return;
+        }
+        if (calleeStr == "Color.green") {
+            result = Value("Color.green");
+            return;
+        }
+        
         if (calleeStr == "<builtin_function:writeFile>") {
             // Handle builtin writeFile function
             if (expr.arguments.size() != 2) {
@@ -2429,6 +2671,8 @@ void Interpreter::visit(const Call& expr) {
             }
         }
     }
+    
+
     
     if (!callee.isFunction()) {
         throw std::runtime_error("Can only call functions and closures.");
@@ -2595,7 +2839,71 @@ void Interpreter::visit(const Call& expr) {
 
 // Execute labeled function call: callee(label1: arg1, label2: arg2)
 void Interpreter::visit(const LabeledCall& expr) {
-    // std::cout << "DEBUG: LabeledCall expression detected" << std::endl;
+    // Check for UI component calls first
+    if (auto varExpr = dynamic_cast<const VarExpr*>(expr.callee.get())) {
+        std::string functionName = varExpr->name.lexeme;
+        
+        // Handle UI components
+        if (functionName == "Text") {
+            if (expr.arguments.size() != 1) {
+                throw std::runtime_error("Text expects exactly 1 argument.");
+            }
+            Value textValue = evaluate(*expr.arguments[0]);
+            result = Value("Text(" + valueToString(textValue) + ")");
+            return;
+        }
+        else if (functionName == "Button") {
+            if (expr.arguments.size() < 1) {
+                throw std::runtime_error("Button expects at least 1 argument.");
+            }
+            Value titleValue = evaluate(*expr.arguments[0]);
+            std::string buttonStr = "Button(" + valueToString(titleValue);
+            if (expr.arguments.size() > 1) {
+                Value actionValue = evaluate(*expr.arguments[1]);
+                buttonStr += ", action: " + valueToString(actionValue);
+            }
+            buttonStr += ")";
+            result = Value(buttonStr);
+            return;
+        }
+        else if (functionName == "VStack" || functionName == "HStack") {
+            std::string content = "";
+            for (size_t i = 0; i < expr.arguments.size(); ++i) {
+                Value argValue = evaluate(*expr.arguments[i]);
+                if (i > 0) content += ", ";
+                content += valueToString(argValue);
+            }
+            result = Value(functionName + "(" + content + ")");
+            return;
+        }
+        else if (functionName == "Color") {
+            if (expr.arguments.size() < 1) {
+                throw std::runtime_error("Color expects at least 1 argument.");
+            }
+            
+            std::string colorArgs = "";
+            for (size_t i = 0; i < expr.arguments.size(); ++i) {
+                Value argValue = evaluate(*expr.arguments[i]);
+                if (i > 0) colorArgs += ", ";
+                colorArgs += valueToString(argValue);
+            }
+            
+            result = Value("Color(" + colorArgs + ")");
+            return;
+        }
+        else if (functionName == "Font") {
+            if (expr.arguments.size() != 1) {
+                throw std::runtime_error("Font expects exactly 1 argument.");
+            }
+            Value fontValue = evaluate(*expr.arguments[0]);
+            result = Value("Font." + valueToString(fontValue));
+            return;
+        }
+        else if (functionName == "UIApplication") {
+            result = Value("UIApplication instance");
+            return;
+        }
+    }
     
     // Check if this is a super method call BEFORE evaluating the callee
     if (auto memberAccess = dynamic_cast<const MemberAccess*>(expr.callee.get())) {
@@ -2716,10 +3024,80 @@ void Interpreter::visit(const LabeledCall& expr) {
         Value object = evaluate(*memberAccess->object);
         Value method;
         
+        // Handle static method calls like Font.system(size: ...)
+        if (object.type == ValueType::String) {
+            std::string objectStr = std::get<std::string>(object.value);
+            std::string memberName = memberAccess->member.lexeme;
+            
+            // Handle builtin function format like "<builtin_function:Font>"
+            if (objectStr.find("<builtin_function:Font>") != std::string::npos && memberName == "system") {
+                // Handle Font.system(size: ...) call
+                if (expr.arguments.size() != 1) {
+                    throw std::runtime_error("Font.system expects exactly 1 argument.");
+                }
+                
+                // Check if the argument has the correct label
+                if (expr.argumentLabels.size() != 1 || expr.argumentLabels[0].lexeme != "size") {
+                    throw std::runtime_error("Font.system expects argument with label 'size'.");
+                }
+                
+                Value sizeValue = evaluate(*expr.arguments[0]);
+                if (sizeValue.type != ValueType::Double && sizeValue.type != ValueType::Int) {
+                    throw std::runtime_error("Font.system size parameter must be a number.");
+                }
+                
+                double size = (sizeValue.type == ValueType::Double) ? 
+                    std::get<double>(sizeValue.value) : 
+                    static_cast<double>(std::get<int>(sizeValue.value));
+                
+                result = Value("Font.system(size: " + std::to_string(size) + ")");
+                return;
+            }
+            else if (objectStr.find("<builtin_function:Color>") != std::string::npos && (memberName == "red" || memberName == "blue" || memberName == "green")) {
+                // Handle Color.red, Color.blue, Color.green calls
+                if (expr.arguments.size() != 0) {
+                    throw std::runtime_error("Color." + memberName + " expects no arguments.");
+                }
+                result = Value("Color." + memberName);
+                return;
+            }
+        }
+        
         try {
             method = getMemberValue(object, memberAccess->member.lexeme);
         } catch (const std::runtime_error& e) {
             throw;
+        }
+        
+        // Check if this is a UI method call first
+        if (method.type == ValueType::String) {
+            std::string methodStr = std::get<std::string>(method.value);
+            if (methodStr.find("UIMethod:") == 0) {
+                // This is a UI method call
+                size_t firstColon = methodStr.find(':', 9);
+                if (firstColon != std::string::npos) {
+                    std::string methodName = methodStr.substr(9, firstColon - 9);
+                    std::string baseComponent = methodStr.substr(firstColon + 1);
+                    
+                    // Evaluate arguments
+                    std::vector<Value> arguments;
+                    for (const auto& argument : expr.arguments) {
+                        arguments.push_back(evaluate(*argument));
+                    }
+                    
+                    // Build the method call and append to base component
+                    std::string methodCall = "." + methodName + "(";
+                    for (size_t i = 0; i < arguments.size(); ++i) {
+                        if (i > 0) methodCall += ", ";
+                        methodCall += valueToString(arguments[i]);
+                    }
+                    methodCall += ")";
+                    
+                    // Return the modified UI component string
+                    result = Value(baseComponent + methodCall);
+                    return;
+                }
+            }
         }
         
         std::cout << "DEBUG: Method value type - isFunction: " << method.isFunction() << std::endl;
@@ -2944,6 +3322,34 @@ void Interpreter::visit(const LabeledCall& expr) {
     }
     
     Value callee = evaluate(*expr.callee);
+    
+    // Check if this is a builtin static method call
+    if (callee.type == ValueType::String) {
+        std::string calleeStr = std::get<std::string>(callee.value);
+        
+        // Handle builtin static method calls
+        if (calleeStr.find("<builtin_static_method:") == 0 && calleeStr.back() == '>') {
+            std::string methodName = calleeStr.substr(23, calleeStr.length() - 24); // Remove "<builtin_static_method:" and ">"
+            
+            if (methodName == "Font.system") {
+                if (expr.arguments.size() != 1) {
+                    throw std::runtime_error("Font.system expects exactly 1 argument: size");
+                }
+                
+                Value sizeValue = evaluate(*expr.arguments[0]);
+                if (sizeValue.type != ValueType::Double && sizeValue.type != ValueType::Int) {
+                    throw std::runtime_error("Font.system: size must be a number");
+                }
+                
+                double size = (sizeValue.type == ValueType::Double) ? 
+                    std::get<double>(sizeValue.value) : 
+                    static_cast<double>(std::get<int>(sizeValue.value));
+                
+                result = Value("Font.system(size: " + std::to_string(size) + ")");
+                return;
+            }
+        }
+    }
     
     // Check for writeFile builtin function
     if (auto varExpr = dynamic_cast<const VarExpr*>(expr.callee.get())) {
@@ -3618,6 +4024,49 @@ void Interpreter::visit(const MemberAccess& expr) {
     if (auto varExpr = dynamic_cast<const VarExpr*>(expr.object.get())) {
         std::string typeName = varExpr->name.lexeme;
         
+        // Handle Color static members
+        if (typeName == "Color") {
+            if (expr.member.lexeme == "red") {
+                result = Value("Color.red");
+                return;
+            } else if (expr.member.lexeme == "blue") {
+                result = Value("Color.blue");
+                return;
+            } else if (expr.member.lexeme == "green") {
+                result = Value("Color.green");
+                return;
+            } else if (expr.member.lexeme == "black") {
+                result = Value("Color.black");
+                return;
+            } else if (expr.member.lexeme == "white") {
+                result = Value("Color.white");
+                return;
+            }
+        }
+        
+        // Handle Font static members
+        if (typeName == "Font") {
+            if (expr.member.lexeme == "system") {
+                // Return "Font" so that LabeledCall can handle Font.system calls
+                result = Value("Font");
+                return;
+            } else if (expr.member.lexeme == "title") {
+                result = Value("Font.title");
+                return;
+            } else if (expr.member.lexeme == "body") {
+                result = Value("Font.body");
+                return;
+            }
+        }
+        
+        // Handle UIApplication static members
+        if (typeName == "UIApplication") {
+            if (expr.member.lexeme == "shared") {
+                result = Value("UIApplication.shared");
+                return;
+            }
+        }
+        
         // Check if this is accessing a nested type
         std::string nestedTypeName = typeName + "." + expr.member.lexeme;
         try {
@@ -3657,6 +4106,52 @@ void Interpreter::visit(const MemberAccess& expr) {
     }
     
     Value object = evaluate(*expr.object);
+    
+    // Handle UI component method chaining
+    if (object.type == ValueType::String) {
+        std::string objectStr = std::get<std::string>(object.value);
+        
+        // Check if this is a UI component (contains Text, Button, etc. or UIMethod, or has method calls)
+        bool isUIComponent = objectStr.find("Text(") != std::string::npos || 
+                           objectStr.find("Button(") != std::string::npos || 
+                           objectStr.find("VStack(") != std::string::npos || 
+                           objectStr.find("HStack(") != std::string::npos ||
+                           objectStr.find("UIMethod:") != std::string::npos ||
+                           (objectStr.find("Text(") != std::string::npos && objectStr.find(".") != std::string::npos) ||
+                           (objectStr.find("Button(") != std::string::npos && objectStr.find(".") != std::string::npos);
+        
+        if (isUIComponent) {
+            if (expr.member.lexeme == "foregroundColor") {
+                // Return a callable that can accept a color parameter
+                result = Value("UIMethod:foregroundColor:" + objectStr);
+                return;
+            } else if (expr.member.lexeme == "font") {
+                // Return a callable that can accept a font parameter
+                result = Value("UIMethod:font:" + objectStr);
+                return;
+            } else if (expr.member.lexeme == "padding") {
+                result = Value("UIMethod:padding:" + objectStr);
+                return;
+            } else if (expr.member.lexeme == "background") {
+                result = Value("UIMethod:background:" + objectStr);
+                return;
+            }
+        }
+    }
+    
+    // Don't call getMemberValue for builtin UI types that have already been handled above
+    // This prevents "Only structs and classes have members" error for Font.system etc.
+    if (object.type == ValueType::String) {
+        std::string objectStr = std::get<std::string>(object.value);
+        if (objectStr.find("<builtin_function:") == 0) {
+            // This should have been handled in the static member section above
+            // If we reach here, it means the member is not recognized
+            std::string typeName = objectStr.substr(18); // Remove "<builtin_function:"
+            typeName = typeName.substr(0, typeName.length() - 1); // Remove ">"
+            throw std::runtime_error("Type '" + typeName + "' has no member '" + expr.member.lexeme + "'");
+        }
+    }
+    
     result = getMemberValue(object, expr.member.lexeme);
 }
 
@@ -3850,9 +4345,6 @@ void Interpreter::registerClassProperties(const std::string& className, const st
 
 
 Value Interpreter::getMemberValue(const Value& object, const std::string& memberName) {
-
-
-    
     // If the object is an optional, we cannot access its members directly
     if (object.isOptional()) {
         throw std::runtime_error("Cannot access member '" + memberName + "' on optional value. Use optional chaining (?.) instead.");
@@ -3967,14 +4459,51 @@ Value Interpreter::getMemberValue(const Value& object, const std::string& member
             throw std::runtime_error("Array has no member '" + memberName + "'");
         }
     } else if (object.type == ValueType::String) {
+        const auto& str = std::get<std::string>(object.value);
+        
+        // Check if this is a builtin function string
+        if (str.find("<builtin_function:") == 0) {
+            // Extract the function name from the builtin function string
+            size_t start = str.find(":") + 1;
+            size_t end = str.find(">", start);
+            if (start != std::string::npos && end != std::string::npos) {
+                std::string functionName = str.substr(start, end - start);
+                
+                // Handle Font builtin function static methods
+                if (functionName == "Font") {
+                    if (memberName == "system") {
+                        // Return a special callable for Font.system
+                        return Value("<builtin_static_method:Font.system>");
+                    } else {
+                        throw std::runtime_error("Font has no static member '" + memberName + "'");
+                    }
+                }
+                // Add other builtin function static method handling here as needed
+            }
+            throw std::runtime_error("Builtin function '" + str + "' has no member '" + memberName + "'");
+        }
+        
+        // Check if this is a UI component string (including chained methods)
+        // Check for UI component patterns anywhere in the string, not just at the beginning
+        if (str.find("Text(") != std::string::npos || str.find("Button(") != std::string::npos || 
+            str.find("VStack(") != std::string::npos || str.find("HStack(") != std::string::npos ||
+            str.find("UIMethod:") != std::string::npos) {
+            // Handle UI component methods
+            if (memberName == "foregroundColor" || memberName == "font" || 
+                memberName == "padding" || memberName == "background") {
+                return Value("UIMethod:" + memberName + ":" + str);
+            } else {
+                // For unknown UI methods, still return a UIMethod string
+                return Value("UIMethod:" + memberName + ":" + str);
+            }
+        }
+        
         // Handle built-in string properties
         if (memberName == "isEmpty") {
             // Return whether string is empty
-            const auto& str = std::get<std::string>(object.value);
             return Value(str.empty());
         } else if (memberName == "count") {
             // Return string length
-            const auto& str = std::get<std::string>(object.value);
             return Value(static_cast<int>(str.length()));
         } else {
             throw std::runtime_error("String has no member '" + memberName + "'");
@@ -5015,8 +5544,29 @@ void Interpreter::registerBuiltinFunctions() {
     // Also register httpGet as a callable function in the global environment
     globals->define("httpGet", Value("<builtin_function:httpGet>"));
     
+    // Register UI components as builtin functions
+    globals->define("Text", Value("<builtin_function:Text>"));
+    globals->define("Button", Value("<builtin_function:Button>"));
+    globals->define("VStack", Value("<builtin_function:VStack>"));
+    globals->define("HStack", Value("<builtin_function:HStack>"));
+    globals->define("Color", Value("<builtin_function:Color>"));
+    globals->define("Font", Value("<builtin_function:Font>"));
+    globals->define("UIApplication", Value("<builtin_function:UIApplication>"));
+    
+    // Register UI component markers
+    globals->define("__builtin_Text", Value(true));
+    globals->define("__builtin_Button", Value(true));
+    globals->define("__builtin_VStack", Value(true));
+    globals->define("__builtin_HStack", Value(true));
+    globals->define("__builtin_Color", Value(true));
+    // Note: __builtin_Font removed to avoid conflict with Font string registration
+    globals->define("__builtin_UIApplication", Value(true));
+    
     std::cout << "Registered builtin function: writeFile" << std::endl;
     std::cout << "Registered builtin function: httpGet" << std::endl;
+    std::cout << "Registered UI components: Text, Button, VStack, HStack, Color, Font, UIApplication" << std::endl;
+    
+
 }
 
 } // namespace miniswift

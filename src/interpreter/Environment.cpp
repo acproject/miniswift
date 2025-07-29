@@ -1,5 +1,6 @@
 #include "Environment.h"
 #include <stdexcept>
+#include <iostream>
 
 namespace miniswift {
 
@@ -17,7 +18,8 @@ void Environment::define(const std::string& name, const Value& value) {
 
 Value Environment::get(const Token& name) {
     if (values.count(name.lexeme)) {
-        return values.at(name.lexeme).value;
+        Value result = values.at(name.lexeme).value;
+        return result;
     }
 
     if (enclosing != nullptr) {

@@ -11,6 +11,11 @@
 - 打印语句（`print()`）
 - 基本表达式求值
 - 词法分析和语法解析
+- **UI库框架** - 基于GTK4的SwiftUI风格UI库
+  - 基础组件（Text, Button, Image, Rectangle等）
+  - 布局容器（VStack, HStack, ZStack, Grid）
+  - 视图修饰符（padding, background, foregroundColor等）
+  - 样式系统（Color, Font, Alignment等）
 
 🚧 **部分实现**
 - 字符串插值（解析完成，求值待完善）
@@ -21,6 +26,11 @@
 - 函数定义和调用
 - 类和结构体
 - 数组和字典
+- **UI库增强**
+  - GTK4后端完整实现
+  - 动画和过渡效果
+  - 事件处理系统
+  - 更多UI组件（List, NavigationView, TabView等）
 
 ## 快速开始
 
@@ -151,6 +161,42 @@ let sum = a + b
 let product = a * b
 ```
 
+### UI开发
+```swift
+// 创建简单的UI界面
+struct ContentView: UIView {
+    var body: some UIView {
+        VStack(spacing: 20) {
+            Text("Hello, MiniSwift UI!")
+                .font(.title)
+                .foregroundColor(.blue)
+            
+            Button("Click Me") {
+                print("Button tapped!")
+            }
+            .background(.blue)
+            .foregroundColor(.white)
+            .cornerRadius(8)
+            .padding()
+        }
+    }
+}
+
+// 网格布局示例
+struct GridExample: UIView {
+    var body: some UIView {
+        Grid(horizontalSpacing: 10, verticalSpacing: 10) {
+            GridRow {
+                Rectangle().fill(.red).frame(width: 50, height: 50)
+                Rectangle().fill(.green).frame(width: 50, height: 50)
+                Rectangle().fill(.blue).frame(width: 50, height: 50)
+            }
+        }
+        .padding()
+    }
+}
+```
+
 ## 项目结构
 
 ```
@@ -172,8 +218,24 @@ MiniSwift/
 │   │   ├── Environment.h
 │   │   └── Value.h
 │   └── main.cpp         # 主程序入口
+├── miniswift/           # Swift包管理器项目
+│   ├── Sources/MiniSwift/
+│   │   ├── MiniSwift.swift    # 主模块文件
+│   │   └── UI/               # UI库模块
+│   │       ├── UIView.swift      # 核心UI协议
+│   │       ├── Layout.swift      # 布局容器
+│   │       ├── Components.swift  # 基础组件
+│   │       ├── Geometry.swift    # 几何和对齐
+│   │       ├── Style.swift       # 样式系统
+│   │       ├── Modifiers.swift   # 视图修饰符
+│   │       └── GTK4Bridge.swift  # GTK4集成
+│   └── Package.swift     # 包配置文件
+├── examples/            # 示例代码
+│   └── UIExample.swift  # UI库使用示例
 ├── build/               # 构建输出目录
 ├── doc/                # 文档
+├── UI_README.md        # UI库详细文档
+├── test_ui_basic.swift # UI库基础测试
 ├── playground.swift     # 完整测试用例
 ├── simple_playground.swift  # 简化测试用例
 ```

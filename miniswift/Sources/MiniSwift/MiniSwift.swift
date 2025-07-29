@@ -1,4 +1,10 @@
-// MiniSwift Library - IO and Network APIs
+// MiniSwift Library - IO, Network and UI APIs
+
+// MARK: - UI Module
+// UI components and types are available when importing MiniSwift
+// All UI types are defined in separate files under UI/ directory
+
+// MARK: - IO and Network APIs
 
 /// Write content to a file
 /// - Parameters:

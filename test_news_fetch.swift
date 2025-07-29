@@ -5,7 +5,7 @@ print("开始获取今日新闻...")
 
 // 使用一个提供新闻API的服务
 // 这里使用JSONPlaceholder作为示例API
-let newsUrl = "https://h.xinhuaxmt.com/vh512/share/12663660?docid=12663660&newstype=1001&d=1350068"
+let newsUrl = "https://jsonplaceholder.typicode.com/posts/1"
 
 print("正在从以下URL获取新闻: " + newsUrl)
 

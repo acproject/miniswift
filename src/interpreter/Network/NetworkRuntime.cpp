@@ -816,10 +816,26 @@ bool HTTPClient::parseResponse(const std::string& responseData, HTTPResponse& re
 
 bool HTTPClient::connectToHost(const std::string& host, uint16_t port) {
     if (!socket_ || !socket_->isConnected()) {
+        // 首先进行DNS解析
+        DNSResolver resolver;
+        auto dnsResult = resolver.resolve(host);
+        
+        if (!dnsResult.success || dnsResult.addresses.empty()) {
+            return false;
+        }
+        
+        // 创建新的TCP socket
         socket_ = std::make_unique<TCPSocket>();
+        
+        // 检查socket是否创建成功
+        if (!socket_ || socket_->getSocketFd() == -1) {
+            return false;
+        }
+        
         socket_->setTimeout(timeout_);
         
-        NetworkAddress address(host, port);
+        // 使用解析得到的第一个IP地址
+        NetworkAddress address(dnsResult.addresses[0], port);
         return socket_->connect(address);
     }
     

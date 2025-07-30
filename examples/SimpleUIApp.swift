@@ -14,7 +14,10 @@ struct SimpleUIApp {
         // Create main window content
         let mainView = self.createMainView()
         
-        print("Main view: ", mainView)
+        print("Main view created: ", mainView)
+        print("Note: This is a Mock UI backend - components are rendered to console")
+        print("To see actual windows, GTK4 backend would need to be available")
+        
         print("Simple UI Application completed successfully!")
     }
     

@@ -287,6 +287,13 @@ std::unique_ptr<Stmt> Parser::statement() {
   if (match({TokenType::Switch})) {
     return switchStatement();
   }
+  // Handle variable declarations
+  if (check(TokenType::Let) || check(TokenType::Var)) {
+    auto declarations = declaration();
+    if (!declarations.empty()) {
+      return std::move(declarations[0]);
+    }
+  }
   return expressionStatement();
 }
 
@@ -1806,6 +1813,12 @@ std::unique_ptr<Expr> Parser::call() {
       // Handle postfix bang operator for force unwrapping: expr!
       Token op = previous();
       expr = std::make_unique<Unary>(op, std::move(expr));
+    } else if (match({TokenType::LBrace})) {
+      // Handle trailing closure syntax: VStack { ... }
+      auto closureExpr = closure();
+      std::vector<std::unique_ptr<Expr>> arguments;
+      arguments.push_back(std::move(closureExpr));
+      expr = std::make_unique<Call>(std::move(expr), std::move(arguments));
     } else {
       break;
     }

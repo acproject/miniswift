@@ -201,6 +201,22 @@ public:
 private:
     // Builtin functions registration
     void registerBuiltinFunctions();
+    
+    // MiniSwift API library integration
+    Value callMiniSwiftFunction(const std::string& functionName, const std::vector<Value>& args);
+    std::string serializeParameters(const std::vector<Value>& args);
+    Value deserializeResult(const std::string& result);
+    
+    // UI API library function registration
+    void registerUIAPIFunctions();
+    
+    // UI component creation through API
+    Value createUIComponent(const std::string& componentType, const std::vector<Value>& args);
+    Value applyUIModifier(const Value& widget, const std::string& modifierType, const std::vector<Value>& params);
+    
+    // UI widget handle management
+    std::unordered_map<std::string, std::string> uiWidgetHandles;
+    std::string createUIWidgetHandle();
 
     Value result;
 };

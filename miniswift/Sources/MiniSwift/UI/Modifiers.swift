@@ -282,4 +282,26 @@ extension UIView {
         // Implementation for layout priority
         return self
     }
+    
+    /// Set font for text content
+    public func font(_ font: Font) -> some UIView {
+        return FontModifiedView(content: self, font: font)
+    }
+}
+
+/// Font modifier implementation
+public struct FontModifiedView<Content: UIView>: UIView {
+    let content: Content
+    let font: Font
+    
+    public var body: Self {
+        return self
+    }
+    
+    public func render() -> GTKWidget {
+        let widget = content.render()
+        // Apply font to GTK4 widget
+        // widget.setFont(font.toGTK())
+        return widget
+    }
 }

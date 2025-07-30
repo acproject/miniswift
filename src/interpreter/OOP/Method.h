@@ -142,6 +142,8 @@ public:
         : Environment(enclosing), selfValue_(selfValue), interpreter_(interpreter) {
         // 在环境中定义 self
         define("self", selfValue_);
+        // 也定义 __implicit_self__ 用于隐式成员访问
+        define("__implicit_self__", selfValue_);
     }
     
     // 重写 get 方法以支持属性访问

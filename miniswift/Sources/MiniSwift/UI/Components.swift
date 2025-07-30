@@ -68,7 +68,7 @@ public struct Button<Label: UIView>: UIView {
         
         // Add label as child
         let labelWidget = label.render()
-        widget.addChild(labelWidget)
+        (widget as UIView).addChild(labelWidget)
         
         return widget
     }

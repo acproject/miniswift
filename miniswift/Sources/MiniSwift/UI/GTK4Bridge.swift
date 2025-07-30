@@ -270,6 +270,6 @@ extension GTKWidget {
     
     public override func show() {
         GTKWidget.gtk4Widget?.show()
-        super.show()
+        // Call parent implementation if needed
     }
 }

@@ -336,19 +336,19 @@ struct FunctionStmt : Stmt {
                GenericParameterClause genericParams = GenericParameterClause({}),
                WhereClause whereClause = WhereClause({}), bool isMutating = false,
                bool canThrow = false, bool isAsync = false, bool isMain = false,
-               bool isOverride = false)
+               bool isOverride = false, bool isStatic = false)
       : name(name), parameters(std::move(parameters)), returnType(returnType),
         body(std::move(body)), accessLevel(accessLevel),
         genericParams(std::move(genericParams)), whereClause(std::move(whereClause)),
         isMutating(isMutating), canThrow(canThrow), isAsync(isAsync), isMain(isMain),
-        isOverride(isOverride) {}
+        isOverride(isOverride), isStatic(isStatic) {}
 
   void accept(StmtVisitor &visitor) const override { visitor.visit(*this); }
 
   std::unique_ptr<Stmt> clone() const override {
     return std::make_unique<FunctionStmt>(name, parameters, returnType,
                                           body->clone(), accessLevel,
-                                          genericParams, whereClause, isMutating, canThrow, isAsync, isMain, isOverride);
+                                          genericParams, whereClause, isMutating, canThrow, isAsync, isMain, isOverride, isStatic);
   }
 
   const Token name;
@@ -363,6 +363,7 @@ struct FunctionStmt : Stmt {
   bool isAsync;                         // Whether this is an async function
   bool isMain;                          // Whether this function has @main attribute
   bool isOverride;                      // Whether this function overrides a parent method
+  bool isStatic;                        // Whether this is a static function
   
   // Check if this is a generic function
   bool isGeneric() const { return !genericParams.isEmpty(); }

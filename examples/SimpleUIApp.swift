@@ -2,7 +2,7 @@
 // This demonstrates basic UI components and layout
 
 // Import UI framework (conceptual - will be handled by interpreter)
-// import MiniSwiftUI
+import MiniSwiftUI
 
 // Define a simple UI application
 struct SimpleUIApp {
@@ -12,7 +12,7 @@ struct SimpleUIApp {
         print("Starting Simple UI Application...")
         
         // Create main window content
-        let mainView = createMainView()
+        let mainView = self.createMainView()
         
         // Set up the application
         UIApplication.shared.setRootView(mainView)
@@ -85,16 +85,40 @@ struct SimpleUIApp {
 
 // Color extensions for convenience
 extension Color {
-    static let lightGray = Color(red: 0.9, green: 0.9, blue: 0.9, alpha: 1.0)
-    static let darkGray = Color(red: 0.3, green: 0.3, blue: 0.3, alpha: 1.0)
+    static var lightGray: Color {
+        get {
+            return Color(red: 0.9, green: 0.9, blue: 0.9, alpha: 1.0)
+        }
+    }
+    static var darkGray: Color {
+        get {
+            return Color(red: 0.3, green: 0.3, blue: 0.3, alpha: 1.0)
+        }
+    }
 }
 
 // Font extensions
 extension Font {
-    static let title = Font(family: "System", size: 24, bold: true)
-    static let headline = Font(family: "System", size: 18, bold: true)
-    static let body = Font(family: "System", size: 16, bold: false)
-    static let caption = Font(family: "System", size: 12, bold: false)
+    static var title: Font {
+        get {
+            return Font(family: "System", size: 24, bold: true)
+        }
+    }
+    static var headline: Font {
+        get {
+            return Font(family: "System", size: 18, bold: true)
+        }
+    }
+    static var body: Font {
+        get {
+            return Font(family: "System", size: 16, bold: false)
+        }
+    }
+    static var caption: Font {
+        get {
+            return Font(family: "System", size: 12, bold: false)
+        }
+    }
 }
 
 // Application entry point

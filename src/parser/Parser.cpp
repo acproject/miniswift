@@ -572,11 +572,11 @@ std::unique_ptr<Expr> Parser::range() {
 }
 
 std::unique_ptr<Expr> Parser::term() {
-  auto expr = overflowArithmetic();
+  auto expr = factor();
 
   while (match({TokenType::Minus, TokenType::Plus})) {
     Token op = previous();
-    auto right = overflowArithmetic();
+    auto right = factor();
     expr = std::make_unique<Binary>(std::move(expr), op, std::move(right));
   }
 
@@ -585,12 +585,12 @@ std::unique_ptr<Expr> Parser::term() {
 
 // Overflow arithmetic: expr &+ expr, expr &- expr, expr &* expr
 std::unique_ptr<Expr> Parser::overflowArithmetic() {
-  auto expr = factor();
+  auto expr = unary();
 
   while (match({TokenType::OverflowPlus, TokenType::OverflowMinus,
                 TokenType::OverflowStar})) {
     Token op = previous();
-    auto right = factor();
+    auto right = unary();
     expr =
         std::make_unique<OverflowExpr>(std::move(expr), op, std::move(right));
   }
@@ -937,6 +937,25 @@ std::unique_ptr<Expr> Parser::primary() {
 
     return std::make_unique<MacroExpansionExpr>(macroName,
                                                 std::move(arguments));
+  }
+
+  // Handle implicit member expressions: .memberName or .memberName(args)
+  if (match({TokenType::Dot})) {
+    consume(TokenType::Identifier, "Expect member name after '.'.");
+    Token memberName = previous();
+    
+    // Create a member access expression with implicit self
+    auto implicitSelf = std::make_unique<VarExpr>(
+        Token(TokenType::Identifier, "__implicit_self__", memberName.line));
+    auto memberExpr = std::make_unique<MemberAccess>(std::move(implicitSelf), memberName);
+    
+    // Check if this is followed by a function call
+    if (check(TokenType::LParen)) {
+      advance(); // consume '('
+      return finishCall(std::move(memberExpr));
+    }
+    
+    return memberExpr;
   }
 
   // Handle range operators: start..<end or start...end
@@ -2930,6 +2949,54 @@ std::unique_ptr<Stmt> Parser::extensionDeclaration() {
       subscript->accessLevel = memberAccessLevel;
       subscript->setterAccessLevel = memberSetterAccessLevel;
       subscripts.push_back(std::move(subscript));
+    } else if (match({TokenType::Static})) {
+      // Parse static member
+      if (match({TokenType::Var})) {
+        // Parse static computed property
+        consume(TokenType::Identifier, "Expect property name.");
+        Token propertyName = previous();
+
+        consume(TokenType::Colon, "Expect ':' after property name.");
+        Token propertyType = parseType();
+
+        consume(TokenType::LBrace, "Expect '{' after property type.");
+
+        std::vector<PropertyAccessor> accessors;
+
+        while (!check(TokenType::RBrace) && !isAtEnd()) {
+          if (match({TokenType::Get})) {
+            consume(TokenType::LBrace, "Expect '{' after 'get'.");
+            auto body = blockStatement();
+            accessors.emplace_back(AccessorType::GET, std::move(body));
+          } else if (match({TokenType::Set})) {
+            consume(TokenType::LBrace, "Expect '{' after 'set'.");
+            auto body = blockStatement();
+            accessors.emplace_back(AccessorType::SET, std::move(body));
+          } else {
+            throw std::runtime_error(
+                "Expect 'get' or 'set' in computed property.");
+          }
+        }
+
+        consume(TokenType::RBrace, "Expect '}' after property accessors.");
+
+        // Create static computed property member
+        StructMember member(propertyName, propertyType, nullptr, true,
+                            memberAccessLevel, memberSetterAccessLevel);
+        member.accessors = std::move(accessors);
+        member.isStatic = true;
+        computedProperties.push_back(std::move(member));
+      } else if (match({TokenType::Func})) {
+        // Parse static method
+        auto method = std::unique_ptr<FunctionStmt>(
+            static_cast<FunctionStmt *>(functionDeclaration().release()));
+        method->accessLevel = memberAccessLevel;
+        method->isStatic = true;
+        methods.push_back(std::move(method));
+      } else {
+        throw std::runtime_error(
+            "Expect 'var' or 'func' after 'static' in extension.");
+      }
     } else if (match({TokenType::Var})) {
       // Parse computed property (extensions cannot add stored properties)
       consume(TokenType::Identifier, "Expect property name.");
@@ -2971,7 +3038,7 @@ std::unique_ptr<Stmt> Parser::extensionDeclaration() {
             "Expect 'func' after 'mutating' in extension.");
       }
       throw std::runtime_error(
-          "Expect 'var', 'func', 'init', or 'subscript' in extension body.");
+          "Expect 'static', 'var', 'func', 'init', or 'subscript' in extension body.");
     }
   }
 

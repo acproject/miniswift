@@ -1,5 +1,6 @@
 #include "Lexer.h"
 #include <unordered_map>
+#include <iostream>
 
 namespace miniswift {
 

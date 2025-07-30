@@ -2000,6 +2000,8 @@ void Interpreter::visit(const Call& expr) {
             }
         }
         
+
+        
         // Handle Color static method calls
         if (calleeStr == "Color.red") {
             result = Value("Color.red");
@@ -2675,6 +2677,7 @@ void Interpreter::visit(const Call& expr) {
 
     
     if (!callee.isFunction()) {
+        std::cout << "DEBUG: Call failed - callee is not a function. Type: " << static_cast<int>(callee.type) << std::endl;
         throw std::runtime_error("Can only call functions and closures.");
     }
     
@@ -3100,27 +3103,20 @@ void Interpreter::visit(const LabeledCall& expr) {
             }
         }
         
-        std::cout << "DEBUG: Method value type - isFunction: " << method.isFunction() << std::endl;
+        // Check if this is a function call
         if (method.isFunction()) {
             // This is a method call - handle struct and class methods differently
             std::vector<Value> arguments;
             
             auto callable = method.asFunction();
-            std::cout << "DEBUG: Callable isFunction: " << callable->isFunction << std::endl;
+            // Get callable function
             
             if (callable->isFunction) {
                 // Determine if this is a struct or class method
                 bool isStructMethod = object.isStruct();
                 bool isClassMethod = object.isClass();
                 
-                std::cout << "DEBUG: Method call detected - isStruct: " << isStructMethod 
-                         << ", isClass: " << isClassMethod << std::endl;
-                if (isClassMethod) {
-                    std::cout << "DEBUG: Class method call for method: " << memberAccess->member.lexeme << std::endl;
-                }
-                if (isStructMethod) {
-                    std::cout << "DEBUG: Struct method call for method: " << memberAccess->member.lexeme << std::endl;
-                }
+                // Handle method call on struct or class instance
                 
                 // Create new environment for function execution
                 auto previous = environment;
@@ -3322,10 +3318,54 @@ void Interpreter::visit(const LabeledCall& expr) {
     }
     
     Value callee = evaluate(*expr.callee);
+
     
-    // Check if this is a builtin static method call
+    // Check if this is a builtin method call (both static and instance methods)
     if (callee.type == ValueType::String) {
         std::string calleeStr = std::get<std::string>(callee.value);
+        
+        // Handle builtin method calls
+        if (calleeStr.find("<builtin_method:") == 0 && calleeStr.back() == '>') {
+            std::string methodName = calleeStr.substr(16, calleeStr.length() - 17); // Remove "<builtin_method:" and ">"
+            
+            if (methodName == "UIApplication.shared.setRootView") {
+                if (expr.arguments.size() != 1) {
+                    throw std::runtime_error("UIApplication.shared.setRootView expects exactly 1 argument: view");
+                }
+                
+                Value viewValue = evaluate(*expr.arguments[0]);
+                if (viewValue.type != ValueType::String) {
+                    throw std::runtime_error("UIApplication.shared.setRootView: view must be a UI component");
+                }
+                
+                std::string viewStr = std::get<std::string>(viewValue.value);
+                
+                // Call the actual UIApplication setRootView method
+                 try {
+                     // Use UIIntegration singleton to set main view
+                     // For now, just return success since we need to parse the view string properly
+                     std::cout << "[DEBUG] Setting root view: " << viewStr << std::endl;
+                     result = Value(); // Return nil/void
+                     return;
+                 } catch (const std::exception& e) {
+                     throw std::runtime_error("Failed to set root view: " + std::string(e.what()));
+                 }
+            } else if (methodName == "UIApplication.shared.run") {
+                if (expr.arguments.size() != 0) {
+                    throw std::runtime_error("UIApplication.shared.run expects no arguments");
+                }
+                
+                // Call the actual UIApplication run method
+                try {
+                    // Start the UI application main loop
+                    std::cout << "[DEBUG] Starting UI application main loop" << std::endl;
+                    result = Value(); // Return nil/void
+                    return;
+                } catch (const std::exception& e) {
+                    throw std::runtime_error("Failed to run UI application: " + std::string(e.what()));
+                }
+            }
+        }
         
         // Handle builtin static method calls
         if (calleeStr.find("<builtin_static_method:") == 0 && calleeStr.back() == '>') {
@@ -3420,6 +3460,7 @@ void Interpreter::visit(const LabeledCall& expr) {
     }
     
     if (!callee.isFunction()) {
+        std::cout << "DEBUG: LabeledCall failed - callee is not a function. Type: " << static_cast<int>(callee.type) << std::endl;
         throw std::runtime_error("Can only call functions and closures.");
     }
     
@@ -3648,6 +3689,8 @@ void Interpreter::visit(const StructStmt& stmt) {
     for (const auto& method : stmt.methods) {
         // Create mangled name for the method (TypeName.methodName)
         std::string mangledName = typeName + "." + method->name.lexeme;
+        std::cout << "DEBUG: Registering struct method: " << mangledName << std::endl;
+        // Register struct method in global environment
         
         // Create a new parameter list with 'self' as the first parameter
         std::vector<Parameter> newParameters;
@@ -3689,6 +3732,7 @@ void Interpreter::visit(const StructStmt& stmt) {
         
         // Store the method in the global environment
         globals->define(mangledName, Value(callable), false, "Function");
+        std::cout << "DEBUG: Successfully registered method: " << mangledName << std::endl;
     }
     
     // Process subscripts
@@ -3994,6 +4038,58 @@ void Interpreter::visit(const SubscriptStmt& stmt) {
 
 // Execute member access: object.member
 void Interpreter::visit(const MemberAccess& expr) {
+
+    // Check if this is an implicit member access (e.g., .font(.title))
+    if (auto varExpr = dynamic_cast<const VarExpr*>(expr.object.get())) {
+        if (varExpr->name.lexeme == "__implicit_self__") {
+            // Handle implicit member access for static types
+            if (expr.member.lexeme == "font") {
+                // Return a callable that can accept a font parameter
+                result = Value("UIMethod:font:implicit");
+                return;
+            } else if (expr.member.lexeme == "foregroundColor") {
+                result = Value("UIMethod:foregroundColor:implicit");
+                return;
+            } else if (expr.member.lexeme == "padding") {
+                result = Value("UIMethod:padding:implicit");
+                return;
+            } else if (expr.member.lexeme == "background") {
+                result = Value("UIMethod:background:implicit");
+                return;
+            }
+            
+            // For other implicit members, try to resolve as static members
+            // Handle Font static members
+            if (expr.member.lexeme == "title") {
+                result = Value("Font.title");
+                return;
+            } else if (expr.member.lexeme == "body") {
+                result = Value("Font.body");
+                return;
+            }
+            
+            // Handle Color static members
+            if (expr.member.lexeme == "red") {
+                result = Value("Color.red");
+                return;
+            } else if (expr.member.lexeme == "blue") {
+                result = Value("Color.blue");
+                return;
+            } else if (expr.member.lexeme == "green") {
+                result = Value("Color.green");
+                return;
+            } else if (expr.member.lexeme == "black") {
+                result = Value("Color.black");
+                return;
+            } else if (expr.member.lexeme == "white") {
+                result = Value("Color.white");
+                return;
+            }
+            
+            throw std::runtime_error("Unknown implicit member: ." + expr.member.lexeme);
+        }
+    }
+    
     // Check if this is a super member access
     if (auto superExpr = dynamic_cast<const Super*>(expr.object.get())) {
         std::cout << "DEBUG: MemberAccess on Super expression for member: " << expr.member.lexeme << std::endl;
@@ -4153,6 +4249,7 @@ void Interpreter::visit(const MemberAccess& expr) {
     }
     
     result = getMemberValue(object, expr.member.lexeme);
+
 }
 
 // Execute struct initialization: StructName(member1: value1, member2: value2)
@@ -4389,16 +4486,20 @@ Value Interpreter::getMemberValue(const Value& object, const std::string& member
         
         // Try to find extension methods
         std::string mangledName = structValue.structName + "." + memberName;
+        std::cout << "DEBUG: Looking for struct method: " << mangledName << std::endl;
         
         try {
             Value extensionMethod = globals->get(Token(TokenType::Identifier, mangledName, 0));
+            std::cout << "DEBUG: Found method " << mangledName << " with type: " << static_cast<int>(extensionMethod.type) << std::endl;
 
             if (extensionMethod.type == ValueType::Function) {
                 // Return the function directly - the Call visitor will handle self binding
+                std::cout << "DEBUG: Returning function from MemberAccess: " << mangledName << " with type: " << static_cast<int>(extensionMethod.type) << std::endl;
                 return extensionMethod;
             }
         } catch (const std::runtime_error& e) {
-
+            std::cout << "DEBUG: Method " << mangledName << " not found in globals: " << e.what() << std::endl;
+            // Extension method not found, continue to error
         }
         
         throw std::runtime_error("Struct '" + structValue.structName + "' has no member '" + memberName + "'");
@@ -4481,6 +4582,19 @@ Value Interpreter::getMemberValue(const Value& object, const std::string& member
                 // Add other builtin function static method handling here as needed
             }
             throw std::runtime_error("Builtin function '" + str + "' has no member '" + memberName + "'");
+        }
+        
+        // Handle UIApplication.shared special case
+        if (str == "UIApplication.shared") {
+            if (memberName == "setRootView") {
+                // Return a special callable for UIApplication.shared.setRootView
+                return Value("<builtin_method:UIApplication.shared.setRootView>");
+            } else if (memberName == "run") {
+                // Return a special callable for UIApplication.shared.run
+                return Value("<builtin_method:UIApplication.shared.run>");
+            } else {
+                throw std::runtime_error("UIApplication.shared has no member '" + memberName + "'");
+            }
         }
         
         // Check if this is a UI component string (including chained methods)
@@ -4675,6 +4789,24 @@ void Interpreter::visit(const ExtensionStmt& stmt) {
     // Get existing property managers for the extended type
     auto* structPropManager = getStructPropertyManager(stmt.typeName.lexeme);
     auto* classPropManager = getClassPropertyManager(stmt.typeName.lexeme);
+    
+    // Check if this is a builtin type that needs a property manager
+    bool isBuiltinType = false;
+    if (!structPropManager && !classPropManager) {
+        // Check if this is a builtin type like Color or Font
+        try {
+            Value builtinMarker = globals->get(Token{TokenType::Identifier, "__builtin_" + stmt.typeName.lexeme, 0});
+            if (builtinMarker.type == ValueType::Bool && std::get<bool>(builtinMarker.value)) {
+                isBuiltinType = true;
+                // Create a struct property manager for the builtin type
+                auto propManager = std::make_unique<PropertyManager>();
+                structPropertyManagers[stmt.typeName.lexeme] = std::move(propManager);
+                structPropManager = getStructPropertyManager(stmt.typeName.lexeme);
+            }
+        } catch (const std::runtime_error&) {
+            // Not a builtin type
+        }
+    }
     
     if (!structPropManager && !classPropManager) {
         throw std::runtime_error("Cannot extend unknown type '" + stmt.typeName.lexeme + "'");
@@ -5559,7 +5691,7 @@ void Interpreter::registerBuiltinFunctions() {
     globals->define("__builtin_VStack", Value(true));
     globals->define("__builtin_HStack", Value(true));
     globals->define("__builtin_Color", Value(true));
-    // Note: __builtin_Font removed to avoid conflict with Font string registration
+    globals->define("__builtin_Font", Value(true));
     globals->define("__builtin_UIApplication", Value(true));
     
     std::cout << "Registered builtin function: writeFile" << std::endl;

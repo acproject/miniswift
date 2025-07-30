@@ -2203,6 +2203,86 @@ void Interpreter::visit(const Call &expr) {
       result = Value("Color.green");
       return;
     }
+    if (calleeStr == "Color.black") {
+      result = Value("Color.black");
+      return;
+    }
+    if (calleeStr == "Color.white") {
+      result = Value("Color.white");
+      return;
+    }
+    if (calleeStr == "Color.gray") {
+      result = Value("Color.gray");
+      return;
+    }
+    if (calleeStr == "Color.orange") {
+      result = Value("Color.orange");
+      return;
+    }
+    if (calleeStr == "Color.yellow") {
+      result = Value("Color.yellow");
+      return;
+    }
+    if (calleeStr == "Color.pink") {
+      result = Value("Color.pink");
+      return;
+    }
+    if (calleeStr == "Color.purple") {
+      result = Value("Color.purple");
+      return;
+    }
+    if (calleeStr == "Color.clear") {
+      result = Value("Color.clear");
+      return;
+    }
+    if (calleeStr == "Color.primary") {
+      result = Value("Color.primary");
+      return;
+    }
+    if (calleeStr == "Color.secondary") {
+      result = Value("Color.secondary");
+      return;
+    }
+    if (calleeStr == "Color.black") {
+      result = Value("Color.black");
+      return;
+    }
+    if (calleeStr == "Color.white") {
+      result = Value("Color.white");
+      return;
+    }
+    if (calleeStr == "Color.gray") {
+      result = Value("Color.gray");
+      return;
+    }
+    if (calleeStr == "Color.orange") {
+      result = Value("Color.orange");
+      return;
+    }
+    if (calleeStr == "Color.yellow") {
+      result = Value("Color.yellow");
+      return;
+    }
+    if (calleeStr == "Color.pink") {
+      result = Value("Color.pink");
+      return;
+    }
+    if (calleeStr == "Color.purple") {
+      result = Value("Color.purple");
+      return;
+    }
+    if (calleeStr == "Color.clear") {
+      result = Value("Color.clear");
+      return;
+    }
+    if (calleeStr == "Color.primary") {
+      result = Value("Color.primary");
+      return;
+    }
+    if (calleeStr == "Color.secondary") {
+      result = Value("Color.secondary");
+      return;
+    }
   }
 
   // Debug: print callee type
@@ -3418,8 +3498,13 @@ void Interpreter::visit(const LabeledCall &expr) {
       } else if (objectStr.find("<builtin_function:Color>") !=
                      std::string::npos &&
                  (memberName == "red" || memberName == "blue" ||
-                  memberName == "green")) {
-        // Handle Color.red, Color.blue, Color.green calls
+                  memberName == "green" || memberName == "black" ||
+                  memberName == "white" || memberName == "gray" ||
+                  memberName == "orange" || memberName == "yellow" ||
+                  memberName == "pink" || memberName == "purple" ||
+                  memberName == "clear" || memberName == "primary" ||
+                  memberName == "secondary")) {
+        // Handle Color static member calls
         if (expr.arguments.size() != 0) {
           throw std::runtime_error("Color." + memberName +
                                    " expects no arguments.");
@@ -4616,6 +4701,27 @@ void Interpreter::visit(const MemberAccess &expr) {
       } else if (expr.member.lexeme == "gray") {
         result = Value("Color.gray");
         return;
+      } else if (expr.member.lexeme == "orange") {
+        result = Value("Color.orange");
+        return;
+      } else if (expr.member.lexeme == "yellow") {
+        result = Value("Color.yellow");
+        return;
+      } else if (expr.member.lexeme == "pink") {
+        result = Value("Color.pink");
+        return;
+      } else if (expr.member.lexeme == "purple") {
+        result = Value("Color.purple");
+        return;
+      } else if (expr.member.lexeme == "clear") {
+        result = Value("Color.clear");
+        return;
+      } else if (expr.member.lexeme == "primary") {
+        result = Value("Color.primary");
+        return;
+      } else if (expr.member.lexeme == "secondary") {
+        result = Value("Color.secondary");
+        return;
       }
 
       throw std::runtime_error("Unknown implicit member: ." +
@@ -4676,6 +4782,27 @@ void Interpreter::visit(const MemberAccess &expr) {
         return;
       } else if (expr.member.lexeme == "gray") {
         result = Value("Color.gray");
+        return;
+      } else if (expr.member.lexeme == "orange") {
+        result = Value("Color.orange");
+        return;
+      } else if (expr.member.lexeme == "yellow") {
+        result = Value("Color.yellow");
+        return;
+      } else if (expr.member.lexeme == "pink") {
+        result = Value("Color.pink");
+        return;
+      } else if (expr.member.lexeme == "purple") {
+        result = Value("Color.purple");
+        return;
+      } else if (expr.member.lexeme == "clear") {
+        result = Value("Color.clear");
+        return;
+      } else if (expr.member.lexeme == "primary") {
+        result = Value("Color.primary");
+        return;
+      } else if (expr.member.lexeme == "secondary") {
+        result = Value("Color.secondary");
         return;
       }
     }

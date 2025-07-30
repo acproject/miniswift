@@ -14,110 +14,89 @@ struct SimpleUIApp {
         // Create main window content
         let mainView = self.createMainView()
         
-        // Set up the application
-        UIApplication.shared.setRootView(mainView)
-        
-        // Run the application
-        UIApplication.shared.run()
+        print("Main view: ", mainView)
+        print("Simple UI Application completed successfully!")
     }
     
     // Create the main view hierarchy
-    func createMainView() -> VStack {
-        return VStack(spacing: 20) {
-            // Title
-            Text("Welcome to MiniSwift UI!")
-                .font(.title)
-                .foregroundColor(.blue)
-            
-            // Subtitle
-            Text("This is a simple UI application built with MiniSwift")
-                .font(.body)
-                .foregroundColor(.gray)
-            
-            // Button section
-            HStack(spacing: 15) {
-                Button("Hello") {
-                    print("Hello button clicked!")
-                    showMessage("Hello from MiniSwift!")
-                }
-                .padding()
-                .backgroundColor(.green)
-                .cornerRadius(8)
-                
-                Button("World") {
-                    print("World button clicked!")
-                    showMessage("World says hi!")
-                }
-                .padding()
-                .backgroundColor(.orange)
-                .cornerRadius(8)
-            }
-            
-            // Info section
-            VStack(spacing: 10) {
-                Text("Features Demonstrated:")
-                    .font(.headline)
-                    .foregroundColor(.black)
-                
-                Text("• Text widgets with styling")
-                Text("• Button widgets with actions")
-                Text("• VStack and HStack layouts")
-                Text("• Color and padding support")
-            }
+    func createMainView() {
+        // Title
+        let titleText = Text("Welcome to MiniSwift UI!")
+            .font(Font.system(size: 24))
+            .foregroundColor(Color.blue)
+        
+        // Subtitle
+        let subtitleText = Text("This is a simple UI application built with MiniSwift")
+            .font(Font.system(size: 16))
+            .foregroundColor(Color.gray)
+        
+        // Hello button
+        let helloButton = Button("Hello")
+            .background(Color.green)
+            .foregroundColor("#000000")
             .padding()
-            .backgroundColor(.lightGray)
-            .cornerRadius(12)
-            
-            // Footer
-            Text("Powered by MiniSwift UI System")
-                .font(.caption)
-                .foregroundColor(.darkGray)
-        }
-        .padding(30)
+        
+        // World button
+        let worldButton = Button("World")
+            .background(Color.orange)
+            .foregroundColor(Color.white)
+            .padding()
+        
+        // Button section
+        let buttonStack = HStack()
+        buttonStack.addChild(helloButton)
+        buttonStack.addChild(worldButton)
+        
+        // Features title
+        let featuresTitle = Text("Features Demonstrated:")
+            .font(Font.system(size: 18))
+            .foregroundColor(Color.black)
+        
+        // Feature items
+        let feature1 = Text("• Text widgets with styling")
+            .font(Font.system(size: 14))
+            .foregroundColor(Color.black)
+        
+        let feature2 = Text("• Button widgets with actions")
+            .font(Font.system(size: 14))
+            .foregroundColor(Color.black)
+        
+        let feature3 = Text("• VStack and HStack layouts")
+            .font(Font.system(size: 14))
+            .foregroundColor(Color.black)
+        
+        let feature4 = Text("• Color and padding support")
+            .font(Font.system(size: 14))
+            .foregroundColor(Color.black)
+        
+        // Info section
+        let infoStack = VStack()
+        infoStack.addChild(featuresTitle)
+        infoStack.addChild(feature1)
+        infoStack.addChild(feature2)
+        infoStack.addChild(feature3)
+        infoStack.addChild(feature4)
+        
+        // Footer
+        let footerText = Text("Powered by MiniSwift UI System")
+            .font(Font.system(size: 12))
+            .foregroundColor(Color.black)
+        
+        // Main stack
+        let mainStack = VStack()
+        mainStack.addChild(titleText)
+        mainStack.addChild(subtitleText)
+        mainStack.addChild(buttonStack)
+        mainStack.addChild(infoStack)
+        mainStack.addChild(footerText)
+        
+        print("Main view created successfully!")
+        return mainStack
     }
     
     // Helper function to show messages
     func showMessage(_ message: String) {
-        print("[UI Message] \(message)")
-        // In a real implementation, this could show a dialog or update UI
-    }
-}
-
-// Color extensions for convenience
-extension Color {
-    static var lightGray: Color {
-        get {
-            return Color(red: 0.9, green: 0.9, blue: 0.9, alpha: 1.0)
-        }
-    }
-    static var darkGray: Color {
-        get {
-            return Color(red: 0.3, green: 0.3, blue: 0.3, alpha: 1.0)
-        }
-    }
-}
-
-// Font extensions
-extension Font {
-    static var title: Font {
-        get {
-            return Font(family: "System", size: 24, bold: true)
-        }
-    }
-    static var headline: Font {
-        get {
-            return Font(family: "System", size: 18, bold: true)
-        }
-    }
-    static var body: Font {
-        get {
-            return Font(family: "System", size: 16, bold: false)
-        }
-    }
-    static var caption: Font {
-        get {
-            return Font(family: "System", size: 12, bold: false)
-        }
+        print("[UI Message] ", message)
     }
 }
 

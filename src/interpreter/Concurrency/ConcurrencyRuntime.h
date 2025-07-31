@@ -528,10 +528,10 @@ Awaitable<T> make_awaitable(std::future<T> future) {
 }
 #endif // __cpp_impl_coroutine
 
-} // namespace miniswift
-
 // Global convenience functions
 void initialize_concurrency_runtime(size_t num_threads = std::thread::hardware_concurrency());
 void shutdown_concurrency_runtime();
+
+} // namespace miniswift
 
 #endif // MINISWIFT_CONCURRENCY_RUNTIME_H

@@ -1,6 +1,10 @@
 #include "GTK4Backend.h"
+#include "../interpreter/Concurrency/ConcurrencyRuntime.h"
 #include <iostream>
 #include <cstring>
+#include <thread>
+#include <chrono>
+#include <future>
 
 // Only include GTK headers if available
 #ifdef HAVE_GTK4
@@ -336,26 +340,93 @@ namespace MiniSwift {
             
             bool GTK4Application::initialize(int argc, char** argv) {
                 if (initialized_) {
+                    std::cout << "[GTK4Application] Already initialized, returning true" << std::endl;
                     return true;
                 }
                 
-                std::cout << "[GTK4Application] Initializing GTK4 application..." << std::endl;
+                std::cout << "[GTK4Application] Starting GTK4 initialization..." << std::endl;
+                std::cout << "[GTK4Application] Thread ID: " << std::this_thread::get_id() << std::endl;
+                std::cout << "[GTK4Application] argc: " << argc << std::endl;
                 
-#ifdef HAVE_GTK4
-                gtkApp_ = gtk_application_new("com.miniswift.ui", G_APPLICATION_DEFAULT_FLAGS);
-                if (!gtkApp_) {
-                    std::cerr << "[GTK4Application] Failed to create GTK application" << std::endl;
-                    return false;
+                // 初始化并发运行时
+                try {
+                    std::cout << "[GTK4Application] Initializing concurrency runtime..." << std::endl;
+                    miniswift::initialize_concurrency_runtime();
+                    std::cout << "[GTK4Application] Concurrency runtime initialized successfully" << std::endl;
+                } catch (const std::exception& e) {
+                    std::cerr << "[GTK4Application] Failed to initialize concurrency runtime: " << e.what() << std::endl;
+                    // Continue without concurrency runtime
                 }
                 
-                g_signal_connect(gtkApp_, "activate", G_CALLBACK(onActivate), this);
-                g_signal_connect(gtkApp_, "shutdown", G_CALLBACK(onShutdown), this);
+#ifdef HAVE_GTK4
+                std::cout << "[GTK4Application] GTK4 is available, proceeding with real initialization" << std::endl;
+                
+                // Use async initialization with timeout to prevent hanging
+                try {
+                    auto& runtime = miniswift::ConcurrencyRuntime::get_instance();
+                    
+                    auto init_future = runtime.async(miniswift::TaskPriority::UserInteractive, [this]() {
+                        std::cout << "[GTK4Application] GTK4 init task running on thread: " << std::this_thread::get_id() << std::endl;
+                        
+                        std::cout << "[GTK4Application] Creating GTK application..." << std::endl;
+                        gtkApp_ = gtk_application_new("com.miniswift.ui", G_APPLICATION_DEFAULT_FLAGS);
+                        
+                        if (!gtkApp_) {
+                            std::cerr << "[GTK4Application] Failed to create GTK application" << std::endl;
+                            throw std::runtime_error("Failed to create GTK application");
+                        }
+                        
+                        std::cout << "[GTK4Application] GTK application created successfully" << std::endl;
+                        std::cout << "[GTK4Application] Connecting signals..." << std::endl;
+                        
+                        g_signal_connect(gtkApp_, "activate", G_CALLBACK(onActivate), this);
+                        g_signal_connect(gtkApp_, "shutdown", G_CALLBACK(onShutdown), this);
+                        
+                        std::cout << "[GTK4Application] Signals connected successfully" << std::endl;
+                    });
+                    
+                    // Wait for initialization with timeout
+                    std::cout << "[GTK4Application] Waiting for GTK4 initialization (5 second timeout)..." << std::endl;
+                    auto status = init_future.wait_for(std::chrono::seconds(5));
+                    
+                    if (status == std::future_status::timeout) {
+                        std::cerr << "[GTK4Application] GTK4 initialization timed out!" << std::endl;
+                        std::cerr << "[GTK4Application] This usually indicates GTK4 is not properly installed or configured" << std::endl;
+                        return false;
+                    } else if (status == std::future_status::ready) {
+                        try {
+                            init_future.get(); // This will throw if there was an exception
+                            std::cout << "[GTK4Application] GTK4 initialization completed successfully" << std::endl;
+                        } catch (const std::exception& e) {
+                            std::cerr << "[GTK4Application] GTK4 initialization failed: " << e.what() << std::endl;
+                            return false;
+                        }
+                    }
+                    
+                } catch (const std::exception& e) {
+                    std::cerr << "[GTK4Application] Error during async GTK4 initialization: " << e.what() << std::endl;
+                    // Fallback to synchronous initialization
+                    std::cout << "[GTK4Application] Falling back to synchronous GTK4 initialization..." << std::endl;
+                    
+                    gtkApp_ = gtk_application_new("com.miniswift.ui", G_APPLICATION_DEFAULT_FLAGS);
+                    if (!gtkApp_) {
+                        std::cerr << "[GTK4Application] Failed to create GTK application (fallback)" << std::endl;
+                        return false;
+                    }
+                    
+                    g_signal_connect(gtkApp_, "activate", G_CALLBACK(onActivate), this);
+                    g_signal_connect(gtkApp_, "shutdown", G_CALLBACK(onShutdown), this);
+                }
+                
 #else
-                std::cout << "[GTK4Application] GTK4 not available, using mock implementation" << std::endl;
+                std::cout << "[GTK4Application] GTK4 not available (HAVE_GTK4 not defined)" << std::endl;
+                std::cout << "[GTK4Application] Using mock implementation" << std::endl;
+                std::cout << "[GTK4Application] To enable GTK4, install GTK4 development libraries and recompile" << std::endl;
                 gtkApp_ = nullptr;
 #endif
                 
                 initialized_ = true;
+                std::cout << "[GTK4Application] GTK4Application initialization completed" << std::endl;
                 return true;
             }
             
@@ -384,15 +455,66 @@ namespace MiniSwift {
             }
             
             void GTK4Application::run() {
+                std::cout << "[GTK4Application] Starting run() method..." << std::endl;
+                std::cout << "[GTK4Application] Thread ID: " << std::this_thread::get_id() << std::endl;
+                
                 if (!gtkApp_) {
-                    std::cout << "[GTK4Application] Running in mock mode" << std::endl;
+                    std::cout << "[GTK4Application] Running in mock mode (gtkApp_ is nullptr)" << std::endl;
+                    std::cout << "[GTK4Application] This means GTK4 is not available or initialization failed" << std::endl;
+                    std::cout << "[GTK4Application] Mock mode completed successfully" << std::endl;
                     return;
                 }
                 
 #ifdef HAVE_GTK4
-                std::cout << "[GTK4Application] Starting GTK4 main loop..." << std::endl;
-                g_application_run(G_APPLICATION(gtkApp_), 0, nullptr);
+                std::cout << "[GTK4Application] GTK4 is available, starting main loop..." << std::endl;
+                std::cout << "[GTK4Application] About to call g_application_run()..." << std::endl;
+                
+                // Use async execution with timeout to prevent hanging
+                try {
+                    auto& runtime = miniswift::ConcurrencyRuntime::get_instance();
+                    
+                    auto run_future = runtime.async(miniswift::TaskPriority::UserInteractive, [this]() {
+                        std::cout << "[GTK4Application] GTK4 main loop task running on thread: " << std::this_thread::get_id() << std::endl;
+                        std::cout << "[GTK4Application] Calling g_application_run()..." << std::endl;
+                        
+                        int result = g_application_run(G_APPLICATION(gtkApp_), 0, nullptr);
+                        
+                        std::cout << "[GTK4Application] g_application_run() returned: " << result << std::endl;
+                        return result;
+                    });
+                    
+                    // Wait for GTK main loop with timeout
+                    std::cout << "[GTK4Application] Waiting for GTK4 main loop (10 second timeout)..." << std::endl;
+                    auto status = run_future.wait_for(std::chrono::seconds(10));
+                    
+                    if (status == std::future_status::timeout) {
+                        std::cerr << "[GTK4Application] GTK4 main loop timed out!" << std::endl;
+                        std::cerr << "[GTK4Application] This indicates GTK4 main loop is hanging" << std::endl;
+                        std::cerr << "[GTK4Application] Possible causes: missing display, X11/Wayland issues, or GTK4 configuration problems" << std::endl;
+                    } else if (status == std::future_status::ready) {
+                        try {
+                            int result = run_future.get();
+                            std::cout << "[GTK4Application] GTK4 main loop completed with result: " << result << std::endl;
+                        } catch (const std::exception& e) {
+                            std::cerr << "[GTK4Application] GTK4 main loop failed: " << e.what() << std::endl;
+                        }
+                    }
+                    
+                } catch (const std::exception& e) {
+                    std::cerr << "[GTK4Application] Error during async GTK4 main loop: " << e.what() << std::endl;
+                    // Fallback to synchronous execution
+                    std::cout << "[GTK4Application] Falling back to synchronous GTK4 main loop..." << std::endl;
+                    
+                    int result = g_application_run(G_APPLICATION(gtkApp_), 0, nullptr);
+                    std::cout << "[GTK4Application] Synchronous GTK4 main loop completed with result: " << result << std::endl;
+                }
+                
+#else
+                std::cout << "[GTK4Application] GTK4 not available (HAVE_GTK4 not defined)" << std::endl;
+                std::cout << "[GTK4Application] This is expected if GTK4 development libraries are not installed" << std::endl;
 #endif
+                
+                std::cout << "[GTK4Application] run() method completed" << std::endl;
             }
             
             void GTK4Application::quit() {

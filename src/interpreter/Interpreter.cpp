@@ -4844,8 +4844,8 @@ void Interpreter::visit(const MemberAccess &expr) {
     // Handle Font static members
     if (typeName == "Font") {
       if (expr.member.lexeme == "system") {
-        // Return "Font" so that LabeledCall can handle Font.system calls
-        result = Value("Font");
+        // Return builtin function format so that LabeledCall can handle Font.system calls
+        result = Value("<builtin_function:Font>");
         return;
       } else if (expr.member.lexeme == "title") {
         result = Value("Font.title");

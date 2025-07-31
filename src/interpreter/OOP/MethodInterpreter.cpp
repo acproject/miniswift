@@ -126,6 +126,14 @@ Value MethodInterpreter::getMemberValue(const Value& object, const std::string& 
                 }
             }
         }
+    } else if (object.isUIWidget()) {
+        // Handle UI widget method calls
+        if (memberName == "font" || memberName == "foregroundColor" || 
+            memberName == "padding" || memberName == "background") {
+            // Return a UI method identifier that can be handled by LabeledCall
+            // Use a simple placeholder for the object representation
+            return Value("UIMethod:" + memberName + ":UIWidget");
+        }
     }
     
     // 如果没有找到方法，尝试查找属性

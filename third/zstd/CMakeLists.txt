@@ -40,7 +40,7 @@ if(WIN32)
         message(FATAL_ERROR "zstd依赖未找到，无法继续构建")
     endif()
     
-else()
+elseif(APPLE)
     # 非Windows平台使用源码编译
     message(STATUS "非Windows平台检测到，使用源码编译zstd")
     
@@ -95,7 +95,8 @@ else()
     # 设置变量供父项目使用
     set(ZSTD_LIBRARY "${ZSTD_INSTALL_DIR}/lib/libzstd.a" PARENT_SCOPE)
     set(ZSTD_INCLUDE_DIR "${ZSTD_INSTALL_DIR}/include" PARENT_SCOPE)
-    
+else()
+	find_package(zstd CONFIG)
 endif()
 
 # 导出目标供父项目使用

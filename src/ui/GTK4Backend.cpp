@@ -118,16 +118,10 @@ namespace MiniSwift {
                 // Check if we're in the main thread
                 std::cout << "[DEBUG] Current thread ID: " << std::this_thread::get_id() << std::endl;
                 
-                // Create real GTK4 label widget
-                std::cout << "[DEBUG] Creating real GTK4 label widget" << std::endl;
-                label_ = GTK_LABEL(gtk_label_new(text.c_str()));
-                if (label_) {
-                    setNativeWidget(GTK_WIDGET(label_));
-                    std::cout << "[GTK4TextWidget] Created text widget: \"" << text << "\" (real GTK4)" << std::endl;
-                } else {
-                    std::cout << "[GTK4TextWidget] Failed to create GTK4 label, using mock" << std::endl;
-                    std::cout << "[GTK4TextWidget] Created text widget: \"" << text << "\" (mock)" << std::endl;
-                }
+                // Don't create GTK widget immediately - wait for GTK4 to be fully initialized
+                // The widget will be created in render() when GTK4 is ready
+                label_ = nullptr;
+                std::cout << "[GTK4TextWidget] Created text widget: \"" << text << "\" (deferred GTK4 creation)" << std::endl;
 #else
                 std::cout << "[DEBUG] Using mock mode (HAVE_GTK4 not defined)" << std::endl;
                 label_ = nullptr;
@@ -136,6 +130,27 @@ namespace MiniSwift {
             }
             
             void GTK4TextWidget::render() {
+#ifdef HAVE_GTK4
+                // Create GTK widget if not already created (deferred creation)
+                if (!label_ && !getNativeWidget()) {
+                    // Check if GTK4 application is initialized
+                    GTK4Application& app = GTK4Application::getInstance();
+                    if (!app.isInitialized()) {
+                        std::cout << "[GTK4TextWidget] GTK4 not initialized yet, skipping widget creation" << std::endl;
+                        return;
+                    }
+                    
+                    std::cout << "[GTK4TextWidget] Creating deferred GTK4 label widget" << std::endl;
+                    label_ = GTK_LABEL(gtk_label_new(getText().c_str()));
+                    if (label_) {
+                        setNativeWidget(GTK_WIDGET(label_));
+                        std::cout << "[GTK4TextWidget] Successfully created GTK4 label widget" << std::endl;
+                    } else {
+                        std::cout << "[GTK4TextWidget] Failed to create GTK4 label widget" << std::endl;
+                        return;
+                    }
+                }
+#endif
                 updateGTKText();
                 updateGTKFont();
                 updateGTKColor();
@@ -517,6 +532,10 @@ namespace MiniSwift {
                     std::cout << "[GTK4Application] Error: Failed to create main window" << std::endl;
                     return;
                 }
+                
+                // Render the content to ensure GTK widgets are created
+                std::cout << "[GTK4Application] Rendering content widget" << std::endl;
+                content->render();
                 
                 auto gtk4Content = std::dynamic_pointer_cast<GTK4Widget>(content);
                 if (gtk4Content && gtk4Content->getNativeWidget()) {

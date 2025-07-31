@@ -127,6 +127,9 @@ namespace MiniSwift {
                 void createMainWindow();
                 void setMainWindowContent(std::shared_ptr<UIWidget> content);
                 
+                // Status check
+                bool isInitialized() const { return initialized_; }
+                
                 GtkApplication* getGtkApp() const { return gtkApp_; }
                 GtkWindow* getMainWindow() const { return mainWindow_; }
                 

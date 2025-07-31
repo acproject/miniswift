@@ -187,6 +187,10 @@ namespace MiniSwift {
                     break;
                 case Backend::Mock:
                     std::cout << "[UIIntegration] Setting root widget for Mock" << std::endl;
+                    // Render the widget for Mock backend
+                    if (view) {
+                        view->render();
+                    }
                     UIApplication::getInstance().setRootWidget(view);
                     break;
                 default:

@@ -26,7 +26,7 @@ struct SimpleUIApp {
     }
     
     // Create the main view hierarchy
-    func createMainView() {
+    func createMainView() -> VStack {
         print("[DEBUG] Starting createMainView...")
         
         // Title

@@ -2,6 +2,9 @@
 
 #include "UIRuntime.h"
 #include <memory>
+#include <thread>
+#include <atomic>
+#include <future>
 
 // GTK4 forward declarations (to avoid including GTK headers in this header)
 struct _GtkWidget;
@@ -133,6 +136,15 @@ namespace MiniSwift {
                 GtkApplication* gtkApp_ = nullptr;
                 GtkWindow* mainWindow_ = nullptr;
                 bool initialized_ = false;
+                
+                // Pending content to set when GTK is ready
+                std::shared_ptr<UIWidget> pendingContent_;
+                
+                // Thread management for GTK main loop
+                std::thread gtkThread_;
+                std::atomic<bool> isRunning_{false};
+                std::promise<void> initPromise_;
+                std::future<void> initFuture_;
                 
                 // GTK4 callbacks
                 static void onActivate(GtkApplication* app, gpointer userData);

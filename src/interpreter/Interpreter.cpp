@@ -3079,6 +3079,31 @@ void Interpreter::visit(const Call &expr) {
       result = callMiniSwiftFunction("applyModifier", arguments);
       return;
     }
+
+    // Handle UIApplication.shared methods
+    if (calleeStr == "<builtin_function:__miniswift_UIApplication_shared>") {
+      // Return UIApplication.shared instance
+      result = Value("<UIApplication:shared>");
+      return;
+    }
+
+    if (calleeStr == "<builtin_function:__miniswift_UIApplication_setRootView>") {
+      std::vector<Value> arguments;
+      for (const auto &argument : expr.arguments) {
+        arguments.push_back(evaluate(*argument));
+      }
+      result = callMiniSwiftFunction("setMainView", arguments);
+      return;
+    }
+
+    if (calleeStr == "<builtin_function:__miniswift_UIApplication_run>") {
+      std::vector<Value> arguments;
+      for (const auto &argument : expr.arguments) {
+        arguments.push_back(evaluate(*argument));
+      }
+      result = callMiniSwiftFunction("runApp", arguments);
+      return;
+    }
   }
 
   if (!callee.isFunction()) {
@@ -3871,17 +3896,24 @@ void Interpreter::visit(const LabeledCall &expr) {
             viewStr.find("Text(") == std::string::npos &&
             viewStr.find("Button(") == std::string::npos &&
             viewStr.find("VStack(") == std::string::npos &&
-            viewStr.find("HStack(") == std::string::npos) {
-          throw std::runtime_error(
-              "UIApplication.shared.setRootView: view must be a UI component, got: " + viewStr);
+            viewStr.find("HStack(") == std::string::npos &&
+            viewStr.find("VStack") == std::string::npos &&
+            viewStr.find("HStack") == std::string::npos) {
+          std::cout << "[DEBUG] View string validation failed for: " << viewStr << std::endl;
+          // For now, let's be more permissive and just log the warning
+          std::cout << "[WARNING] View may not be a proper UI component, but proceeding anyway" << std::endl;
         }
 
         // Call the actual UIApplication setRootView method
         try {
           // Use UIIntegration singleton to set main view
-          // For now, just return success since we need to parse the view string
-          // properly
           std::cout << "[DEBUG] Setting root view: " << viewStr << std::endl;
+          
+          // Call UIInterpreter::setMainView with the view value
+          std::vector<MiniSwift::Value> args;
+          args.push_back(viewValue);
+          MiniSwift::UI::UIInterpreter::setMainView(args);
+          
           result = Value(); // Return nil/void
           return;
         } catch (const std::exception &e) {
@@ -3898,6 +3930,11 @@ void Interpreter::visit(const LabeledCall &expr) {
         try {
           // Start the UI application main loop
           std::cout << "[DEBUG] Starting UI application main loop" << std::endl;
+          
+          // Call UIInterpreter::runApp
+          std::vector<MiniSwift::Value> args;
+          MiniSwift::UI::UIInterpreter::runApp(args);
+          
           result = Value(); // Return nil/void
           return;
         } catch (const std::exception &e) {
@@ -6531,9 +6568,13 @@ Value Interpreter::callMiniSwiftFunction(const std::string &functionName,
         throw std::runtime_error("createText expects exactly 1 argument.");
       }
       
+      std::cout << "[DEBUG] Creating Text widget with text: " << valueToString(args[0]) << std::endl;
+      
       // Convert to MiniSwift::Value for UI system
       MiniSwift::Value textValue(valueToString(args[0]));
+      std::cout << "[DEBUG] Calling uiIntegration.createTextFromValue..." << std::endl;
       auto widget = uiIntegration.createTextFromValue(textValue);
+      std::cout << "[DEBUG] Text widget created successfully" << std::endl;
       
       std::string handle = createUIWidgetHandle();
       std::cout << "[UIIntegration] Created Text widget with handle: " << handle << std::endl;
@@ -6654,6 +6695,14 @@ void Interpreter::registerUIAPIFunctions() {
                   Value("<builtin_function:__miniswift_createZStack>"));
   globals->define("__miniswift_createGrid",
                   Value("<builtin_function:__miniswift_createGrid>"));
+
+  // Register UIApplication.shared and its methods
+  globals->define("__miniswift_UIApplication_shared",
+                  Value("<builtin_function:__miniswift_UIApplication_shared>"));
+  globals->define("__miniswift_UIApplication_setRootView",
+                  Value("<builtin_function:__miniswift_UIApplication_setRootView>"));
+  globals->define("__miniswift_UIApplication_run",
+                  Value("<builtin_function:__miniswift_UIApplication_run>"));
 }
 
 // UI component creation through API

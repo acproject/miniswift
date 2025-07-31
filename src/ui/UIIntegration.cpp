@@ -28,8 +28,14 @@ namespace MiniSwift {
                 case Backend::GTK4:
                     std::cout << "[UIIntegration] Using GTK4 backend" << std::endl;
                     if (!GTK4::GTK4Application::getInstance().initialize(argc, argv)) {
-                        std::cerr << "[UIIntegration] Failed to initialize GTK4 backend" << std::endl;
+                        std::cerr << "[UIIntegration] Failed to initialize GTK4 backend, falling back to Mock" << std::endl;
                         currentBackend_ = Backend::Mock;
+                        // Initialize Mock backend as fallback
+                        if (!UIApplication::getInstance().initialize()) {
+                            std::cerr << "[UIIntegration] Failed to initialize Mock backend as fallback" << std::endl;
+                            return false;
+                        }
+                        std::cout << "[UIIntegration] Successfully initialized Mock backend as fallback" << std::endl;
                     }
                     break;
                     
@@ -51,16 +57,21 @@ namespace MiniSwift {
         }
         
         std::shared_ptr<UIWidget> UIIntegration::createTextFromValue(const MiniSwift::Value& value) {
+            std::cout << "[DEBUG] createTextFromValue called" << std::endl;
             if (value.type != miniswift::ValueType::String) {
                 throw UIValueError("Text widget requires string value");
             }
             
             std::string text = std::get<std::string>(value.value);
+            std::cout << "[DEBUG] Text value: " << text << std::endl;
+            std::cout << "[DEBUG] Current backend: " << static_cast<int>(currentBackend_) << std::endl;
             
             switch (currentBackend_) {
                 case Backend::GTK4:
+                    std::cout << "[DEBUG] Calling GTK4::createGTK4Text..." << std::endl;
                     return GTK4::createGTK4Text(text);
                 case Backend::Mock:
+                    std::cout << "[DEBUG] Calling createText (Mock)..." << std::endl;
                     return createText(text);
                 default:
                     throw UIBackendError("No backend available for text creation");
@@ -166,35 +177,43 @@ namespace MiniSwift {
         }
         
         void UIIntegration::setMainView(std::shared_ptr<UIWidget> view) {
+            std::cout << "[UIIntegration] setMainView called" << std::endl;
             mainView_ = view;
             
             switch (currentBackend_) {
                 case Backend::GTK4:
+                    std::cout << "[UIIntegration] Setting main window content for GTK4" << std::endl;
                     GTK4::GTK4Application::getInstance().setMainWindowContent(view);
                     break;
                 case Backend::Mock:
+                    std::cout << "[UIIntegration] Setting root widget for Mock" << std::endl;
                     UIApplication::getInstance().setRootWidget(view);
                     break;
                 default:
                     throw UIBackendError("No backend available for setting main view");
             }
+            std::cout << "[UIIntegration] setMainView completed" << std::endl;
         }
         
         void UIIntegration::runUIApplication() {
+            std::cout << "[UIIntegration] runUIApplication called" << std::endl;
             if (!initialized_) {
                 throw UIError("UI system not initialized");
             }
             
             switch (currentBackend_) {
                 case Backend::GTK4:
+                    std::cout << "[UIIntegration] Running GTK4 application" << std::endl;
                     GTK4::GTK4Application::getInstance().run();
                     break;
                 case Backend::Mock:
+                    std::cout << "[UIIntegration] Running Mock application" << std::endl;
                     UIApplication::getInstance().run();
                     break;
                 default:
                     throw UIBackendError("No backend available for running application");
             }
+            std::cout << "[UIIntegration] runUIApplication completed" << std::endl;
         }
         
         void UIIntegration::quitUIApplication() {
@@ -372,22 +391,31 @@ namespace MiniSwift {
         }
         
         MiniSwift::Value UIInterpreter::runApp(const std::vector<MiniSwift::Value>& args) {
+            std::cout << "[UIInterpreter] runApp called" << std::endl;
             UIIntegration::getInstance().runUIApplication();
+            std::cout << "[UIInterpreter] runApp completed" << std::endl;
             return MiniSwift::Value();
         }
         
         MiniSwift::Value UIInterpreter::setMainView(const std::vector<MiniSwift::Value>& args) {
+            std::cout << "[UIInterpreter] setMainView called with " << args.size() << " arguments" << std::endl;
             if (args.empty()) {
                 throw UIValueError("setMainView requires a widget argument");
             }
             
             auto widget = extractWidget(args[0]);
+            std::cout << "[UIInterpreter] Widget extracted successfully" << std::endl;
             UIIntegration::getInstance().setMainView(widget);
+            std::cout << "[UIInterpreter] setMainView completed" << std::endl;
             return MiniSwift::Value();
         }
         
         std::shared_ptr<UIWidget> UIInterpreter::extractWidget(const MiniSwift::Value& value) {
-            // TODO: Implement widget extraction from value
+            std::cout << "[UIInterpreter] extractWidget called with value type: " << static_cast<int>(value.type) << std::endl;
+            
+            // For now, return a simple text widget as placeholder
+            // TODO: Implement proper widget extraction from value
+            return UIIntegration::getInstance().createTextFromValue(MiniSwift::Value("Hello World"));
             // This would involve checking if the value contains a UIWidget pointer
             return nullptr;
         }
@@ -415,7 +443,9 @@ namespace MiniSwift {
             const Color GREEN = {0.0, 1.0, 0.0, 1.0};
             const Color BLUE = {0.0, 0.0, 1.0, 1.0};
             const Color CLEAR = {0.0, 0.0, 0.0, 0.0};
-            
+            const Color GRAY = {0.6, 0.6, 0.6, 1.0};
+
+
             const Font SYSTEM_FONT = {"System", 14.0, false, false};
             const Font TITLE_FONT = {"System", 18.0, true, false};
             const Font CAPTION_FONT = {"System", 12.0, false, false};

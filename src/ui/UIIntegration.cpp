@@ -51,11 +51,11 @@ namespace MiniSwift {
         }
         
         std::shared_ptr<UIWidget> UIIntegration::createTextFromValue(const MiniSwift::Value& value) {
-            if (value.getType() != MiniSwift::ValueType::String) {
+            if (value.type != miniswift::ValueType::String) {
                 throw UIValueError("Text widget requires string value");
             }
             
-            std::string text = value.getString();
+            std::string text = std::get<std::string>(value.value);
             
             switch (currentBackend_) {
                 case Backend::GTK4:
@@ -68,15 +68,15 @@ namespace MiniSwift {
         }
         
         std::shared_ptr<UIWidget> UIIntegration::createButtonFromValue(const MiniSwift::Value& titleValue, const MiniSwift::Value& actionValue) {
-            if (titleValue.getType() != MiniSwift::ValueType::String) {
+            if (titleValue.type != miniswift::ValueType::String) {
                 throw UIValueError("Button title must be a string");
             }
             
-            std::string title = titleValue.getString();
+            std::string title = std::get<std::string>(titleValue.value);
             
             // Create a callback that handles the action value
             UICallback callback = [actionValue]() {
-                std::cout << "[UIIntegration] Button clicked: " << actionValue.toString() << std::endl;
+                std::cout << "[UIIntegration] Button clicked: " << std::get<std::string>(actionValue.value) << std::endl;
                 // TODO: Execute the action value if it's a function
             };
             
@@ -93,8 +93,8 @@ namespace MiniSwift {
         std::shared_ptr<UIWidget> UIIntegration::createVStackFromValue(const MiniSwift::Value& spacingValue) {
             double spacing = 8.0; // Default spacing
             
-            if (spacingValue.getType() == MiniSwift::ValueType::Double) {
-                spacing = spacingValue.getDouble();
+            if (spacingValue.type == miniswift::ValueType::Double) {
+                spacing = std::get<double>(spacingValue.value);
             }
             
             switch (currentBackend_) {
@@ -110,8 +110,8 @@ namespace MiniSwift {
         std::shared_ptr<UIWidget> UIIntegration::createHStackFromValue(const MiniSwift::Value& spacingValue) {
             double spacing = 8.0; // Default spacing
             
-            if (spacingValue.getType() == MiniSwift::ValueType::Double) {
-                spacing = spacingValue.getDouble();
+            if (spacingValue.type == miniswift::ValueType::Double) {
+                spacing = std::get<double>(spacingValue.value);
             }
             
             switch (currentBackend_) {
@@ -132,7 +132,7 @@ namespace MiniSwift {
         
         Font UIIntegration::valueToFont(const MiniSwift::Value& value) {
             // TODO: Implement font parsing from value
-            return Font{"System", 14.0, Font::Weight::Normal};
+            return Font{"System", 14.0, false, false};
         }
         
         EdgeInsets UIIntegration::valueToEdgeInsets(const MiniSwift::Value& value) {
@@ -173,7 +173,7 @@ namespace MiniSwift {
                     GTK4::GTK4Application::getInstance().setMainWindowContent(view);
                     break;
                 case Backend::Mock:
-                    UIApplication::getInstance().setMainView(view);
+                    UIApplication::getInstance().setRootWidget(view);
                     break;
                 default:
                     throw UIBackendError("No backend available for setting main view");
@@ -416,9 +416,9 @@ namespace MiniSwift {
             const Color BLUE = {0.0, 0.0, 1.0, 1.0};
             const Color CLEAR = {0.0, 0.0, 0.0, 0.0};
             
-            const Font SYSTEM_FONT = {"System", 14.0, Font::Weight::Normal};
-            const Font TITLE_FONT = {"System", 18.0, Font::Weight::Bold};
-            const Font CAPTION_FONT = {"System", 12.0, Font::Weight::Normal};
+            const Font SYSTEM_FONT = {"System", 14.0, false, false};
+            const Font TITLE_FONT = {"System", 18.0, true, false};
+            const Font CAPTION_FONT = {"System", 12.0, false, false};
             
             const double DEFAULT_SPACING = 8.0;
             const EdgeInsets DEFAULT_PADDING = {8.0, 8.0, 8.0, 8.0};

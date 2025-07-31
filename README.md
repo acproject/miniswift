@@ -68,6 +68,10 @@ cd build_windows
 # 配置项目 (需要预先安装 vcpkg 和 LLVM)
 cmake .. -DCMAKE_TOOLCHAIN_FILE=D:\vcpkg\scripts\buildsystems\vcpkg.cmake # linux 可以增加 -DVCPKG_TARGET_TRIPLET=x64-windows-static
 
+```cmd
+cmake -B build -S . -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=E:/vcpkg/scripts/buildsystems/vcpkg.cmake
+```
+
 # 构建项目
 cmake --build . --config Release --parallel 
 ```

@@ -110,7 +110,7 @@ set(NETWORK_SOURCES
 set(UI_SOURCES
     src/ui/UIRuntime.cpp
     src/ui/GTK4Backend.cpp
-    # src/ui/UIIntegration.cpp  # Temporarily disabled due to Value type dependencies
+    src/ui/UIIntegration.cpp
 )
 
 set(SEMANTIC_SOURCES
@@ -264,43 +264,43 @@ set(ALL_LIBS ${ZSTD_LIBRARY} ${llvm_libs})
 
 # Check for GTK4 availability
 if(WIN32)
-    # 首先尝试使用 vcpkg 安装的 GTK4
-    set(VCPKG_GTK4_ROOT "E:/vcpkg/installed/x64-windows")
-    if(EXISTS "${VCPKG_GTK4_ROOT}/include/gtk-4.0")
+    # 直接使用 vcpkg 安装的 GTK4 路径
+    set(VCPKG_ROOT "E:/vcpkg/installed/x64-windows")
+    if(EXISTS "${VCPKG_ROOT}/include/gtk-4.0")
         message(STATUS "Found vcpkg GTK4 installation")
         set(GTK4_FOUND TRUE)
-        set(GTK4_INCLUDE_DIRS 
-            "${VCPKG_GTK4_ROOT}/include/gtk-4.0"
-            "${VCPKG_GTK4_ROOT}/include/gdk-4.0"
-            "${VCPKG_GTK4_ROOT}/include/glib-2.0"
-            "${VCPKG_GTK4_ROOT}/lib/glib-2.0/include"
-            "${VCPKG_GTK4_ROOT}/include/pango-1.0"
-            "${VCPKG_GTK4_ROOT}/include/harfbuzz"
-            "${VCPKG_GTK4_ROOT}/include/cairo"
-            "${VCPKG_GTK4_ROOT}/include/gdk-pixbuf-2.0"
-            "${VCPKG_GTK4_ROOT}/include/atk-1.0"
+        set(GTK4_VERSION "4.16.3")
+        
+        # 设置包含目录
+        set(GTK4_INCLUDE_DIRS
+            "${VCPKG_ROOT}/include/gtk-4.0"
+            "${VCPKG_ROOT}/include/glib-2.0"
+            "${VCPKG_ROOT}/lib/glib-2.0/include"
+            "${VCPKG_ROOT}/include/pango-1.0"
+            "${VCPKG_ROOT}/include/harfbuzz"
+            "${VCPKG_ROOT}/include/gdk-pixbuf-2.0"
+            "${VCPKG_ROOT}/include/cairo"
+            "${VCPKG_ROOT}/include/atk-1.0"
+            "${VCPKG_ROOT}/include/graphene-1.0"
+            "${VCPKG_ROOT}/lib/graphene-1.0/include"
         )
-        set(GTK4_LIBRARY_DIRS "${VCPKG_GTK4_ROOT}/lib")
-        set(GTK4_LIBRARIES 
-            gtk-4 glib-2.0 gobject-2.0 gio-2.0 intl
-            pango-1.0 pangocairo-1.0 harfbuzz atk-1.0
-            cairo gdk_pixbuf-2.0
+        
+        # 设置库目录和库
+        set(GTK4_LIBRARY_DIRS "${VCPKG_ROOT}/lib")
+        set(GTK4_LIBRARIES
+            gtk-4 glib-2.0 gobject-2.0 gio-2.0
+            pango-1.0 pangocairo-1.0 harfbuzz
+            gdk_pixbuf-2.0 cairo atk-1.0
         )
+        
+        # 设置编译标志
+        set(GTK4_CFLAGS_OTHER "")
     else()
         # 回退到 pkg-config
+        set(ENV{PKG_CONFIG_PATH} "E:/vcpkg/installed/x64-windows/lib/pkgconfig")
         find_package(PkgConfig QUIET)
         if(PKG_CONFIG_FOUND)
             pkg_check_modules(GTK4 QUIET gtk4)
-        endif()
-        
-        # 如果 pkg-config 找不到，尝试直接查找 GTK4
-        if(NOT GTK4_FOUND)
-            find_package(gtk4 QUIET)
-            if(gtk4_FOUND)
-                set(GTK4_FOUND TRUE)
-                set(GTK4_LIBRARIES gtk4::gtk4)
-                message(STATUS "GTK4 found via find_package")
-            endif()
         endif()
     endif()
 else()
@@ -352,15 +352,21 @@ endif()
 if(GTK4_FOUND)
     message(STATUS "GTK4 found: ${GTK4_VERSION}")
     add_definitions(-DHAVE_GTK4)
-    if(WIN32 AND TARGET gtk4::gtk4)
-        # vcpkg 方式
+    if(WIN32 AND TARGET gtk::gtk)
+        # vcpkg 方式 - 使用 gtk::gtk 目标
+        target_link_libraries(miniswift PRIVATE gtk::gtk)
+        message(STATUS "Linking with vcpkg GTK target: gtk::gtk")
+    elseif(WIN32 AND TARGET gtk4::gtk4)
+        # 备用 vcpkg 方式
         target_link_libraries(miniswift PRIVATE gtk4::gtk4)
+        message(STATUS "Linking with vcpkg GTK target: gtk4::gtk4")
     else()
         # pkg-config 方式
         include_directories(${GTK4_INCLUDE_DIRS})
         link_directories(${GTK4_LIBRARY_DIRS})
         add_compile_options(${GTK4_CFLAGS_OTHER})
         target_link_libraries(miniswift PRIVATE ${GTK4_LIBRARIES})
+        message(STATUS "Linking with pkg-config GTK libraries")
     endif()
 else()
     message(STATUS "GTK4 not found, UI will use mock implementation")

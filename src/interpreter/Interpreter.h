@@ -9,6 +9,7 @@
 #include "OOP/Inheritance.h"
 #include "OOP/Subscript.h"
 #include "OOP/Optional.h"
+#include "../ui/UIIntegration.h"
 #include <memory>
 #include <unordered_map>
 #include <stack>

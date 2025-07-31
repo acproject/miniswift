@@ -11,8 +11,9 @@
 
 // Forward declarations
 namespace MiniSwift {
-    class Value;
-    class Environment;
+    // Type alias to bridge miniswift::Value to MiniSwift::Value
+    using Value = ::miniswift::Value;
+    using Environment = ::miniswift::Environment;
 }
 
 namespace MiniSwift {

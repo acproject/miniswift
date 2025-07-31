@@ -152,77 +152,11 @@ namespace MiniSwift {
             std::vector<std::shared_ptr<UIWidget>> children_;
         };
         
-        // Text widget
-        class TextWidget : public UIWidget {
-        public:
-            TextWidget(const std::string& text) : UIWidget(WidgetType::Text), text_(text) {}
-            
-            void setText(const std::string& text) { text_ = text; }
-            std::string getText() const { return text_; }
-            
-            void setFont(const Font& font) { font_ = font; }
-            Font getFont() const { return font_; }
-            
-            void setTextColor(const Color& color) { textColor_ = color; }
-            Color getTextColor() const { return textColor_; }
-            
-            void render() override;
-            void layout() override;
-            
-        private:
-            std::string text_;
-            Font font_ = Font::body();
-            Color textColor_ = Color::black();
-        };
-        
-        // Button widget
-        class ButtonWidget : public UIWidget {
-        public:
-            ButtonWidget(const std::string& title, UICallback callback = nullptr)
-                : UIWidget(WidgetType::Button), title_(title), callback_(callback) {}
-            
-            void setTitle(const std::string& title) { title_ = title; }
-            std::string getTitle() const { return title_; }
-            
-            void setCallback(UICallback callback) { callback_ = callback; }
-            void onClick() { if (callback_) callback_(); }
-            
-            void render() override;
-            void layout() override;
-            
-        private:
-            std::string title_;
-            UICallback callback_;
-        };
-        
-        // Container widgets
-        class VStackWidget : public UIWidget {
-        public:
-            VStackWidget(double spacing = 0) : UIWidget(WidgetType::VStack), spacing_(spacing) {}
-            
-            void setSpacing(double spacing) { spacing_ = spacing; }
-            double getSpacing() const { return spacing_; }
-            
-            void render() override;
-            void layout() override;
-            
-        private:
-            double spacing_;
-        };
-        
-        class HStackWidget : public UIWidget {
-        public:
-            HStackWidget(double spacing = 0) : UIWidget(WidgetType::HStack), spacing_(spacing) {}
-            
-            void setSpacing(double spacing) { spacing_ = spacing; }
-            double getSpacing() const { return spacing_; }
-            
-            void render() override;
-            void layout() override;
-            
-        private:
-            double spacing_;
-        };
+        // Forward declarations for UI widgets
+        class TextWidget;
+        class ButtonWidget;
+        class VStackWidget;
+        class HStackWidget;
         
         // UI Application manager
         class UIApplication {
@@ -245,11 +179,11 @@ namespace MiniSwift {
             bool running_ = false;
         };
         
-        // Factory functions for creating widgets
-        std::shared_ptr<TextWidget> createText(const std::string& text);
-        std::shared_ptr<ButtonWidget> createButton(const std::string& title, UICallback callback = nullptr);
-        std::shared_ptr<VStackWidget> createVStack(double spacing = 0);
-        std::shared_ptr<HStackWidget> createHStack(double spacing = 0);
+        // Factory functions for creating widgets (declared in individual widget files)
+        // std::shared_ptr<TextWidget> createText(const std::string& text);
+        // std::shared_ptr<ButtonWidget> createButton(const std::string& title, UICallback callback = nullptr);
+        // std::shared_ptr<VStackWidget> createVStack(double spacing = 0);
+        // std::shared_ptr<HStackWidget> createHStack(double spacing = 0);
         
     } // namespace UI
 } // namespace MiniSwift

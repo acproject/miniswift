@@ -111,6 +111,10 @@ set(UI_SOURCES
     src/ui/UIRuntime.cpp
     src/ui/GTK4Backend.cpp
     src/ui/UIIntegration.cpp
+    src/ui/TextWidget.cpp
+    src/ui/ButtonWidget.cpp
+    src/ui/VStackWidget.cpp
+    src/ui/HStackWidget.cpp
 )
 
 set(SEMANTIC_SOURCES

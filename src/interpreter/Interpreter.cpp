@@ -2817,19 +2817,11 @@ void Interpreter::visit(const Call &expr) {
             globals->get(Token{TokenType::Identifier, "__builtin_Text", 0});
         if (builtinMarker.type == ValueType::Bool &&
             std::get<bool>(builtinMarker.value)) {
-          if (expr.arguments.size() != 1) {
-            throw std::runtime_error(
-                "Text expects exactly 1 argument: text content");
+          std::vector<Value> arguments;
+          for (const auto &argument : expr.arguments) {
+            arguments.push_back(evaluate(*argument));
           }
-
-          Value textValue = evaluate(*expr.arguments[0]);
-          if (textValue.type != ValueType::String) {
-            throw std::runtime_error("Text: content must be a string");
-          }
-
-          // Create a UI component value
-          result =
-              Value("<UI:Text:" + std::get<std::string>(textValue.value) + ">");
+          result = callMiniSwiftFunction("createText", arguments);
           return;
         }
       } catch (const std::runtime_error &) {
@@ -2842,18 +2834,11 @@ void Interpreter::visit(const Call &expr) {
             globals->get(Token{TokenType::Identifier, "__builtin_Button", 0});
         if (builtinMarker.type == ValueType::Bool &&
             std::get<bool>(builtinMarker.value)) {
-          if (expr.arguments.size() < 1) {
-            throw std::runtime_error("Button expects at least 1 argument");
+          std::vector<Value> arguments;
+          for (const auto &argument : expr.arguments) {
+            arguments.push_back(evaluate(*argument));
           }
-
-          Value titleValue = evaluate(*expr.arguments[0]);
-          std::string buttonStr = "Button(" + valueToString(titleValue);
-          if (expr.arguments.size() > 1) {
-            Value actionValue = evaluate(*expr.arguments[1]);
-            buttonStr += ", action: " + valueToString(actionValue);
-          }
-          buttonStr += ")";
-          result = Value(buttonStr);
+          result = callMiniSwiftFunction("createButton", arguments);
           return;
         }
       } catch (const std::runtime_error &) {
@@ -2866,7 +2851,11 @@ void Interpreter::visit(const Call &expr) {
             globals->get(Token{TokenType::Identifier, "__builtin_VStack", 0});
         if (builtinMarker.type == ValueType::Bool &&
             std::get<bool>(builtinMarker.value)) {
-          result = Value("<UI:VStack>");
+          std::vector<Value> arguments;
+          for (const auto &argument : expr.arguments) {
+            arguments.push_back(evaluate(*argument));
+          }
+          result = callMiniSwiftFunction("createVStack", arguments);
           return;
         }
       } catch (const std::runtime_error &) {
@@ -2879,7 +2868,11 @@ void Interpreter::visit(const Call &expr) {
             globals->get(Token{TokenType::Identifier, "__builtin_HStack", 0});
         if (builtinMarker.type == ValueType::Bool &&
             std::get<bool>(builtinMarker.value)) {
-          result = Value("<UI:HStack>");
+          std::vector<Value> arguments;
+          for (const auto &argument : expr.arguments) {
+            arguments.push_back(evaluate(*argument));
+          }
+          result = callMiniSwiftFunction("createHStack", arguments);
           return;
         }
       } catch (const std::runtime_error &) {
@@ -3883,31 +3876,35 @@ void Interpreter::visit(const LabeledCall &expr) {
         }
 
         Value viewValue = evaluate(*expr.arguments[0]);
-        if (viewValue.type != ValueType::String) {
+        if (viewValue.type != ValueType::String && viewValue.type != ValueType::UIWidget) {
           throw std::runtime_error(
               "UIApplication.shared.setRootView: view must be a UI component");
         }
         
-        std::string viewStr = std::get<std::string>(viewValue.value);
-        // Check if it's actually a UI component string
-        if (viewStr.find("<UI:") == std::string::npos && 
-            viewStr.find("UIMethod:") == std::string::npos &&
-            viewStr.find("UIWidget:") == std::string::npos &&
-            viewStr.find("Text(") == std::string::npos &&
-            viewStr.find("Button(") == std::string::npos &&
-            viewStr.find("VStack(") == std::string::npos &&
-            viewStr.find("HStack(") == std::string::npos &&
-            viewStr.find("VStack") == std::string::npos &&
-            viewStr.find("HStack") == std::string::npos) {
-          std::cout << "[DEBUG] View string validation failed for: " << viewStr << std::endl;
-          // For now, let's be more permissive and just log the warning
-          std::cout << "[WARNING] View may not be a proper UI component, but proceeding anyway" << std::endl;
+        // Handle both String and UIWidget types
+        if (viewValue.type == ValueType::String) {
+          std::string viewStr = std::get<std::string>(viewValue.value);
+          // Check if it's actually a UI component string
+          if (viewStr.find("<UI:") == std::string::npos && 
+              viewStr.find("UIMethod:") == std::string::npos &&
+              viewStr.find("UIWidget:") == std::string::npos &&
+              viewStr.find("Text(") == std::string::npos &&
+              viewStr.find("Button(") == std::string::npos &&
+              viewStr.find("VStack(") == std::string::npos &&
+              viewStr.find("HStack(") == std::string::npos &&
+              viewStr.find("VStack") == std::string::npos &&
+              viewStr.find("HStack") == std::string::npos) {
+            std::cout << "[DEBUG] View string validation failed for: " << viewStr << std::endl;
+            // For now, let's be more permissive and just log the warning
+            std::cout << "[WARNING] View may not be a proper UI component, but proceeding anyway" << std::endl;
+          }
+          std::cout << "[DEBUG] Setting root view (String): " << viewStr << std::endl;
+        } else {
+          std::cout << "[DEBUG] Setting root view (UIWidget): " << "UIWidget object" << std::endl;
         }
 
         // Call the actual UIApplication setRootView method
         try {
-          // Use UIIntegration singleton to set main view
-          std::cout << "[DEBUG] Setting root view: " << viewStr << std::endl;
           
           // Call UIInterpreter::setMainView with the view value
           std::vector<MiniSwift::Value> args;
@@ -6576,9 +6573,10 @@ Value Interpreter::callMiniSwiftFunction(const std::string &functionName,
       auto widget = uiIntegration.createTextFromValue(textValue);
       std::cout << "[DEBUG] Text widget created successfully" << std::endl;
       
-      std::string handle = createUIWidgetHandle();
-      std::cout << "[UIIntegration] Created Text widget with handle: " << handle << std::endl;
-      return Value("<UIWidget:" + handle + ">");
+      // Use UIInterpreter::wrapWidget to create proper UIWidget Value
+      MiniSwift::Value wrappedWidget = MiniSwift::UI::UIInterpreter::wrapWidget(widget);
+      std::cout << "[UIIntegration] Created Text widget and wrapped as UIWidget Value" << std::endl;
+      return wrappedWidget;
       
     } else if (functionName == "createButton") {
       if (args.size() < 1) {
@@ -6591,27 +6589,30 @@ Value Interpreter::callMiniSwiftFunction(const std::string &functionName,
       
       auto widget = uiIntegration.createButtonFromValue(titleValue, actionValue);
       
-      std::string handle = createUIWidgetHandle();
-      std::cout << "[UIIntegration] Created Button widget with handle: " << handle << std::endl;
-      return Value("<UIWidget:" + handle + ">");
+      // Use UIInterpreter::wrapWidget to create proper UIWidget Value
+      MiniSwift::Value wrappedWidget = MiniSwift::UI::UIInterpreter::wrapWidget(widget);
+      std::cout << "[UIIntegration] Created Button widget and wrapped as UIWidget Value" << std::endl;
+      return wrappedWidget;
       
     } else if (functionName == "createVStack") {
       // VStack with default spacing
       MiniSwift::Value spacingValue(8.0);
       auto widget = uiIntegration.createVStackFromValue(spacingValue);
       
-      std::string handle = createUIWidgetHandle();
-      std::cout << "[UIIntegration] Created VStack widget with handle: " << handle << std::endl;
-      return Value("<UIWidget:" + handle + ">");
+      // Use UIInterpreter::wrapWidget to create proper UIWidget Value
+      MiniSwift::Value wrappedWidget = MiniSwift::UI::UIInterpreter::wrapWidget(widget);
+      std::cout << "[UIIntegration] Created VStack widget and wrapped as UIWidget Value" << std::endl;
+      return wrappedWidget;
       
     } else if (functionName == "createHStack") {
       // HStack with default spacing
       MiniSwift::Value spacingValue(8.0);
       auto widget = uiIntegration.createHStackFromValue(spacingValue);
       
-      std::string handle = createUIWidgetHandle();
-      std::cout << "[UIIntegration] Created HStack widget with handle: " << handle << std::endl;
-      return Value("<UIWidget:" + handle + ">");
+      // Use UIInterpreter::wrapWidget to create proper UIWidget Value
+      MiniSwift::Value wrappedWidget = MiniSwift::UI::UIInterpreter::wrapWidget(widget);
+      std::cout << "[UIIntegration] Created HStack widget and wrapped as UIWidget Value" << std::endl;
+      return wrappedWidget;
       
     } else if (functionName == "createSpacer") {
       // Spacer component - for now, create as VStack with flexible spacing

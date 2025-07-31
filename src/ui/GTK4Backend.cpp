@@ -199,16 +199,13 @@ namespace MiniSwift {
                 : ButtonWidget(title, callback), GTK4Widget() {
                 std::cout << "[DEBUG] GTK4ButtonWidget constructor called with title: " << title << std::endl;
 #ifdef HAVE_GTK4
-                // Create real GTK4 button widget
-                std::cout << "[DEBUG] Creating real GTK4 button widget" << std::endl;
-                button_ = GTK_BUTTON(gtk_button_new_with_label(title.c_str()));
-                if (button_) {
-                    setNativeWidget(GTK_WIDGET(button_));
-                    std::cout << "[GTK4ButtonWidget] Created button: \"" << title << "\" (real GTK4)" << std::endl;
-                } else {
-                    std::cout << "[GTK4ButtonWidget] Failed to create GTK4 button, using mock" << std::endl;
-                    std::cout << "[GTK4ButtonWidget] Created button: \"" << title << "\" (mock)" << std::endl;
-                }
+                // Check if we're in the main thread
+                std::cout << "[DEBUG] Current thread ID: " << std::this_thread::get_id() << std::endl;
+                
+                // Don't create GTK widget immediately - wait for GTK4 to be fully initialized
+                // The widget will be created in render() when GTK4 is ready
+                button_ = nullptr;
+                std::cout << "[GTK4ButtonWidget] Created button: \"" << title << "\" (deferred GTK4 creation)" << std::endl;
 #else
                 std::cout << "[DEBUG] Using mock mode (HAVE_GTK4 not defined)" << std::endl;
                 button_ = nullptr;
@@ -217,6 +214,28 @@ namespace MiniSwift {
             }
             
             void GTK4ButtonWidget::render() {
+#ifdef HAVE_GTK4
+                // Create GTK widget if not already created (deferred creation)
+                if (!button_ && !getNativeWidget()) {
+                    // Check if GTK4 application is initialized
+                    GTK4Application& app = GTK4Application::getInstance();
+                    if (!app.isInitialized()) {
+                        std::cout << "[GTK4ButtonWidget] GTK4 not initialized yet, skipping widget creation" << std::endl;
+                        return;
+                    }
+                    
+                    std::cout << "[GTK4ButtonWidget] Creating deferred GTK4 button widget" << std::endl;
+                    button_ = GTK_BUTTON(gtk_button_new_with_label(getTitle().c_str()));
+                    if (button_) {
+                        setNativeWidget(GTK_WIDGET(button_));
+                        connectSignals();
+                        std::cout << "[GTK4ButtonWidget] Successfully created GTK4 button widget" << std::endl;
+                    } else {
+                        std::cout << "[GTK4ButtonWidget] Failed to create GTK4 button widget" << std::endl;
+                        return;
+                    }
+                }
+#endif
                 updateGTKTitle();
                 show();
                 
@@ -263,17 +282,12 @@ namespace MiniSwift {
             GTK4VStackWidget::GTK4VStackWidget(double spacing) 
                 : VStackWidget(spacing), GTK4Widget() {
                 std::cout << "[DEBUG] GTK4VStackWidget constructor called with spacing: " << spacing << std::endl;
+                std::cout << "[DEBUG] Current thread ID: " << std::this_thread::get_id() << std::endl;
 #ifdef HAVE_GTK4
-                // Create real GTK4 vertical box widget
-                std::cout << "[DEBUG] Creating real GTK4 vertical box widget" << std::endl;
-                box_ = GTK_BOX(gtk_box_new(GTK_ORIENTATION_VERTICAL, static_cast<int>(spacing)));
-                if (box_) {
-                    setNativeWidget(GTK_WIDGET(box_));
-                    std::cout << "[GTK4VStackWidget] Created VStack with spacing: " << spacing << " (real GTK4)" << std::endl;
-                } else {
-                    std::cout << "[GTK4VStackWidget] Failed to create GTK4 box, using mock" << std::endl;
-                    std::cout << "[GTK4VStackWidget] Created VStack with spacing: " << spacing << " (mock)" << std::endl;
-                }
+                // Defer GTK widget creation to render() method
+                std::cout << "[DEBUG] Deferring GTK4 vertical box widget creation" << std::endl;
+                box_ = nullptr;
+                std::cout << "[GTK4VStackWidget] Created VStack with spacing: " << spacing << " (deferred creation)" << std::endl;
 #else
                 std::cout << "[DEBUG] Using mock mode (HAVE_GTK4 not defined)" << std::endl;
                 box_ = nullptr;
@@ -282,6 +296,27 @@ namespace MiniSwift {
             }
             
             void GTK4VStackWidget::render() {
+#ifdef HAVE_GTK4
+                // Create GTK widget if not already created (deferred creation)
+                if (!box_ && !getNativeWidget()) {
+                    // Check if GTK4 application is initialized
+                    GTK4Application& app = GTK4Application::getInstance();
+                    if (!app.isInitialized()) {
+                        std::cout << "[GTK4VStackWidget] GTK4 not initialized yet, skipping widget creation" << std::endl;
+                        return;
+                    }
+                    
+                    std::cout << "[GTK4VStackWidget] Creating deferred GTK4 vertical box widget" << std::endl;
+                    box_ = GTK_BOX(gtk_box_new(GTK_ORIENTATION_VERTICAL, static_cast<int>(getSpacing())));
+                    if (box_) {
+                        setNativeWidget(GTK_WIDGET(box_));
+                        std::cout << "[GTK4VStackWidget] Successfully created GTK4 vertical box widget" << std::endl;
+                    } else {
+                        std::cout << "[GTK4VStackWidget] Failed to create GTK4 vertical box widget" << std::endl;
+                        return;
+                    }
+                }
+#endif
                 updateGTKSpacing();
                 
                 // Add children to GTK box
@@ -329,16 +364,13 @@ namespace MiniSwift {
                 : HStackWidget(spacing), GTK4Widget() {
                 std::cout << "[DEBUG] GTK4HStackWidget constructor called with spacing: " << spacing << std::endl;
 #ifdef HAVE_GTK4
-                // Create real GTK4 horizontal box widget
-                std::cout << "[DEBUG] Creating real GTK4 horizontal box widget" << std::endl;
-                box_ = GTK_BOX(gtk_box_new(GTK_ORIENTATION_HORIZONTAL, static_cast<int>(spacing)));
-                if (box_) {
-                    setNativeWidget(GTK_WIDGET(box_));
-                    std::cout << "[GTK4HStackWidget] Created HStack with spacing: " << spacing << " (real GTK4)" << std::endl;
-                } else {
-                    std::cout << "[GTK4HStackWidget] Failed to create GTK4 box, using mock" << std::endl;
-                    std::cout << "[GTK4HStackWidget] Created HStack with spacing: " << spacing << " (mock)" << std::endl;
-                }
+                // Check if we're in the main thread
+                std::cout << "[DEBUG] Current thread ID: " << std::this_thread::get_id() << std::endl;
+                
+                // Don't create GTK widget immediately - wait for GTK4 to be fully initialized
+                // The widget will be created in render() when GTK4 is ready
+                box_ = nullptr;
+                std::cout << "[GTK4HStackWidget] Created HStack with spacing: " << spacing << " (deferred GTK4 creation)" << std::endl;
 #else
                 std::cout << "[DEBUG] Using mock mode (HAVE_GTK4 not defined)" << std::endl;
                 box_ = nullptr;
@@ -347,6 +379,27 @@ namespace MiniSwift {
             }
             
             void GTK4HStackWidget::render() {
+#ifdef HAVE_GTK4
+                // Create GTK widget if not already created (deferred creation)
+                if (!box_ && !getNativeWidget()) {
+                    // Check if GTK4 application is initialized
+                    GTK4Application& app = GTK4Application::getInstance();
+                    if (!app.isInitialized()) {
+                        std::cout << "[GTK4HStackWidget] GTK4 not initialized yet, skipping widget creation" << std::endl;
+                        return;
+                    }
+                    
+                    std::cout << "[GTK4HStackWidget] Creating deferred GTK4 horizontal box widget" << std::endl;
+                    box_ = GTK_BOX(gtk_box_new(GTK_ORIENTATION_HORIZONTAL, static_cast<int>(getSpacing())));
+                    if (box_) {
+                        setNativeWidget(GTK_WIDGET(box_));
+                        std::cout << "[GTK4HStackWidget] Successfully created GTK4 horizontal box widget" << std::endl;
+                    } else {
+                        std::cout << "[GTK4HStackWidget] Failed to create GTK4 horizontal box widget" << std::endl;
+                        return;
+                    }
+                }
+#endif
                 updateGTKSpacing();
                 
                 // Add children to GTK box

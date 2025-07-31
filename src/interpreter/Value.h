@@ -8,6 +8,14 @@
 #include <memory>
 #include "ErrorHandling.h"
 
+// Forward declaration for UI support
+namespace MiniSwift {
+    namespace UI {
+        class UIWidget;
+        class UIWidgetValue;
+    }
+}
+
 namespace miniswift {
 
 // Forward declarations
@@ -209,13 +217,16 @@ enum class ValueType {
   // Special Types
   Any,
   Void,
-  Set
+  Set,
+  
+  // UI Types
+  UIWidget
 };
 
 struct Value {
     ValueType type;
     std::variant<std::monostate, bool, int, double, std::string, Array, Dictionary, Tuple, std::shared_ptr<Function>, std::shared_ptr<EnumValue>, StructValue, std::shared_ptr<ClassValue>, std::shared_ptr<ConstructorValue>, std::shared_ptr<DestructorValue>, OptionalValue, ErrorValue, std::shared_ptr<ValueResult>, 
-                 int8_t, int16_t, int64_t, uint32_t, uint8_t, uint16_t, uint64_t, float, char> value;
+                 int8_t, int16_t, int64_t, uint32_t, uint8_t, uint16_t, uint64_t, float, char, std::shared_ptr<MiniSwift::UI::UIWidgetValue>> value;
 
     Value() : type(ValueType::Nil), value(std::monostate{}) {}
     Value(bool v) : type(ValueType::Bool), value(v) {}
@@ -297,6 +308,10 @@ struct Value {
     bool isEnum() const { return type == ValueType::Enum; }
     bool isStruct() const { return type == ValueType::Struct; }
     bool isClass() const { return type == ValueType::Class; }
+    bool isUIWidget() const { return type == ValueType::UIWidget; }
+    
+    // UIWidget constructor
+    Value(std::shared_ptr<MiniSwift::UI::UIWidgetValue> widget) : type(ValueType::UIWidget), value(widget) {}
     bool isConstructor() const { return type == ValueType::Constructor; }
     bool isDestructor() const { return type == ValueType::Destructor; }
     bool isOptional() const { return type == ValueType::Optional; }

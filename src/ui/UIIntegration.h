@@ -129,10 +129,11 @@ namespace MiniSwift {
             static MiniSwift::Value runApp(const std::vector<MiniSwift::Value>& args);
             static MiniSwift::Value setMainView(const std::vector<MiniSwift::Value>& args);
             
-        private:
             // Helper methods for value conversion
             static std::shared_ptr<UIWidget> extractWidget(const MiniSwift::Value& value);
             static MiniSwift::Value wrapWidget(std::shared_ptr<UIWidget> widget);
+            
+        private:
         };
         
         /**

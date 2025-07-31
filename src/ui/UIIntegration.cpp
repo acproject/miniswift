@@ -1,4 +1,8 @@
 #include "UIIntegration.h"
+#include "TextWidget.h"
+#include "ButtonWidget.h"
+#include "VStackWidget.h"
+#include "HStackWidget.h"
 #include "../interpreter/Value.h"
 #include "../interpreter/Environment.h"
 #include <iostream>
@@ -69,7 +73,7 @@ namespace MiniSwift {
             switch (currentBackend_) {
                 case Backend::GTK4:
                     std::cout << "[DEBUG] Calling GTK4::createGTK4Text..." << std::endl;
-                    return GTK4::createGTK4Text(text);
+                    return std::static_pointer_cast<UIWidget>(GTK4::createGTK4Text(text));
                 case Backend::Mock:
                     std::cout << "[DEBUG] Calling createText (Mock)..." << std::endl;
                     return createText(text);
@@ -93,7 +97,7 @@ namespace MiniSwift {
             
             switch (currentBackend_) {
                 case Backend::GTK4:
-                    return GTK4::createGTK4Button(title, callback);
+                    return std::static_pointer_cast<UIWidget>(GTK4::createGTK4Button(title, callback));
                 case Backend::Mock:
                     return createButton(title, callback);
                 default:
@@ -110,7 +114,7 @@ namespace MiniSwift {
             
             switch (currentBackend_) {
                 case Backend::GTK4:
-                    return GTK4::createGTK4VStack(spacing);
+                    return std::static_pointer_cast<UIWidget>(GTK4::createGTK4VStack(spacing));
                 case Backend::Mock:
                     return createVStack(spacing);
                 default:
@@ -127,7 +131,7 @@ namespace MiniSwift {
             
             switch (currentBackend_) {
                 case Backend::GTK4:
-                    return GTK4::createGTK4HStack(spacing);
+                    return std::static_pointer_cast<UIWidget>(GTK4::createGTK4HStack(spacing));
                 case Backend::Mock:
                     return createHStack(spacing);
                 default:
@@ -370,28 +374,88 @@ namespace MiniSwift {
         }
         
         MiniSwift::Value UIInterpreter::applyPadding(const std::vector<MiniSwift::Value>& args) {
-            // TODO: Implement padding modifier
-            return args.empty() ? MiniSwift::Value() : args[0];
+            if (args.empty()) {
+                return MiniSwift::Value();
+            }
+            
+            // Extract the widget from the first argument
+            auto widget = extractWidget(args[0]);
+            if (!widget) {
+                std::cout << "[UIInterpreter] Warning: applyPadding called with non-widget value" << std::endl;
+                return args[0]; // Return original value if not a widget
+            }
+            
+            // TODO: Apply padding to the widget
+            // For now, just return the wrapped widget
+            return wrapWidget(widget);
         }
         
         MiniSwift::Value UIInterpreter::applyBackground(const std::vector<MiniSwift::Value>& args) {
-            // TODO: Implement background modifier
-            return args.empty() ? MiniSwift::Value() : args[0];
+            if (args.empty()) {
+                return MiniSwift::Value();
+            }
+            
+            // Extract the widget from the first argument
+            auto widget = extractWidget(args[0]);
+            if (!widget) {
+                std::cout << "[UIInterpreter] Warning: applyBackground called with non-widget value" << std::endl;
+                return args[0]; // Return original value if not a widget
+            }
+            
+            // TODO: Apply background to the widget
+            // For now, just return the wrapped widget
+            return wrapWidget(widget);
         }
         
         MiniSwift::Value UIInterpreter::applyFrame(const std::vector<MiniSwift::Value>& args) {
-            // TODO: Implement frame modifier
-            return args.empty() ? MiniSwift::Value() : args[0];
+            if (args.empty()) {
+                return MiniSwift::Value();
+            }
+            
+            // Extract the widget from the first argument
+            auto widget = extractWidget(args[0]);
+            if (!widget) {
+                std::cout << "[UIInterpreter] Warning: applyFrame called with non-widget value" << std::endl;
+                return args[0]; // Return original value if not a widget
+            }
+            
+            // TODO: Apply frame to the widget
+            // For now, just return the wrapped widget
+            return wrapWidget(widget);
         }
         
         MiniSwift::Value UIInterpreter::applyForegroundColor(const std::vector<MiniSwift::Value>& args) {
-            // TODO: Implement foreground color modifier
-            return args.empty() ? MiniSwift::Value() : args[0];
+            if (args.empty()) {
+                return MiniSwift::Value();
+            }
+            
+            // Extract the widget from the first argument
+            auto widget = extractWidget(args[0]);
+            if (!widget) {
+                std::cout << "[UIInterpreter] Warning: applyForegroundColor called with non-widget value" << std::endl;
+                return args[0]; // Return original value if not a widget
+            }
+            
+            // TODO: Apply foreground color to the widget
+            // For now, just return the wrapped widget
+            return wrapWidget(widget);
         }
         
         MiniSwift::Value UIInterpreter::applyFont(const std::vector<MiniSwift::Value>& args) {
-            // TODO: Implement font modifier
-            return args.empty() ? MiniSwift::Value() : args[0];
+            if (args.empty()) {
+                return MiniSwift::Value();
+            }
+            
+            // Extract the widget from the first argument
+            auto widget = extractWidget(args[0]);
+            if (!widget) {
+                std::cout << "[UIInterpreter] Warning: applyFont called with non-widget value" << std::endl;
+                return args[0]; // Return original value if not a widget
+            }
+            
+            // TODO: Apply font to the widget
+            // For now, just return the wrapped widget
+            return wrapWidget(widget);
         }
         
         MiniSwift::Value UIInterpreter::runApp(const std::vector<MiniSwift::Value>& args) {
@@ -417,17 +481,25 @@ namespace MiniSwift {
         std::shared_ptr<UIWidget> UIInterpreter::extractWidget(const MiniSwift::Value& value) {
             std::cout << "[UIInterpreter] extractWidget called with value type: " << static_cast<int>(value.type) << std::endl;
             
-            // For now, return a simple text widget as placeholder
-            // TODO: Implement proper widget extraction from value
-            return UIIntegration::getInstance().createTextFromValue(MiniSwift::Value("Hello World"));
-            // This would involve checking if the value contains a UIWidget pointer
+            if (value.isUIWidget()) {
+                auto widgetValue = std::get<std::shared_ptr<MiniSwift::UI::UIWidgetValue>>(value.value);
+                if (widgetValue) {
+                    return widgetValue->getWidget();
+                }
+            }
+            
+            std::cout << "[UIInterpreter] Warning: extractWidget called with non-UIWidget value, returning nullptr" << std::endl;
             return nullptr;
         }
         
         MiniSwift::Value UIInterpreter::wrapWidget(std::shared_ptr<UIWidget> widget) {
-            // TODO: Implement widget wrapping into value
-            // This would involve creating a custom value type that holds the widget
-            return MiniSwift::Value("UIWidget");
+            if (!widget) {
+                std::cout << "[UIInterpreter] Warning: wrapWidget called with null widget" << std::endl;
+                return MiniSwift::Value();
+            }
+            
+            auto widgetValue = std::make_shared<MiniSwift::UI::UIWidgetValue>(widget);
+            return MiniSwift::Value(widgetValue);
         }
         
         // UIWidgetValue implementation

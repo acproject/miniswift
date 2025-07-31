@@ -1,6 +1,10 @@
 #pragma once
 
 #include "UIRuntime.h"
+#include "TextWidget.h"
+#include "ButtonWidget.h"
+#include "VStackWidget.h"
+#include "HStackWidget.h"
 #include <memory>
 #include <thread>
 #include <atomic>

@@ -1,44 +1,25 @@
-// Simple Button Test - 测试GTK4窗口是否能正常显示
-// 这个测试只包含一个按钮，用于验证GTK4基本功能
+// Simple Button Test for MiniSwift UI
+// Testing basic UI component creation without chaining
 
-class SimpleButtonApp {
-    func run() {
-        print("Starting Simple Button Test...")
-        
-        // 创建一个简单的按钮
-        let testButton = Button("Click Me!")
-            .background(Color.blue)
-            .foregroundColor(Color.white)
-            .padding()
-        
-        print("Button created successfully")
-        
-        // 创建主视图 - 只包含一个按钮
-        let mainView = VStack()
-        mainView.addChild(testButton)
-        
-        print("Main view created with button")
-        
-        // 设置应用程序
-        UIApplication.shared.setRootView(mainView)
-        print("Root view set")
-        
-        // 运行应用程序
-        print("Starting UI application...")
-        UIApplication.shared.run()
-        print("UI application finished")
-    }
+import MiniSwift
+
+func testBasicUI() {
+    print("Creating basic UI components...")
+    
+    // Create simple text widget
+    let text = Text("Hello World")
+    print("Text created:", text)
+    
+    // Create simple button widget
+    let button = Button("Click Me")
+    print("Button created:", button)
+    
+    // Create VStack container
+    let stack = VStack(spacing: 10)
+    print("VStack created:", stack)
+    
+    print("Basic UI test completed!")
 }
 
-// 应用程序入口点
-print("=== Simple Button Test Start ===")
-
-@main
-func main() {
-    let app = SimpleButtonApp()
-    app.run()
-}
-
-main()
-
-print("=== Simple Button Test End ===")
+// Run the test
+testBasicUI()

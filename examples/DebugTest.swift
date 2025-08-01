@@ -5,22 +5,22 @@ import MiniSwiftUI
 
 struct DebugTest {
     func run() {
-        print("[DEBUG] Starting debug test...")
+        // print("[DEBUG] Starting debug test...")
         
         // Create a single text widget
-        print("[DEBUG] Creating single text widget...")
-        let singleText = Text("Hello GTK4!")
-        print("[DEBUG] Single text widget created")
+        // print("[DEBUG] Creating single text widget...")
+        let singleText = Text("Hello GTK4! 中文测试")
+        // print("[DEBUG] Single text widget created")
         
         // Set as root view
-        print("[DEBUG] Setting root view...")
+        // print("[DEBUG] Setting root view...")
         UIApplication.shared.setRootView(singleText)
-        print("[DEBUG] Root view set")
+        // print("[DEBUG] Root view set")
         
         // Run application
-        print("[DEBUG] Running application...")
+        // print("[DEBUG] Running application...")
         UIApplication.shared.run()
-        print("[DEBUG] Application finished")
+        // print("[DEBUG] Application finished")
     }
 }
 

@@ -51,6 +51,12 @@ namespace MiniSwift {
             MiniSwift::Value edgeInsetsToValue(const EdgeInsets& insets);
             MiniSwift::Value sizeToValue(const Size& size);
             
+            // Widget management
+            void addChildToWidget(std::shared_ptr<UIWidget> parent, std::shared_ptr<UIWidget> child);
+            std::shared_ptr<UIWidget> getWidgetFromHandle(const std::string& handle);
+            std::string registerWidget(std::shared_ptr<UIWidget> widget);
+            void unregisterWidget(const std::string& handle);
+            
             // UI Application management
             void setMainView(std::shared_ptr<UIWidget> view);
             void runUIApplication();
@@ -91,6 +97,10 @@ namespace MiniSwift {
             
             // Event handlers
             std::map<std::string, std::function<void(const MiniSwift::Value&)>> eventHandlers_;
+            
+            // Widget registry for handle-to-widget mapping
+            std::map<std::string, std::shared_ptr<UIWidget>> widgetRegistry_;
+            int nextWidgetId_ = 1;
             
             // Helper methods
             Backend selectBestBackend();

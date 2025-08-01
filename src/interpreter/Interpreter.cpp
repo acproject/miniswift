@@ -3554,17 +3554,13 @@ void Interpreter::visit(const LabeledCall &expr) {
             arguments.push_back(evaluate(*argument));
           }
 
-          // Build the method call and append to base component
-          std::string methodCall = "." + methodName + "(";
-          for (size_t i = 0; i < arguments.size(); ++i) {
-            if (i > 0)
-              methodCall += ", ";
-            methodCall += valueToString(arguments[i]);
-          }
-          methodCall += ")";
-
-          // Return the modified UI component string
-          result = Value(baseComponent + methodCall);
+          // Handle all UI modifier methods through callMiniSwiftFunction
+          std::vector<Value> applyModifierArgs;
+          applyModifierArgs.push_back(object);  // widget to modify
+          applyModifierArgs.push_back(Value(methodName));  // modifier type
+          applyModifierArgs.insert(applyModifierArgs.end(), arguments.begin(), arguments.end());  // modifier arguments
+          
+          result = callMiniSwiftFunction("applyModifier", applyModifierArgs);
           return;
         }
       }
@@ -6690,10 +6686,96 @@ Value Interpreter::callMiniSwiftFunction(const std::string &functionName,
         throw std::runtime_error("applyModifier expects at least 3 arguments.");
       }
       
-      // For now, just return a new handle - modifier application would need more complex implementation
-      std::string newHandle = createUIWidgetHandle();
-      std::cout << "[UIIntegration] Applied modifier, new handle: " << newHandle << std::endl;
-      return Value("<UIWidget:" + newHandle + ">");
+      std::string widgetStr = valueToString(args[0]);
+      std::string modifierType = valueToString(args[1]);
+      
+      std::cout << "[UIIntegration] Applying modifier: " << modifierType << " to widget: " << widgetStr << std::endl;
+      
+      // Handle addChild specifically
+       if (modifierType == "addChild") {
+         if (args.size() < 3) {
+           throw std::runtime_error("addChild requires a child widget argument.");
+         }
+         
+         std::cout << "[UIIntegration] Adding child to parent widget" << std::endl;
+         
+         // Extract widget handles and perform actual addChild operation
+         auto& uiIntegration = MiniSwift::UI::UIIntegration::getInstance();
+         
+         // Get parent widget from UIWidgetValue
+         std::shared_ptr<MiniSwift::UI::UIWidget> parentWidget = nullptr;
+         if (args[0].isUIWidget()) {
+           auto parentUIWidgetValue = std::get<std::shared_ptr<MiniSwift::UI::UIWidgetValue>>(args[0].value);
+           parentWidget = parentUIWidgetValue->getWidget();
+         }
+         
+         // Get child widget from UIWidgetValue
+         std::shared_ptr<MiniSwift::UI::UIWidget> childWidget = nullptr;
+         if (args[2].isUIWidget()) {
+           auto childUIWidgetValue = std::get<std::shared_ptr<MiniSwift::UI::UIWidgetValue>>(args[2].value);
+           childWidget = childUIWidgetValue->getWidget();
+         }
+         
+         if (parentWidget && childWidget) {
+           uiIntegration.addChildToWidget(parentWidget, childWidget);
+           std::cout << "[UIIntegration] Successfully added child widget to parent" << std::endl;
+         } else {
+           std::cerr << "[UIIntegration] Error: Could not extract widgets from UIWidgetValue objects" << std::endl;
+           std::cerr << "[UIIntegration] Parent widget valid: " << (parentWidget ? "yes" : "no") << std::endl;
+           std::cerr << "[UIIntegration] Child widget valid: " << (childWidget ? "yes" : "no") << std::endl;
+         }
+         
+         // Return the parent widget (addChild doesn't change the parent)
+         return args[0];
+       }
+      
+      // Handle other modifiers through UIInterpreter static methods
+      std::vector<MiniSwift::Value> modifierArgs;
+      
+      // Convert miniswift::Value to MiniSwift::Value for the modifier arguments
+      for (const auto& arg : args) {
+        if (arg.isUIWidget()) {
+          // UIWidget values can be passed directly
+          auto uiWidgetValue = std::get<std::shared_ptr<MiniSwift::UI::UIWidgetValue>>(arg.value);
+          modifierArgs.push_back(MiniSwift::Value(uiWidgetValue));
+        } else {
+          // Convert other value types
+          modifierArgs.push_back(MiniSwift::Value(arg));
+        }
+      }
+      
+      MiniSwift::Value result;
+      
+      // Apply the specific modifier using UIInterpreter static methods
+      if (modifierType == "font" && modifierArgs.size() >= 3) {
+        std::vector<MiniSwift::Value> fontArgs = {modifierArgs[0], modifierArgs[2]};
+        result = MiniSwift::UI::UIInterpreter::applyFont(fontArgs);
+      } else if (modifierType == "foregroundColor" && modifierArgs.size() >= 3) {
+        std::vector<MiniSwift::Value> colorArgs = {modifierArgs[0], modifierArgs[2]};
+        result = MiniSwift::UI::UIInterpreter::applyForegroundColor(colorArgs);
+      } else if (modifierType == "background" && modifierArgs.size() >= 3) {
+        std::vector<MiniSwift::Value> bgArgs = {modifierArgs[0], modifierArgs[2]};
+        result = MiniSwift::UI::UIInterpreter::applyBackground(bgArgs);
+      } else if (modifierType == "padding" && modifierArgs.size() >= 3) {
+        std::vector<MiniSwift::Value> paddingArgs = {modifierArgs[0], modifierArgs[2]};
+        result = MiniSwift::UI::UIInterpreter::applyPadding(paddingArgs);
+      } else if (modifierType == "frame" && modifierArgs.size() >= 4) {
+        std::vector<MiniSwift::Value> frameArgs = {modifierArgs[0], modifierArgs[2], modifierArgs[3]};
+        result = MiniSwift::UI::UIInterpreter::applyFrame(frameArgs);
+      } else {
+        std::cout << "[UIIntegration] Unknown modifier: " << modifierType << ", returning original widget" << std::endl;
+        return args[0];
+      }
+      
+      // Convert MiniSwift::Value back to miniswift::Value
+      if (result.isUIWidget()) {
+        auto uiWidgetValue = std::get<std::shared_ptr<MiniSwift::UI::UIWidgetValue>>(result.value);
+        std::cout << "[UIIntegration] Successfully applied modifier " << modifierType << std::endl;
+        return miniswift::Value(uiWidgetValue);
+      }
+      
+      std::cerr << "[UIIntegration] Failed to apply modifier " << modifierType << std::endl;
+      return args[0]; // Return original widget if modification fails
     }
   } catch (const std::exception& e) {
     std::cerr << "[UIIntegration] Error in " << functionName << ": " << e.what() << std::endl;

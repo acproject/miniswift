@@ -70,16 +70,26 @@ namespace MiniSwift {
             std::cout << "[DEBUG] Text value: " << text << std::endl;
             std::cout << "[DEBUG] Current backend: " << static_cast<int>(currentBackend_) << std::endl;
             
+            std::shared_ptr<UIWidget> widget;
             switch (currentBackend_) {
                 case Backend::GTK4:
                     std::cout << "[DEBUG] Calling GTK4::createGTK4Text..." << std::endl;
-                    return std::static_pointer_cast<UIWidget>(GTK4::createGTK4Text(text));
+                    widget = std::static_pointer_cast<UIWidget>(GTK4::createGTK4Text(text));
+                    break;
                 case Backend::Mock:
                     std::cout << "[DEBUG] Calling createText (Mock)..." << std::endl;
-                    return createText(text);
+                    widget = createText(text);
+                    break;
                 default:
                     throw UIBackendError("No backend available for text creation");
             }
+            
+            // Register the widget in the registry
+            if (widget) {
+                registerWidget(widget);
+            }
+            
+            return widget;
         }
         
         std::shared_ptr<UIWidget> UIIntegration::createButtonFromValue(const MiniSwift::Value& titleValue, const MiniSwift::Value& actionValue) {
@@ -95,14 +105,24 @@ namespace MiniSwift {
                 // TODO: Execute the action value if it's a function
             };
             
+            std::shared_ptr<UIWidget> widget;
             switch (currentBackend_) {
                 case Backend::GTK4:
-                    return std::static_pointer_cast<UIWidget>(GTK4::createGTK4Button(title, callback));
+                    widget = std::static_pointer_cast<UIWidget>(GTK4::createGTK4Button(title, callback));
+                    break;
                 case Backend::Mock:
-                    return createButton(title, callback);
+                    widget = createButton(title, callback);
+                    break;
                 default:
                     throw UIBackendError("No backend available for button creation");
             }
+            
+            // Register the widget in the registry
+            if (widget) {
+                registerWidget(widget);
+            }
+            
+            return widget;
         }
         
         std::shared_ptr<UIWidget> UIIntegration::createVStackFromValue(const MiniSwift::Value& spacingValue) {
@@ -112,14 +132,24 @@ namespace MiniSwift {
                 spacing = std::get<double>(spacingValue.value);
             }
             
+            std::shared_ptr<UIWidget> widget;
             switch (currentBackend_) {
                 case Backend::GTK4:
-                    return std::static_pointer_cast<UIWidget>(GTK4::createGTK4VStack(spacing));
+                    widget = std::static_pointer_cast<UIWidget>(GTK4::createGTK4VStack(spacing));
+                    break;
                 case Backend::Mock:
-                    return createVStack(spacing);
+                    widget = createVStack(spacing);
+                    break;
                 default:
                     throw UIBackendError("No backend available for VStack creation");
             }
+            
+            // Register the widget in the registry
+            if (widget) {
+                registerWidget(widget);
+            }
+            
+            return widget;
         }
         
         std::shared_ptr<UIWidget> UIIntegration::createHStackFromValue(const MiniSwift::Value& spacingValue) {
@@ -129,14 +159,24 @@ namespace MiniSwift {
                 spacing = std::get<double>(spacingValue.value);
             }
             
+            std::shared_ptr<UIWidget> widget;
             switch (currentBackend_) {
                 case Backend::GTK4:
-                    return std::static_pointer_cast<UIWidget>(GTK4::createGTK4HStack(spacing));
+                    widget = std::static_pointer_cast<UIWidget>(GTK4::createGTK4HStack(spacing));
+                    break;
                 case Backend::Mock:
-                    return createHStack(spacing);
+                    widget = createHStack(spacing);
+                    break;
                 default:
                     throw UIBackendError("No backend available for HStack creation");
             }
+            
+            // Register the widget in the registry
+            if (widget) {
+                registerWidget(widget);
+            }
+            
+            return widget;
         }
         
         Color UIIntegration::valueToColor(const MiniSwift::Value& value) {
@@ -178,6 +218,82 @@ namespace MiniSwift {
         MiniSwift::Value UIIntegration::sizeToValue(const Size& size) {
             // TODO: Implement size to value conversion
             return MiniSwift::Value(size.width);
+        }
+        
+        void UIIntegration::addChildToWidget(std::shared_ptr<UIWidget> parent, std::shared_ptr<UIWidget> child) {
+            if (!parent || !child) {
+                std::cerr << "[UIIntegration] Error: addChildToWidget called with null widget(s)" << std::endl;
+                return;
+            }
+            
+            std::cout << "[UIIntegration] Adding child widget to parent" << std::endl;
+            parent->addChild(child);
+            
+            // For GTK4 backend, we need to trigger immediate rendering
+            if (currentBackend_ == Backend::GTK4) {
+                std::cout << "[UIIntegration] Triggering GTK4 child rendering" << std::endl;
+                
+                // Try to cast parent to GTK4 stack widgets
+                auto gtk4VStack = std::dynamic_pointer_cast<GTK4::GTK4VStackWidget>(parent);
+                auto gtk4HStack = std::dynamic_pointer_cast<GTK4::GTK4HStackWidget>(parent);
+                
+                if (gtk4VStack) {
+                    std::cout << "[UIIntegration] Adding child to GTK4 VStack" << std::endl;
+                    // Render the child first
+                    child->render();
+                    // Add to GTK4 container
+                    gtk4VStack->addGTKChild(child);
+                } else if (gtk4HStack) {
+                    std::cout << "[UIIntegration] Adding child to GTK4 HStack" << std::endl;
+                    // Render the child first
+                    child->render();
+                    // Add to GTK4 container
+                    gtk4HStack->addGTKChild(child);
+                } else {
+                    std::cout << "[UIIntegration] Parent is not a GTK4 stack widget, rendering child only" << std::endl;
+                    child->render();
+                }
+            } else {
+                // For other backends, just render the child
+                child->render();
+            }
+            
+            std::cout << "[UIIntegration] Child widget added and rendered successfully" << std::endl;
+        }
+        
+        std::shared_ptr<UIWidget> UIIntegration::getWidgetFromHandle(const std::string& handle) {
+            std::cout << "[UIIntegration] getWidgetFromHandle called with handle: " << handle << std::endl;
+            
+            auto it = widgetRegistry_.find(handle);
+            if (it != widgetRegistry_.end()) {
+                std::cout << "[UIIntegration] Found widget for handle: " << handle << std::endl;
+                return it->second;
+            }
+            
+            std::cout << "[UIIntegration] Widget not found for handle: " << handle << std::endl;
+            return nullptr;
+        }
+        
+        std::string UIIntegration::registerWidget(std::shared_ptr<UIWidget> widget) {
+            if (!widget) {
+                std::cerr << "[UIIntegration] Error: registerWidget called with null widget" << std::endl;
+                return "";
+            }
+            
+            std::string handle = "widget_" + std::to_string(nextWidgetId_++);
+            widgetRegistry_[handle] = widget;
+            std::cout << "[UIIntegration] Registered widget with handle: " << handle << std::endl;
+            return handle;
+        }
+        
+        void UIIntegration::unregisterWidget(const std::string& handle) {
+            auto it = widgetRegistry_.find(handle);
+            if (it != widgetRegistry_.end()) {
+                widgetRegistry_.erase(it);
+                std::cout << "[UIIntegration] Unregistered widget with handle: " << handle << std::endl;
+            } else {
+                std::cout << "[UIIntegration] Widget handle not found for unregistration: " << handle << std::endl;
+            }
         }
         
         void UIIntegration::setMainView(std::shared_ptr<UIWidget> view) {

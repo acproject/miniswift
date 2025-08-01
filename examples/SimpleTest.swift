@@ -1,4 +1,4 @@
-// Simple test for MiniSwift UI
+// Simple test to verify UI system works
 import MiniSwiftUI
 
 struct SimpleTest {
@@ -16,6 +16,7 @@ struct SimpleTest {
         // Run the application
         print("Running application...")
         UIApplication.shared.run()
+        print("Application completed")
     }
 }
 

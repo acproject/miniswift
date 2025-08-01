@@ -229,9 +229,9 @@ namespace MiniSwift {
             std::cout << "[UIIntegration] Adding child widget to parent" << std::endl;
             parent->addChild(child);
             
-            // For GTK4 backend, we need to trigger immediate rendering
+            // For GTK4 backend, we need to add to GTK4 container
             if (currentBackend_ == Backend::GTK4) {
-                std::cout << "[UIIntegration] Triggering GTK4 child rendering" << std::endl;
+                std::cout << "[UIIntegration] Adding child to GTK4 container" << std::endl;
                 
                 // Try to cast parent to GTK4 stack widgets
                 auto gtk4VStack = std::dynamic_pointer_cast<GTK4::GTK4VStackWidget>(parent);
@@ -239,26 +239,18 @@ namespace MiniSwift {
                 
                 if (gtk4VStack) {
                     std::cout << "[UIIntegration] Adding child to GTK4 VStack" << std::endl;
-                    // Render the child first
-                    child->render();
-                    // Add to GTK4 container
+                    // Add to GTK4 container (rendering will be handled by parent)
                     gtk4VStack->addGTKChild(child);
                 } else if (gtk4HStack) {
                     std::cout << "[UIIntegration] Adding child to GTK4 HStack" << std::endl;
-                    // Render the child first
-                    child->render();
-                    // Add to GTK4 container
+                    // Add to GTK4 container (rendering will be handled by parent)
                     gtk4HStack->addGTKChild(child);
                 } else {
-                    std::cout << "[UIIntegration] Parent is not a GTK4 stack widget, rendering child only" << std::endl;
-                    child->render();
+                    std::cout << "[UIIntegration] Parent is not a GTK4 stack widget" << std::endl;
                 }
-            } else {
-                // For other backends, just render the child
-                child->render();
             }
             
-            std::cout << "[UIIntegration] Child widget added and rendered successfully" << std::endl;
+            std::cout << "[UIIntegration] Child widget added successfully" << std::endl;
         }
         
         std::shared_ptr<UIWidget> UIIntegration::getWidgetFromHandle(const std::string& handle) {

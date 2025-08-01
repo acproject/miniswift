@@ -131,16 +131,9 @@ namespace MiniSwift {
             
             void GTK4TextWidget::render() {
 #ifdef HAVE_GTK4
-                // Create GTK widget if not already created (deferred creation)
+                // Create GTK widget if not already created
                 if (!label_ && !getNativeWidget()) {
-                    // Check if GTK4 application is initialized
-                    GTK4Application& app = GTK4Application::getInstance();
-                    if (!app.isInitialized()) {
-                        std::cout << "[GTK4TextWidget] GTK4 not initialized yet, skipping widget creation" << std::endl;
-                        return;
-                    }
-                    
-                    std::cout << "[GTK4TextWidget] Creating deferred GTK4 label widget" << std::endl;
+                    std::cout << "[GTK4TextWidget] Creating GTK4 label widget" << std::endl;
                     label_ = GTK_LABEL(gtk_label_new(getText().c_str()));
                     if (label_) {
                         setNativeWidget(GTK_WIDGET(label_));
@@ -215,16 +208,9 @@ namespace MiniSwift {
             
             void GTK4ButtonWidget::render() {
 #ifdef HAVE_GTK4
-                // Create GTK widget if not already created (deferred creation)
+                // Create GTK widget if not already created
                 if (!button_ && !getNativeWidget()) {
-                    // Check if GTK4 application is initialized
-                    GTK4Application& app = GTK4Application::getInstance();
-                    if (!app.isInitialized()) {
-                        std::cout << "[GTK4ButtonWidget] GTK4 not initialized yet, skipping widget creation" << std::endl;
-                        return;
-                    }
-                    
-                    std::cout << "[GTK4ButtonWidget] Creating deferred GTK4 button widget" << std::endl;
+                    std::cout << "[GTK4ButtonWidget] Creating GTK4 button widget" << std::endl;
                     button_ = GTK_BUTTON(gtk_button_new_with_label(getTitle().c_str()));
                     if (button_) {
                         setNativeWidget(GTK_WIDGET(button_));
@@ -297,16 +283,9 @@ namespace MiniSwift {
             
             void GTK4VStackWidget::render() {
 #ifdef HAVE_GTK4
-                // Create GTK widget if not already created (deferred creation)
+                // Create GTK widget if not already created
                 if (!box_ && !getNativeWidget()) {
-                    // Check if GTK4 application is initialized
-                    GTK4Application& app = GTK4Application::getInstance();
-                    if (!app.isInitialized()) {
-                        std::cout << "[GTK4VStackWidget] GTK4 not initialized yet, skipping widget creation" << std::endl;
-                        return;
-                    }
-                    
-                    std::cout << "[GTK4VStackWidget] Creating deferred GTK4 vertical box widget" << std::endl;
+                    std::cout << "[GTK4VStackWidget] Creating GTK4 vertical box widget" << std::endl;
                     box_ = GTK_BOX(gtk_box_new(GTK_ORIENTATION_VERTICAL, static_cast<int>(getSpacing())));
                     if (box_) {
                         setNativeWidget(GTK_WIDGET(box_));
@@ -380,16 +359,9 @@ namespace MiniSwift {
             
             void GTK4HStackWidget::render() {
 #ifdef HAVE_GTK4
-                // Create GTK widget if not already created (deferred creation)
+                // Create GTK widget if not already created
                 if (!box_ && !getNativeWidget()) {
-                    // Check if GTK4 application is initialized
-                    GTK4Application& app = GTK4Application::getInstance();
-                    if (!app.isInitialized()) {
-                        std::cout << "[GTK4HStackWidget] GTK4 not initialized yet, skipping widget creation" << std::endl;
-                        return;
-                    }
-                    
-                    std::cout << "[GTK4HStackWidget] Creating deferred GTK4 horizontal box widget" << std::endl;
+                    std::cout << "[GTK4HStackWidget] Creating GTK4 horizontal box widget" << std::endl;
                     box_ = GTK_BOX(gtk_box_new(GTK_ORIENTATION_HORIZONTAL, static_cast<int>(getSpacing())));
                     if (box_) {
                         setNativeWidget(GTK_WIDGET(box_));
@@ -621,12 +593,18 @@ namespace MiniSwift {
                     std::cout << "[GTK4Application] This means GTK4 is not available or initialization failed" << std::endl;
                     std::cout << "[GTK4Application] Simulating UI application running..." << std::endl;
                     
-                    // In mock mode, simulate the application running for a while
-                    std::cout << "[GTK4Application] Press Ctrl+C to exit the mock application" << std::endl;
-                    while (true) {
+                    // In mock mode, simulate the application running for a short time
+                    std::cout << "[GTK4Application] Mock application will run for 3 seconds and then exit" << std::endl;
+                    isRunning_ = true;
+                    
+                    // Simulate application running for 3 seconds instead of infinite loop
+                    for (int i = 0; i < 30; i++) {
+                        if (!isRunning_) break; // Allow early exit
                         std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                        // In a real implementation, this would be the GTK main loop
                     }
+                    
+                    isRunning_ = false;
+                    std::cout << "[GTK4Application] Mock application completed" << std::endl;
                     return;
                 }
                 
@@ -650,12 +628,18 @@ namespace MiniSwift {
                 std::cout << "[GTK4Application] This is expected if GTK4 development libraries are not installed" << std::endl;
                 std::cout << "[GTK4Application] Simulating UI application running..." << std::endl;
                 
-                // In mock mode, simulate the application running for a while
-                std::cout << "[GTK4Application] Press Ctrl+C to exit the mock application" << std::endl;
-                while (true) {
+                // In mock mode, simulate the application running for a short time
+                std::cout << "[GTK4Application] Mock application will run for 3 seconds and then exit" << std::endl;
+                isRunning_ = true;
+                
+                // Simulate application running for 3 seconds instead of infinite loop
+                for (int i = 0; i < 30; i++) {
+                    if (!isRunning_) break; // Allow early exit
                     std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                    // In a real implementation, this would be the GTK main loop
                 }
+                
+                isRunning_ = false;
+                std::cout << "[GTK4Application] Mock application completed" << std::endl;
 #endif
                 
                 std::cout << "[GTK4Application] run() method completed" << std::endl;

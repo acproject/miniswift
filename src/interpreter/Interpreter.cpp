@@ -5349,6 +5349,30 @@ Value Interpreter::getMemberValue(const Value &object,
       }
     }
 
+    // Check if this is a Font.system string
+    if (str.find("Font.system(size:") == 0) {
+      // Handle Font object methods
+      if (memberName == "foregroundColor" || memberName == "font" ||
+          memberName == "padding" || memberName == "background") {
+        return Value("UIMethod:" + memberName + ":" + str);
+      } else {
+        // For unknown Font methods, still return a UIMethod string
+        return Value("UIMethod:" + memberName + ":" + str);
+      }
+    }
+
+    // Check if this is a UIWidget method call string
+    if (str.find("UIWidget.") == 0) {
+      // Handle UIWidget method chain calls like "UIWidget.font(...)"
+      if (memberName == "foregroundColor" || memberName == "font" ||
+          memberName == "padding" || memberName == "background") {
+        return Value("UIMethod:" + memberName + ":" + str);
+      } else {
+        // For unknown UI methods, still return a UIMethod string
+        return Value("UIMethod:" + memberName + ":" + str);
+      }
+    }
+
     // Check if this is a UI component string (including chained methods)
     // Check for UI component patterns anywhere in the string, not just at the
     // beginning
@@ -5392,6 +5416,16 @@ Value Interpreter::getMemberValue(const Value &object,
                                             environment);
     } else {
       throw std::runtime_error("Dictionary has no member '" + memberName + "'");
+    }
+  } else if (object.isUIWidget()) {
+    // Handle UI widget method calls
+    if (memberName == "font" || memberName == "foregroundColor" || 
+        memberName == "padding" || memberName == "background") {
+      // Return a UI method identifier that can be handled by LabeledCall
+      return Value("UIMethod:" + memberName + ":UIWidget");
+    } else {
+      // For unknown UI methods, still return a UIMethod string
+      return Value("UIMethod:" + memberName + ":UIWidget");
     }
   } else {
     throw std::runtime_error("Only structs and classes have members");
@@ -6576,7 +6610,14 @@ Value Interpreter::callMiniSwiftFunction(const std::string &functionName,
       // Use UIInterpreter::wrapWidget to create proper UIWidget Value
       MiniSwift::Value wrappedWidget = MiniSwift::UI::UIInterpreter::wrapWidget(widget);
       std::cout << "[UIIntegration] Created Text widget and wrapped as UIWidget Value" << std::endl;
-      return wrappedWidget;
+      
+      // Convert MiniSwift::Value to miniswift::Value
+      if (wrappedWidget.isUIWidget()) {
+        auto uiWidgetValue = std::get<std::shared_ptr<MiniSwift::UI::UIWidgetValue>>(wrappedWidget.value);
+        return miniswift::Value(uiWidgetValue);
+      }
+      
+      return miniswift::Value();
       
     } else if (functionName == "createButton") {
       if (args.size() < 1) {
@@ -6592,7 +6633,14 @@ Value Interpreter::callMiniSwiftFunction(const std::string &functionName,
       // Use UIInterpreter::wrapWidget to create proper UIWidget Value
       MiniSwift::Value wrappedWidget = MiniSwift::UI::UIInterpreter::wrapWidget(widget);
       std::cout << "[UIIntegration] Created Button widget and wrapped as UIWidget Value" << std::endl;
-      return wrappedWidget;
+      
+      // Convert MiniSwift::Value to miniswift::Value
+      if (wrappedWidget.isUIWidget()) {
+        auto uiWidgetValue = std::get<std::shared_ptr<MiniSwift::UI::UIWidgetValue>>(wrappedWidget.value);
+        return miniswift::Value(uiWidgetValue);
+      }
+      
+      return miniswift::Value();
       
     } else if (functionName == "createVStack") {
       // VStack with default spacing
@@ -6602,7 +6650,14 @@ Value Interpreter::callMiniSwiftFunction(const std::string &functionName,
       // Use UIInterpreter::wrapWidget to create proper UIWidget Value
       MiniSwift::Value wrappedWidget = MiniSwift::UI::UIInterpreter::wrapWidget(widget);
       std::cout << "[UIIntegration] Created VStack widget and wrapped as UIWidget Value" << std::endl;
-      return wrappedWidget;
+      
+      // Convert MiniSwift::Value to miniswift::Value
+      if (wrappedWidget.isUIWidget()) {
+        auto uiWidgetValue = std::get<std::shared_ptr<MiniSwift::UI::UIWidgetValue>>(wrappedWidget.value);
+        return miniswift::Value(uiWidgetValue);
+      }
+      
+      return miniswift::Value();
       
     } else if (functionName == "createHStack") {
       // HStack with default spacing
@@ -6612,7 +6667,14 @@ Value Interpreter::callMiniSwiftFunction(const std::string &functionName,
       // Use UIInterpreter::wrapWidget to create proper UIWidget Value
       MiniSwift::Value wrappedWidget = MiniSwift::UI::UIInterpreter::wrapWidget(widget);
       std::cout << "[UIIntegration] Created HStack widget and wrapped as UIWidget Value" << std::endl;
-      return wrappedWidget;
+      
+      // Convert MiniSwift::Value to miniswift::Value
+      if (wrappedWidget.isUIWidget()) {
+        auto uiWidgetValue = std::get<std::shared_ptr<MiniSwift::UI::UIWidgetValue>>(wrappedWidget.value);
+        return miniswift::Value(uiWidgetValue);
+      }
+      
+      return miniswift::Value();
       
     } else if (functionName == "createSpacer") {
       // Spacer component - for now, create as VStack with flexible spacing

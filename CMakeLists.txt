@@ -266,53 +266,34 @@ endif()
 # Use zstd and LLVM libraries
 set(ALL_LIBS ${ZSTD_LIBRARY} ${llvm_libs})
 
-# Check for GTK4 availability
-if(WIN32)
-    # 直接使用 vcpkg 安装的 GTK4 路径
-    set(VCPKG_ROOT "E:/vcpkg/installed/x64-windows")
-    if(EXISTS "${VCPKG_ROOT}/include/gtk-4.0")
-        message(STATUS "Found vcpkg GTK4 installation")
-        set(GTK4_FOUND TRUE)
-        set(GTK4_VERSION "4.16.3")
-        
-        # 设置包含目录
-        set(GTK4_INCLUDE_DIRS
-            "${VCPKG_ROOT}/include/gtk-4.0"
-            "${VCPKG_ROOT}/include/glib-2.0"
-            "${VCPKG_ROOT}/lib/glib-2.0/include"
-            "${VCPKG_ROOT}/include/pango-1.0"
-            "${VCPKG_ROOT}/include/harfbuzz"
-            "${VCPKG_ROOT}/include/gdk-pixbuf-2.0"
-            "${VCPKG_ROOT}/include/cairo"
-            "${VCPKG_ROOT}/include/atk-1.0"
-            "${VCPKG_ROOT}/include/graphene-1.0"
-            "${VCPKG_ROOT}/lib/graphene-1.0/include"
-        )
-        
-        # 设置库目录和库
-        set(GTK4_LIBRARY_DIRS "${VCPKG_ROOT}/lib")
-        set(GTK4_LIBRARIES
-            gtk-4 glib-2.0 gobject-2.0 gio-2.0
-            pango-1.0 pangocairo-1.0 harfbuzz
-            gdk_pixbuf-2.0 cairo atk-1.0
-        )
-        
-        # 设置编译标志
-        set(GTK4_CFLAGS_OTHER "")
-    else()
-        # 回退到 pkg-config
-        set(ENV{PKG_CONFIG_PATH} "E:/vcpkg/installed/x64-windows/lib/pkgconfig")
-        find_package(PkgConfig QUIET)
-        if(PKG_CONFIG_FOUND)
-            pkg_check_modules(GTK4 QUIET gtk4)
-        endif()
-    endif()
+# Check if vcpkg GTK4 is available
+if(EXISTS "D:/vcpkg/installed/x64-windows")
+    set(GTK4_FOUND TRUE)
+    set(GTK4_VERSION "4.16.3")
+    message(STATUS "GTK4 found via vcpkg at D:/vcpkg/installed/x64-windows")
+    
+    # Set GTK4 include directories
+    set(GTK4_INCLUDE_DIRS
+        "D:/vcpkg/installed/x64-windows/include/gtk-4.0"
+        "D:/vcpkg/installed/x64-windows/include/glib-2.0"
+        "D:/vcpkg/installed/x64-windows/lib/glib-2.0/include"
+        "D:/vcpkg/installed/x64-windows/include/pango-1.0"
+        "D:/vcpkg/installed/x64-windows/include/harfbuzz"
+        "D:/vcpkg/installed/x64-windows/include/cairo"
+        "D:/vcpkg/installed/x64-windows/include/gdk-pixbuf-2.0"
+        "D:/vcpkg/installed/x64-windows/include/graphene-1.0"
+        "D:/vcpkg/installed/x64-windows/lib/graphene-1.0/include"
+    )
+    
+    # Set GTK4 library directories and libraries
+    set(GTK4_LIBRARY_DIRS "D:/vcpkg/installed/x64-windows/lib")
+    set(GTK4_LIBRARIES
+        gtk-4 glib-2.0 gobject-2.0 gio-2.0 pango-1.0 pangocairo-1.0
+        cairo cairo-gobject gdk_pixbuf-2.0 harfbuzz graphene-1.0
+    )
 else()
-    # Unix 系统使用原有逻辑
-    find_package(PkgConfig QUIET)
-    if(PKG_CONFIG_FOUND)
-        pkg_check_modules(GTK4 QUIET gtk4)
-    endif()
+    set(GTK4_FOUND FALSE)
+    message(STATUS "GTK4 not found - vcpkg installation not detected")
 endif()
 
 
@@ -343,6 +324,88 @@ endif()
 
 # Link with all libraries (including LLVM)
 target_link_libraries(miniswift PRIVATE ${llvm_libs})
+
+# Add C++ UI test executable
+set(UI_TEST_SOURCES
+    tests/SimpleUIAppTest.cpp
+    src/ui/GTK4Backend.cpp
+    src/ui/TextWidget.cpp
+    src/ui/ButtonWidget.cpp
+    src/ui/VStackWidget.cpp
+    src/ui/HStackWidget.cpp
+    src/ui/UIIntegration.cpp
+    src/ui/UIRuntime.cpp
+    src/interpreter/Value.cpp
+    src/interpreter/Concurrency/ConcurrencyRuntime.cpp
+)
+
+add_executable(SimpleUIAppTest ${UI_TEST_SOURCES})
+target_include_directories(SimpleUIAppTest PRIVATE src third)
+
+# Create MinimalGTK4Test executable
+set(MINIMAL_GTK4_TEST_SOURCES
+    tests/MinimalGTK4Test.cpp
+    src/ui/GTK4Backend.cpp
+    src/ui/UIIntegration.cpp
+    src/ui/TextWidget.cpp
+    src/ui/ButtonWidget.cpp
+    src/ui/VStackWidget.cpp
+    src/ui/HStackWidget.cpp
+    src/ui/UIRuntime.cpp
+    src/interpreter/Value.cpp
+    src/interpreter/Concurrency/ConcurrencyRuntime.cpp
+)
+
+add_executable(MinimalGTK4Test ${MINIMAL_GTK4_TEST_SOURCES})
+target_include_directories(MinimalGTK4Test PRIVATE src third)
+
+# Link SimpleUIAppTest with GTK4 if available
+if(GTK4_FOUND)
+    if(WIN32 AND TARGET gtk::gtk)
+        target_link_libraries(SimpleUIAppTest PRIVATE gtk::gtk)
+    elseif(WIN32 AND TARGET gtk4::gtk4)
+        target_link_libraries(SimpleUIAppTest PRIVATE gtk4::gtk4)
+    else()
+        include_directories(${GTK4_INCLUDE_DIRS})
+        link_directories(${GTK4_LIBRARY_DIRS})
+        add_compile_options(${GTK4_CFLAGS_OTHER})
+        target_link_libraries(SimpleUIAppTest PRIVATE ${GTK4_LIBRARIES})
+    endif()
+endif()
+
+# Link SimpleUIAppTest with system libraries
+if(WIN32)
+    target_link_libraries(SimpleUIAppTest PRIVATE 
+        kernel32 user32 gdi32 winspool shell32 ole32 oleaut32 uuid comdlg32 advapi32
+        ws2_32 dbghelp psapi version
+    )
+else()
+    target_link_libraries(SimpleUIAppTest PRIVATE pthread dl m)
+endif()
+
+# Link MinimalGTK4Test with GTK4 if available
+if(GTK4_FOUND)
+    if(WIN32 AND TARGET gtk::gtk)
+        target_link_libraries(MinimalGTK4Test PRIVATE gtk::gtk)
+    elseif(WIN32 AND TARGET gtk4::gtk4)
+        target_link_libraries(MinimalGTK4Test PRIVATE gtk4::gtk4)
+    else()
+        include_directories(${GTK4_INCLUDE_DIRS})
+        link_directories(${GTK4_LIBRARY_DIRS})
+        add_compile_options(${GTK4_CFLAGS_OTHER})
+        target_link_libraries(MinimalGTK4Test PRIVATE ${GTK4_LIBRARIES})
+    endif()
+endif()
+
+# Link MinimalGTK4Test with system libraries
+if(WIN32)
+    target_link_libraries(MinimalGTK4Test PRIVATE 
+        kernel32 user32 gdi32 winspool shell32 ole32 oleaut32 uuid comdlg32 advapi32
+        ws2_32 dbghelp psapi version
+    )
+else()
+    target_link_libraries(MinimalGTK4Test PRIVATE pthread dl m)
+endif()
 
 # Link with zstd target separately
 if(TARGET ${ZSTD_TARGET})

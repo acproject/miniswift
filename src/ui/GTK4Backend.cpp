@@ -24,8 +24,7 @@
 #define g_signal_connect(instance, signal, callback, data) 0
 #define g_application_run(app, argc, argv) 0
 #define g_object_unref(object)
-#define gtk_widget_show(widget)
-#define gtk_widget_hide(widget)
+#define gtk_widget_set_visible(widget, visible)
 #define gtk_widget_set_size_request(widget, width, height)
 #define gtk_widget_set_margin_top(widget, margin)
 #define gtk_widget_set_margin_bottom(widget, margin)
@@ -69,7 +68,7 @@ namespace MiniSwift {
             void GTK4Widget::show() {
                 if (nativeWidget_) {
 #ifdef HAVE_GTK4
-                    gtk_widget_show(nativeWidget_);
+                    gtk_widget_set_visible(nativeWidget_, TRUE);
 #else
                     std::cout << "[GTK4Widget] Show widget (mock)" << std::endl;
 #endif
@@ -79,7 +78,7 @@ namespace MiniSwift {
             void GTK4Widget::hide() {
                 if (nativeWidget_) {
 #ifdef HAVE_GTK4
-                    gtk_widget_hide(nativeWidget_);
+                    gtk_widget_set_visible(nativeWidget_, FALSE);
 #else
                     std::cout << "[GTK4Widget] Hide widget (mock)" << std::endl;
 #endif
@@ -300,9 +299,9 @@ namespace MiniSwift {
                 
                 // Add children to GTK box
                 for (auto& child : getChildren()) {
-                    addGTKChild(child);
                     if (child) {
-                        child->render();
+                        child->render();  // Render child first to create its native widget
+                        addGTKChild(child);  // Then add it to the parent
                     }
                 }
                 
@@ -327,7 +326,9 @@ namespace MiniSwift {
             }
             
             void GTK4VStackWidget::addGTKChild(std::shared_ptr<UIWidget> child) {
-                if (!box_ || !child) return;
+                if (!box_ || !child) {
+                    return;
+                }
                 
                 // Try to get GTK4 widget from child
                 auto gtk4Child = std::dynamic_pointer_cast<GTK4Widget>(child);
@@ -376,9 +377,9 @@ namespace MiniSwift {
                 
                 // Add children to GTK box
                 for (auto& child : getChildren()) {
-                    addGTKChild(child);
                     if (child) {
-                        child->render();
+                        child->render();  // Render child first to create its native widget
+                        addGTKChild(child);  // Then add it to the parent
                     }
                 }
                 
@@ -403,7 +404,9 @@ namespace MiniSwift {
             }
             
             void GTK4HStackWidget::addGTKChild(std::shared_ptr<UIWidget> child) {
-                if (!box_ || !child) return;
+                if (!box_ || !child) {
+                    return;
+                }
                 
                 // Try to get GTK4 widget from child
                 auto gtk4Child = std::dynamic_pointer_cast<GTK4Widget>(child);
@@ -687,6 +690,14 @@ namespace MiniSwift {
                         std::cout << "[GTK4Application] Setting pending content now that GTK is ready" << std::endl;
                         appInstance->setMainWindowContent(appInstance->pendingContent_);
                         appInstance->pendingContent_.reset();
+                    } else {
+                        // Create a simple test widget for demonstration
+                        std::cout << "[GTK4Application] Creating test content for demonstration" << std::endl;
+                        auto testText = createGTK4Text("Hello GTK4 World! This is a test.");
+                        if (testText) {
+                            appInstance->setMainWindowContent(testText);
+                            std::cout << "[GTK4Application] Test content set successfully" << std::endl;
+                        }
                     }
                 }
             }

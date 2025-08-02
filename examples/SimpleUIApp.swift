@@ -4,16 +4,16 @@
 import MiniSwift
 
 func createAndRunApp() {
-    print("Starting Minimal GTK4 Layout Test...")
+    print("开始测试UI")
     
     // Create UI components
-    let titleText = Text("GTK4 Layout Test")
-    let descText = Text("Testing VStack and HStack layouts")
+    let titleText = Text("布局测试")
+    let descText = Text("测试 VStack 和 HStack 布局")
     
-    let button1 = Button("Button 1")
+    let button1 = Button("按钮 ☆")
     let button2 = Button("Button 2")
     
-    let statusText = Text("Status: Layout components created")
+    let statusText = Text("状态: Layout components created")
     
     // Create layout containers
     let buttonStack = HStack(spacing: 15) // horizontal stack with 15px spacing
@@ -29,14 +29,14 @@ func createAndRunApp() {
     mainStack.addChild(buttonStack)
     mainStack.addChild(statusText)
     
-    print("UI layout components created successfully")
+    print("布局组件创建成功！")
     
     // Set the main view and run the application
-    print("Starting UI application with layout...")
+    print("应用启动")
     UIApplication.shared.setRootView(mainStack)
     UIApplication.shared.run()
     
-    print("Application finished successfully")
+    print("应用完成结束")
 }
 
 // Run the app

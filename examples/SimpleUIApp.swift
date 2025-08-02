@@ -1,8 +1,6 @@
 // Minimal GTK4 Layout Test - Swift Version
 // Testing VStack and HStack layouts
 
-import MiniSwift
-
 func createAndRunApp() {
     print("开始测试UI")
     

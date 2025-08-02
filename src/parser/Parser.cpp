@@ -248,7 +248,7 @@ std::unique_ptr<Stmt> Parser::statement() {
     advance(); // consume 'print'
     return printStatement();
   }
-  if (match({TokenType::LBrace})) {
+  if (check(TokenType::LBrace)) {
     return blockStatement();
   }
   if (match({TokenType::If})) {
@@ -294,6 +294,7 @@ std::unique_ptr<Stmt> Parser::statement() {
       return std::move(declarations[0]);
     }
   }
+  
   return expressionStatement();
 }
 
@@ -318,6 +319,11 @@ std::unique_ptr<Stmt> Parser::printStatement() {
 }
 
 std::unique_ptr<Stmt> Parser::expressionStatement() {
+  // Check if we're at a block terminator - if so, return null
+  if (check(TokenType::RBrace) || check(TokenType::Catch) || isAtEnd()) {
+    return nullptr;
+  }
+  
   auto expr = expression();
   match({TokenType::Semicolon}); // Optional semicolon
   return std::make_unique<ExprStmt>(std::move(expr));
@@ -565,12 +571,11 @@ std::unique_ptr<Expr> Parser::range() {
 
   if (match({TokenType::LessEllipsis, TokenType::Ellipsis})) {
     Token op = previous();
-    auto right = term();
-
+    // Use primary() instead of term() to avoid call() wrapping
+    auto right = primary();
     Range::RangeType rangeType = (op.type == TokenType::LessEllipsis)
                                      ? Range::RangeType::HalfOpen
                                      : Range::RangeType::Closed;
-
     return std::make_unique<Range>(std::move(expr), std::move(right),
                                    rangeType);
   }
@@ -788,7 +793,8 @@ std::unique_ptr<Expr> Parser::primary() {
              TokenType::UInt,       TokenType::UInt8,  TokenType::UInt16,
              TokenType::UInt64,     TokenType::Float,  TokenType::Character,
              TokenType::Any,        TokenType::Void,   TokenType::Set,
-             TokenType::Left,       TokenType::Right})) {
+             TokenType::Left,       TokenType::Right,  TokenType::StarStar,
+             TokenType::LAngleRAngle, TokenType::PlusMinus})) {
     Token identifier = previous();
 
     std::unique_ptr<Expr> expr;
@@ -965,24 +971,7 @@ std::unique_ptr<Expr> Parser::primary() {
     return memberExpr;
   }
 
-  // Handle range operators: start..<end or start...end
-  if (check(TokenType::LessEllipsis) || check(TokenType::Ellipsis)) {
-    // This is a range starting from an implicit 0
-    auto start = std::make_unique<Literal>(
-        Token(TokenType::FloatingLiteral, "0.0", peek().line));
-
-    TokenType rangeOp = advance().type;
-    auto end = unary();
-
-    Range::RangeType rangeType = (rangeOp == TokenType::LessEllipsis)
-                                     ? Range::RangeType::HalfOpen
-                                     : Range::RangeType::Closed;
-
-    return std::make_unique<Range>(std::move(start), std::move(end), rangeType);
-  }
-
-  std::cout << "DEBUG: primary() - unexpected token: " << peek().lexeme
-            << " (type: " << static_cast<int>(peek().type) << ")" << std::endl;
+  // Range operators are handled in the range() method, not here
 
   // Include line number in error message
   std::string errorMsg = "Expect expression.";
@@ -1320,12 +1309,38 @@ bool Parser::check(TokenType type) {
 
 // Parse block statement: { statements }
 std::unique_ptr<Stmt> Parser::blockStatement() {
+  // Consume the opening brace
+  consume(TokenType::LBrace, "Expect '{' at start of block.");
+  
   std::vector<std::unique_ptr<Stmt>> statements;
 
   while (!check(TokenType::RBrace) && !check(TokenType::Catch) && !isAtEnd()) {
-    auto decls = declaration();
-    statements.insert(statements.end(), std::make_move_iterator(decls.begin()),
-                      std::make_move_iterator(decls.end()));
+    // Skip empty statements (semicolons)
+    if (match({TokenType::Semicolon})) {
+      continue;
+    }
+    
+    // Double check we're not at the end of the block
+    if (check(TokenType::RBrace) || check(TokenType::Catch)) {
+      break;
+    }
+    
+    // Try to parse as declaration first (for top-level declarations)
+    if (check(TokenType::Let) || check(TokenType::Var) || check(TokenType::Func) ||
+        check(TokenType::Struct) || check(TokenType::Class) || check(TokenType::Enum) ||
+        check(TokenType::Protocol) || check(TokenType::Extension) ||
+        check(TokenType::Import) ||
+        (check(TokenType::At) && peek().lexeme == "@")) {
+      auto decls = declaration();
+      statements.insert(statements.end(), std::make_move_iterator(decls.begin()),
+                        std::make_move_iterator(decls.end()));
+    } else {
+      // Parse as statement (for control flow, expressions, etc.)
+      auto stmt = statement();
+      if (stmt) {
+        statements.push_back(std::move(stmt));
+      }
+    }
   }
 
   // Only consume RBrace if we're not at a catch clause
@@ -1475,7 +1490,6 @@ std::unique_ptr<Stmt> Parser::forStatement() {
     consume(TokenType::RParen, "Expect ')' after for clauses.");
 
     // Body
-    consume(TokenType::LBrace, "Expect '{' after for clauses.");
     auto body = blockStatement();
 
     return std::make_unique<ForStmt>(std::move(initializer),
@@ -1500,11 +1514,13 @@ std::unique_ptr<Stmt> Parser::forStatement() {
     }
 
     consume(TokenType::In, "Expect 'in' after for loop variable(s).");
+    std::cout << "DEBUG: About to parse collection expression in for-in loop" << std::endl;
     auto collection = expression();
+    std::cout << "DEBUG: Finished parsing collection expression in for-in loop" << std::endl;
 
     // Parse body - can be a block statement or a single statement
     std::unique_ptr<Stmt> body;
-    if (match({TokenType::LBrace})) {
+    if (check(TokenType::LBrace)) {
       body = blockStatement();
     } else {
       // Single statement
@@ -1633,8 +1649,15 @@ std::unique_ptr<Stmt> Parser::functionDeclaration() {
   // Parse optional where clause
   WhereClause whereClause = parseWhereClause();
 
-  consume(TokenType::LBrace, "Expect '{' before function body.");
-  auto body = blockStatement();
+  std::unique_ptr<Stmt> body;
+  if (check(TokenType::LBrace)) {
+    // Traditional block function body
+    body = blockStatement();
+  } else {
+    // Single expression function body
+    auto expr = expression();
+    body = std::make_unique<ReturnStmt>(std::move(expr));
+  }
 
   return std::make_unique<FunctionStmt>(
       functionName, std::move(parameters), returnType, std::move(body),
@@ -1689,7 +1712,15 @@ std::unique_ptr<Stmt> Parser::fallthroughStatement() {
 
 // Parse function call: primary ( arguments )
 std::unique_ptr<Expr> Parser::call() {
+  std::cout << "DEBUG: call() called, current token: " << peek().lexeme << " (type: " << static_cast<int>(peek().type) << ")" << std::endl;
   auto expr = primary();
+  std::cout << "DEBUG: call() after primary(), expr type: " << (expr ? "valid" : "null") << std::endl;
+
+  // Check if expr is a Range expression - if so, return it directly
+  if (auto rangeExpr = dynamic_cast<Range*>(expr.get())) {
+    std::cout << "DEBUG: call() detected Range expression, returning directly" << std::endl;
+    return expr;
+  }
 
   while (true) {
     if (match({TokenType::LParen})) {
@@ -1785,6 +1816,13 @@ std::unique_ptr<Expr> Parser::call() {
           std::move(expr), OptionalChaining::ChainType::Subscript,
           std::move(indexExpr));
     } else if (match({TokenType::Dot})) {
+      // Check if this is part of a range operator (.< or ..)
+      if (check(TokenType::Less) || check(TokenType::Dot)) {
+        // Back out the dot token and let range() handle it
+        current--;
+        break;
+      }
+      
       // Support both identifier member access (object.member) and tuple index
       // access (tuple.0)
       Token memberName(TokenType::Identifier, "", peek().line);
@@ -2064,17 +2102,7 @@ std::unique_ptr<Stmt> Parser::structDeclaration() {
       memberSetterAccessLevel = accessPair.second;
     }
 
-    // Check for attributes like @resultBuilder
-    if (match({TokenType::At})) {
-      if (match({TokenType::ResultBuilder})) {
-        // Parse @resultBuilder struct declaration
-        auto resultBuilderStruct = resultBuilderDeclaration();
-        nestedTypes.push_back(std::move(resultBuilderStruct));
-        continue;
-      } else {
-        throw std::runtime_error("Unknown attribute in struct body.");
-      }
-    }
+    // Note: @resultBuilder is handled at the top level in declaration() method
 
     // Check for mutating keyword before func
     bool isMutating = false;
@@ -3365,6 +3393,8 @@ std::unique_ptr<miniswift::Stmt> miniswift::Parser::resultBuilderDeclaration() {
         // Cast Stmt to FunctionStmt
         auto funcStmt = std::unique_ptr<FunctionStmt>(
             static_cast<FunctionStmt *>(method.release()));
+        // Mark as static
+        funcStmt->isStatic = true;
         methods.push_back(std::move(funcStmt));
       } else {
         throw std::runtime_error(

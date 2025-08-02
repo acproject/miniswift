@@ -183,9 +183,9 @@ Token Lexer::scanToken() {
   char c = advance();
 
   // Support Unicode identifiers
-  if (isalpha(c) || c == '_' || isUnicodeIdentifierStart(c))
+  if ((c >= 0 && isalpha(static_cast<unsigned char>(c))) || c == '_' || isUnicodeIdentifierStart(c))
     return identifier();
-  if (isdigit(c))
+  if (c >= 0 && isdigit(static_cast<unsigned char>(c)))
     return number();
 
   switch (c) {
@@ -474,9 +474,15 @@ Token Lexer::number() {
 }
 
 Token Lexer::identifier() {
-  while (isalnum(peek()) || peek() == '_' ||
-         isUnicodeIdentifierContinue(peek())) {
-    advance();
+  while (true) {
+    char c = peek();
+    // Safe check for ASCII characters
+    if ((c >= 0 && isalnum(static_cast<unsigned char>(c))) || c == '_' ||
+         isUnicodeIdentifierContinue(c)) {
+      advance();
+    } else {
+      break;
+    }
   }
 
   std::string text = source.substr(start, current - start);

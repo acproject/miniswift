@@ -937,15 +937,16 @@ void Interpreter::visit(const OverflowExpr &expr) {
   }
 }
 
-void Interpreter::visit(const CustomOperatorExpr &expr) {
-  // Look up the custom operator function in the environment
-  try {
-    Value operatorFunction = environment->get(expr.op);
-
-    if (!operatorFunction.isFunction()) {
-      throw std::runtime_error("Custom operator '" + expr.op.lexeme +
-                               "' is not a function.");
-    }
+void Interpreter::visit(const CustomOperatorExpr& expr) {
+    // Look up the custom operator function in the environment
+    std::cout << "DEBUG: Looking for custom operator: '" << expr.op.lexeme << "'" << std::endl;
+    try {
+        Value operatorFunction = environment->get(expr.op);
+        std::cout << "DEBUG: Found operator function: " << expr.op.lexeme << std::endl;
+        
+        if (!operatorFunction.isFunction()) {
+            throw std::runtime_error("Custom operator '" + expr.op.lexeme + "' is not a function.");
+        }
 
     // Evaluate operands
     std::vector<Value> arguments;
@@ -962,8 +963,10 @@ void Interpreter::visit(const CustomOperatorExpr &expr) {
     }
 
     auto callable = operatorFunction.asFunction();
+    std::cout << "DEBUG: Got callable for operator: " << expr.op.lexeme << std::endl;
 
     if (callable->isFunction) {
+      std::cout << "DEBUG: Callable is a function" << std::endl;
       // Check argument count
       if (arguments.size() != callable->functionDecl->parameters.size()) {
         throw std::runtime_error(
@@ -971,10 +974,12 @@ void Interpreter::visit(const CustomOperatorExpr &expr) {
             std::to_string(callable->functionDecl->parameters.size()) +
             " arguments but got " + std::to_string(arguments.size()) + ".");
       }
+      std::cout << "DEBUG: Argument count matches" << std::endl;
 
       // Create new environment for function execution
       auto previous = environment;
       environment = std::make_shared<Environment>(callable->closure);
+      std::cout << "DEBUG: Created new environment" << std::endl;
 
       // Create new defer stack level for this function
       deferStack.push(std::vector<std::unique_ptr<Stmt>>());
@@ -1938,6 +1943,7 @@ void Interpreter::visit(const ForInStmt &stmt) {
   try {
     // Evaluate the collection
     Value collection = evaluate(*stmt.collection);
+    std::cout << "[DEBUG] ForInStmt: Collection type = " << static_cast<int>(collection.type) << std::endl;
 
     if (collection.type == ValueType::Array) {
       const auto &arr = *collection.asArray();
@@ -2113,7 +2119,13 @@ void Interpreter::visit(const Call &expr) {
   }
 
   // Handle UI method calls first
-  Value calleeValue = evaluate(*expr.callee);
+  Value calleeValue;
+  try {
+    calleeValue = evaluate(*expr.callee);
+  } catch (const std::runtime_error& e) {
+    // Re-throw the original error (e.g., "Undefined variable")
+    throw;
+  }
   if (calleeValue.type == ValueType::String) {
     std::string calleeStr = std::get<std::string>(calleeValue.value);
     if (calleeStr.find("UIMethod:") == 0) {

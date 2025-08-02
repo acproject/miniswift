@@ -1363,7 +1363,20 @@ std::unique_ptr<Stmt> Parser::ifStatement() {
     auto expression = this->expression();
 
     consume(TokenType::LBrace, "Expect '{' after if-let condition.");
-    auto thenBranch = blockStatement();
+    
+    // Parse statements until '}'
+    std::vector<std::unique_ptr<Stmt>> thenStatements;
+    while (!check(TokenType::RBrace) && !isAtEnd()) {
+      if (match({TokenType::Semicolon})) {
+        continue;
+      }
+      auto stmt = statement();
+      if (stmt) {
+        thenStatements.push_back(std::move(stmt));
+      }
+    }
+    consume(TokenType::RBrace, "Expect '}' after if-let body.");
+    auto thenBranch = std::make_unique<BlockStmt>(std::move(thenStatements));
 
     std::unique_ptr<Stmt> elseBranch = nullptr;
     if (match({TokenType::Else})) {
@@ -1372,7 +1385,20 @@ std::unique_ptr<Stmt> Parser::ifStatement() {
         elseBranch = ifStatement();
       } else {
         consume(TokenType::LBrace, "Expect '{' after else.");
-        elseBranch = blockStatement();
+        
+        // Parse statements until '}'
+        std::vector<std::unique_ptr<Stmt>> elseStatements;
+        while (!check(TokenType::RBrace) && !isAtEnd()) {
+          if (match({TokenType::Semicolon})) {
+            continue;
+          }
+          auto stmt = statement();
+          if (stmt) {
+            elseStatements.push_back(std::move(stmt));
+          }
+        }
+        consume(TokenType::RBrace, "Expect '}' after else body.");
+        elseBranch = std::make_unique<BlockStmt>(std::move(elseStatements));
       }
     }
 
@@ -1384,7 +1410,20 @@ std::unique_ptr<Stmt> Parser::ifStatement() {
     auto condition = expression();
 
     consume(TokenType::LBrace, "Expect '{' after if condition.");
-    auto thenBranch = blockStatement();
+    
+    // Parse statements until '}'
+    std::vector<std::unique_ptr<Stmt>> statements;
+    while (!check(TokenType::RBrace) && !isAtEnd()) {
+      if (match({TokenType::Semicolon})) {
+        continue;
+      }
+      auto stmt = statement();
+      if (stmt) {
+        statements.push_back(std::move(stmt));
+      }
+    }
+    consume(TokenType::RBrace, "Expect '}' after if body.");
+    auto thenBranch = std::make_unique<BlockStmt>(std::move(statements));
 
     std::unique_ptr<Stmt> elseBranch = nullptr;
     if (match({TokenType::Else})) {
@@ -1393,7 +1432,20 @@ std::unique_ptr<Stmt> Parser::ifStatement() {
         elseBranch = ifStatement();
       } else {
         consume(TokenType::LBrace, "Expect '{' after else.");
-        elseBranch = blockStatement();
+        
+        // Parse statements until '}'
+        std::vector<std::unique_ptr<Stmt>> elseStatements;
+        while (!check(TokenType::RBrace) && !isAtEnd()) {
+          if (match({TokenType::Semicolon})) {
+            continue;
+          }
+          auto stmt = statement();
+          if (stmt) {
+            elseStatements.push_back(std::move(stmt));
+          }
+        }
+        consume(TokenType::RBrace, "Expect '}' after else body.");
+        elseBranch = std::make_unique<BlockStmt>(std::move(elseStatements));
       }
     }
 
@@ -1407,7 +1459,20 @@ std::unique_ptr<Stmt> Parser::whileStatement() {
   auto condition = expression();
 
   consume(TokenType::LBrace, "Expect '{' after while condition.");
-  auto body = blockStatement();
+  
+  // Parse statements until '}'
+  std::vector<std::unique_ptr<Stmt>> statements;
+  while (!check(TokenType::RBrace) && !isAtEnd()) {
+    if (match({TokenType::Semicolon})) {
+      continue;
+    }
+    auto stmt = statement();
+    if (stmt) {
+      statements.push_back(std::move(stmt));
+    }
+  }
+  consume(TokenType::RBrace, "Expect '}' after while body.");
+  auto body = std::make_unique<BlockStmt>(std::move(statements));
 
   return std::make_unique<WhileStmt>(std::move(condition), std::move(body));
 }
@@ -1851,12 +1916,7 @@ std::unique_ptr<Expr> Parser::call() {
       // Handle postfix bang operator for force unwrapping: expr!
       Token op = previous();
       expr = std::make_unique<Unary>(op, std::move(expr));
-    } else if (match({TokenType::LBrace})) {
-      // Handle trailing closure syntax: VStack { ... }
-      auto closureExpr = closure();
-      std::vector<std::unique_ptr<Expr>> arguments;
-      arguments.push_back(std::move(closureExpr));
-      expr = std::make_unique<Call>(std::move(expr), std::move(arguments));
+    // Removed trailing closure handling to avoid conflicts with property observers
     } else {
       break;
     }
@@ -2155,7 +2215,20 @@ std::unique_ptr<Stmt> Parser::structDeclaration() {
               consume(TokenType::RParen, "Expect ')' after parameter name.");
             }
             consume(TokenType::LBrace, "Expect '{' after 'willSet'.");
-            auto body = blockStatement();
+            
+            // Parse statements until '}'
+            std::vector<std::unique_ptr<Stmt>> statements;
+            while (!check(TokenType::RBrace) && !isAtEnd()) {
+              if (match({TokenType::Semicolon})) {
+                continue;
+              }
+              auto stmt = statement();
+              if (stmt) {
+                statements.push_back(std::move(stmt));
+              }
+            }
+            consume(TokenType::RBrace, "Expect '}' after willSet body.");
+            auto body = std::make_unique<BlockStmt>(std::move(statements));
             accessors.emplace_back(AccessorType::WILL_SET, std::move(body),
                                    paramName);
           } else if (match({TokenType::DidSet})) {
@@ -2166,7 +2239,20 @@ std::unique_ptr<Stmt> Parser::structDeclaration() {
               consume(TokenType::RParen, "Expect ')' after parameter name.");
             }
             consume(TokenType::LBrace, "Expect '{' after 'didSet'.");
-            auto body = blockStatement();
+            
+            // Parse statements until '}'
+            std::vector<std::unique_ptr<Stmt>> statements;
+            while (!check(TokenType::RBrace) && !isAtEnd()) {
+              if (match({TokenType::Semicolon})) {
+                continue;
+              }
+              auto stmt = statement();
+              if (stmt) {
+                statements.push_back(std::move(stmt));
+              }
+            }
+            consume(TokenType::RBrace, "Expect '}' after didSet body.");
+            auto body = std::make_unique<BlockStmt>(std::move(statements));
             accessors.emplace_back(AccessorType::DID_SET, std::move(body),
                                    paramName);
           } else {

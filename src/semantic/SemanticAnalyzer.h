@@ -8,6 +8,7 @@
 #include <memory>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include <string>
 
 namespace miniswift {
@@ -23,12 +24,84 @@ struct SemanticError {
         : message(msg), line(l), column(c), file(f) {}
 };
 
+// 并发上下文类型
+enum class ConcurrencyContext {
+    NONE,           // 非并发上下文
+    ASYNC_FUNCTION, // 异步函数内
+    ACTOR_METHOD,   // Actor方法内
+    TASK_CLOSURE,   // Task闭包内
+    TASK_GROUP,     // TaskGroup内
+    ASYNC_SEQUENCE  // AsyncSequence迭代内
+};
+
+struct ConcurrencyError {
+    std::string message;
+    int line;
+    int column;
+    std::string file;
+    ConcurrencyContext context;
+    std::string actorName;
+    
+    ConcurrencyError(const std::string& msg = "", int l = -1, int c = -1, const std::string& f = "")
+        : message(msg), line(l), column(c), file(f), context(ConcurrencyContext::NONE), actorName("") {}
+};
+
+// 并发安全级别定义在 TypeSystem.h 中
+
+// 并发变量信息
+struct ConcurrentVariable {
+    std::string name;
+    std::shared_ptr<Type> type;
+    ConcurrencySafetyLevel safetyLevel;
+    bool isIsolated;
+    std::string actorName; // 如果是actor隔离的变量
+    bool isAsync;
+    
+    // 默认构造函数
+    ConcurrentVariable() : name(""), type(nullptr), safetyLevel(ConcurrencySafetyLevel::UNSAFE), isIsolated(false), isAsync(false) {}
+    
+    ConcurrentVariable(const std::string& n, std::shared_ptr<Type> t, 
+                      ConcurrencySafetyLevel level = ConcurrencySafetyLevel::UNSAFE)
+        : name(n), type(t), safetyLevel(level), isIsolated(false), isAsync(false) {}
+};
+
+// 并发函数信息
+struct ConcurrentFunction {
+    std::string name;
+    std::shared_ptr<FunctionType> type;
+    bool isAsync;
+    bool isActorMethod;
+    std::string actorName;
+    std::vector<std::string> asyncParameters;
+    
+    // 默认构造函数
+    ConcurrentFunction() : name(""), type(nullptr), isAsync(false), isActorMethod(false) {}
+    
+    ConcurrentFunction(const std::string& n, std::shared_ptr<FunctionType> t, bool async = false)
+        : name(n), type(t), isAsync(async), isActorMethod(false) {}
+};
+
+// Actor信息
+struct ActorInfo {
+    std::string name;
+    std::unordered_map<std::string, ConcurrentVariable> properties;
+    std::unordered_map<std::string, ConcurrentFunction> methods;
+    bool isGlobalActor;
+    
+    // 默认构造函数
+    ActorInfo() : name(""), isGlobalActor(false) {}
+    
+    ActorInfo(const std::string& n, bool global = false)
+        : name(n), isGlobalActor(global) {}
+};
+
 // 语义分析结果
 struct SemanticAnalysisResult {
     std::unique_ptr<TypedProgram> typedAST;
     std::vector<SemanticError> errors;
+    std::vector<ConcurrencyError> concurrencyErrors;
     std::vector<std::string> warnings;
-    bool hasErrors() const { return !errors.empty(); }
+    bool hasErrors() const { return !errors.empty() || !concurrencyErrors.empty(); }
 };
 
 // 语义分析器主类
@@ -39,6 +112,24 @@ public:
     
     // 主要分析接口
     SemanticAnalysisResult analyze(const std::vector<std::unique_ptr<Stmt>>& statements);
+    
+    // 并发分析接口
+    std::vector<ConcurrencyError> analyzeConcurrency(const std::vector<std::unique_ptr<Stmt>>& statements);
+    
+    // 并发特定的分析方法
+    void analyzeAsyncFunction(const FunctionStmt& func);
+    void analyzeActor(const ActorStmt& actor);
+    void analyzeTaskCreation(const TaskExpr& task);
+    void analyzeTaskGroup(const TaskGroupExpr& taskGroup);
+    void analyzeAwaitExpression(const AwaitExpr& await);
+    void analyzeAsyncSequence(const AsyncSequenceExpr& asyncSeq);
+    void analyzeAsyncLet(const AsyncLetExpr& asyncLet);
+    
+    // 并发安全检查
+    void checkSendableCompliance(const std::shared_ptr<Type>& type);
+    void checkActorIsolation(const Expr& expr);
+    void checkDataRaceConditions(const Expr& expr);
+    void checkDeadlockPotential(const Stmt& stmt);
     
     // AST访问者模式实现 - 语句
     void visit(const ExprStmt& stmt) override;
@@ -132,6 +223,7 @@ private:
     
     // 分析状态
     std::vector<SemanticError> errors;
+    std::vector<ConcurrencyError> concurrencyErrors;
     std::vector<std::string> warnings;
     std::shared_ptr<Type> currentExpressionType;
     std::shared_ptr<Type> currentFunctionReturnType;
@@ -140,9 +232,23 @@ private:
     bool inClassContext;
     std::string currentClassName;
     
+    // 并发上下文管理
+    std::vector<ConcurrencyContext> contextStack;
+    ConcurrencyContext currentContext;
+    std::string currentActorName;
+    bool inAsyncContext;
+    bool inTaskGroup;
+    
+    // 并发实体管理
+    std::unordered_map<std::string, ActorInfo> actors;
+    std::unordered_map<std::string, ConcurrentFunction> asyncFunctions;
+    std::unordered_map<std::string, ConcurrentVariable> asyncVariables;
+    std::unordered_set<std::string> sendableTypes;
+    
     // 辅助方法
     void reportError(const std::string& message, int line = -1, int column = -1);
     void reportWarning(const std::string& message);
+    void reportConcurrencyError(const std::string& message, int line = -1, int column = -1);
     
     // 类型检查辅助方法
     std::shared_ptr<Type> analyzeExpression(const Expr& expr);
@@ -174,7 +280,38 @@ private:
     
     // 并发安全检查
     void checkConcurrencySafety(const Stmt& stmt);
-    void checkActorIsolation(const Expr& expr);
+    
+    // 并发上下文管理
+    void enterConcurrencyContext(ConcurrencyContext context, const std::string& actorName = "");
+    void exitConcurrencyContext();
+    bool isInAsyncContext() const;
+    bool isInActorContext() const;
+    
+    // 并发类型检查
+    bool isSendableType(const std::shared_ptr<Type>& type);
+    bool isActorIsolatedType(const std::shared_ptr<Type>& type);
+    ConcurrencySafetyLevel getSafetyLevel(const std::shared_ptr<Type>& type);
+    
+    // 并发操作验证
+    void validateAsyncCall(const Call& call);
+    void validateActorAccess(const MemberAccess& access);
+    void validateSendableConstraint(const Expr& expr, const std::shared_ptr<Type>& expectedType);
+    void validateTaskGroupOperation(const TaskGroupExpr& taskGroup);
+    void validateAsyncSequenceIteration(const AsyncSequenceExpr& asyncSeq);
+    
+    // 数据竞争检测
+    void detectDataRace(const Expr& expr);
+    void checkConcurrentAccess(const std::string& variableName);
+    void checkActorBoundaryViolation(const Expr& expr);
+    
+    // 死锁检测
+    void detectDeadlock(const Stmt& stmt);
+    void checkCircularActorDependency();
+    
+    // 并发辅助方法
+    std::string getExpressionActorContext(const Expr& expr);
+    bool requiresAsyncContext(const Expr& expr);
+    bool canCrossActorBoundary(const std::shared_ptr<Type>& type);
     
     // 泛型支持
     // void analyzeGenericConstraints(const std::vector<GenericParameter>& parameters);  // 暂时注释，等待GenericParameter定义

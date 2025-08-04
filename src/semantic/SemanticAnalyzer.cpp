@@ -13,11 +13,21 @@ SemanticAnalyzer::SemanticAnalyzer()
     , currentFunctionReturnType(nullptr)
     , inFunctionContext(false)
     , inLoopContext(false)
-    , inClassContext(false) {
+    , inClassContext(false)
+    , currentContext(ConcurrencyContext::NONE)
+    , inAsyncContext(false)
+    , inTaskGroup(false) {
     
     // 初始化内置类型
     // initializeBuiltinTypes();
     // initializeBuiltinFunctions();
+    
+    // 初始化内置的Sendable类型
+    sendableTypes.insert("Int");
+    sendableTypes.insert("Double");
+    sendableTypes.insert("String");
+    sendableTypes.insert("Bool");
+    sendableTypes.insert("Character");
 }
 
 // 移除默认析构函数定义
@@ -55,6 +65,358 @@ SemanticAnalysisResult SemanticAnalyzer::analyze(const std::vector<std::unique_p
     result.warnings = warnings;
     
     return result;
+}
+
+// 并发分析接口
+std::vector<ConcurrencyError> SemanticAnalyzer::analyzeConcurrency(const std::vector<std::unique_ptr<Stmt>>& statements) {
+    concurrencyErrors.clear();
+    
+    // 遍历所有语句进行并发分析
+    for (const auto& stmt : statements) {
+        if (stmt) {
+            checkConcurrencySafety(*stmt);
+        }
+    }
+    
+    // 检查循环依赖
+    checkCircularActorDependency();
+    
+    return concurrencyErrors;
+}
+
+// 并发错误报告
+void SemanticAnalyzer::reportConcurrencyError(const std::string& message, int line, int column) {
+    ConcurrencyError error;
+    error.message = message;
+    error.line = line;
+    error.column = column;
+    error.context = currentContext;
+    error.actorName = currentActorName;
+    concurrencyErrors.push_back(error);
+}
+
+// 并发上下文管理
+void SemanticAnalyzer::enterConcurrencyContext(ConcurrencyContext context, const std::string& actorName) {
+    contextStack.push_back(currentContext);
+    currentContext = context;
+    
+    if (!actorName.empty()) {
+        currentActorName = actorName;
+    }
+    
+    if (context == ConcurrencyContext::ASYNC_FUNCTION || 
+        context == ConcurrencyContext::TASK_GROUP ||
+        context == ConcurrencyContext::ASYNC_SEQUENCE) {
+        inAsyncContext = true;
+    }
+    
+    if (context == ConcurrencyContext::TASK_GROUP) {
+        inTaskGroup = true;
+    }
+}
+
+// 死锁检测
+void SemanticAnalyzer::detectDeadlock(const Stmt& stmt) {
+    // 基本的死锁检测逻辑
+    // 这里可以扩展更复杂的死锁检测算法
+}
+
+void SemanticAnalyzer::checkCircularActorDependency() {
+    // 检查Actor之间的循环依赖
+    // 使用图算法检测循环
+    for (const auto& [actorName, actorInfo] : actors) {
+        // 简单的循环检测逻辑
+        // 实际实现需要更复杂的图遍历算法
+    }
+}
+
+// 并发辅助方法
+std::string SemanticAnalyzer::getExpressionActorContext(const Expr& expr) {
+    // 获取表达式所属的Actor上下文
+    if (auto memberAccess = dynamic_cast<const MemberAccess*>(&expr)) {
+        // 分析成员访问的Actor上下文
+        return "";
+    }
+    return currentActorName;
+}
+
+bool SemanticAnalyzer::requiresAsyncContext(const Expr& expr) {
+    // 检查表达式是否需要异步上下文
+    if (auto call = dynamic_cast<const Call*>(&expr)) {
+        // 检查是否为异步函数调用
+        if (auto varExpr = dynamic_cast<const VarExpr*>(call->callee.get())) {
+            auto it = asyncFunctions.find(varExpr->name.lexeme);
+            return it != asyncFunctions.end() && it->second.isAsync;
+        }
+    }
+    return false;
+}
+
+bool SemanticAnalyzer::canCrossActorBoundary(const std::shared_ptr<Type>& type) {
+    // 检查类型是否可以跨越Actor边界
+    return isSendableType(type);
+}
+
+// Sendable合规性检查
+void SemanticAnalyzer::checkSendableCompliance(const std::shared_ptr<Type>& type) {
+    if (!isSendableType(type)) {
+        reportConcurrencyError("Type '" + type->getName() + "' does not conform to Sendable protocol");
+    }
+}
+
+void SemanticAnalyzer::exitConcurrencyContext() {
+    if (!contextStack.empty()) {
+        currentContext = contextStack.back();
+        contextStack.pop_back();
+    } else {
+        currentContext = ConcurrencyContext::NONE;
+    }
+    
+    // 更新异步上下文状态
+    inAsyncContext = (currentContext == ConcurrencyContext::ASYNC_FUNCTION ||
+                     currentContext == ConcurrencyContext::TASK_GROUP ||
+                     currentContext == ConcurrencyContext::ASYNC_SEQUENCE);
+    
+    inTaskGroup = (currentContext == ConcurrencyContext::TASK_GROUP);
+}
+
+bool SemanticAnalyzer::isInAsyncContext() const {
+    return inAsyncContext;
+}
+
+bool SemanticAnalyzer::isInActorContext() const {
+    return currentContext == ConcurrencyContext::ACTOR_METHOD;
+}
+
+// 并发类型检查
+bool SemanticAnalyzer::isSendableType(const std::shared_ptr<Type>& type) {
+    if (!type) return false;
+    
+    // 检查是否为内置的Sendable类型
+    if (sendableTypes.find(type->getName()) != sendableTypes.end()) {
+        return true;
+    }
+    
+    // 检查是否为值类型（结构体、枚举）
+    if (type->isValueType()) {
+        return true;
+    }
+    
+    // Actor类型是Sendable的
+    if (type->isActorType()) {
+        return true;
+    }
+    
+    return false;
+}
+
+bool SemanticAnalyzer::isActorIsolatedType(const std::shared_ptr<Type>& type) {
+    if (!type) return false;
+    
+    // 检查类型是否属于某个Actor
+    return type->isActorIsolated();
+}
+
+ConcurrencySafetyLevel SemanticAnalyzer::getSafetyLevel(const std::shared_ptr<Type>& type) {
+    if (!type) return ConcurrencySafetyLevel::UNSAFE;
+    
+    if (isSendableType(type)) {
+        return ConcurrencySafetyLevel::SENDABLE;
+    }
+    
+    if (isActorIsolatedType(type)) {
+        return ConcurrencySafetyLevel::ACTOR_ISOLATED;
+    }
+    
+    return ConcurrencySafetyLevel::UNSAFE;
+}
+
+// 并发安全检查
+void SemanticAnalyzer::checkConcurrencySafety(const Stmt& stmt) {
+    // 根据语句类型进行不同的并发安全检查
+    if (auto funcStmt = dynamic_cast<const FunctionStmt*>(&stmt)) {
+        if (funcStmt->isAsync) {
+            analyzeAsyncFunction(*funcStmt);
+        }
+    } else if (auto actorStmt = dynamic_cast<const ActorStmt*>(&stmt)) {
+        analyzeActor(*actorStmt);
+    }
+    
+    // 检查死锁潜在风险
+    detectDeadlock(stmt);
+}
+
+void SemanticAnalyzer::checkActorIsolation(const Expr& expr) {
+    // 检查表达式是否违反Actor隔离规则
+    if (auto memberAccess = dynamic_cast<const MemberAccess*>(&expr)) {
+        validateActorAccess(*memberAccess);
+    }
+    
+    // 检查是否跨越Actor边界
+    checkActorBoundaryViolation(expr);
+}
+
+void SemanticAnalyzer::checkDataRaceConditions(const Expr& expr) {
+    detectDataRace(expr);
+}
+
+void SemanticAnalyzer::checkDeadlockPotential(const Stmt& stmt) {
+    detectDeadlock(stmt);
+}
+
+// 并发特定的分析方法
+void SemanticAnalyzer::analyzeAsyncFunction(const FunctionStmt& func) {
+    enterConcurrencyContext(ConcurrencyContext::ASYNC_FUNCTION);
+    
+    // 创建异步函数信息
+    auto returnType = typeSystem->getTypeByName(func.returnType.lexeme);
+    if (!returnType) {
+        returnType = typeSystem->getVoidType(); // 默认为void类型
+    }
+    auto functionType = std::make_shared<FunctionType>(
+        std::vector<std::shared_ptr<Type>>{}, // 参数类型
+        returnType, // 返回类型
+        false, // isThrows
+        true // isAsync
+    );
+    ConcurrentFunction asyncFunc(func.name.lexeme, functionType, true);
+    
+    // 分析函数体中的并发操作
+    if (func.body) {
+        checkConcurrencySafety(*func.body);
+    }
+    
+    asyncFunctions[func.name.lexeme] = asyncFunc;
+    exitConcurrencyContext();
+}
+
+void SemanticAnalyzer::analyzeActor(const ActorStmt& actor) {
+    enterConcurrencyContext(ConcurrencyContext::ACTOR_METHOD, actor.name.lexeme);
+    
+    // 创建Actor信息
+    ActorInfo actorInfo(actor.name.lexeme, false);
+    
+    // 分析Actor的方法
+    for (const auto& method : actor.methods) {
+        // 创建函数类型（简化处理）
+        auto funcType = std::make_shared<FunctionType>(
+            std::vector<std::shared_ptr<Type>>{}, // 参数类型暂时为空
+            std::make_shared<PrimitiveType>(TypeKind::Void, "Void"), // 返回类型
+            false, // isThrows
+            method->isAsync // isAsync
+        );
+        
+        ConcurrentFunction funcInfo(method->name.lexeme, funcType, method->isAsync);
+        funcInfo.actorName = actor.name.lexeme;
+        
+        actorInfo.methods[funcInfo.name] = funcInfo;
+    }
+    
+    actors[actor.name.lexeme] = actorInfo;
+    exitConcurrencyContext();
+}
+
+void SemanticAnalyzer::analyzeTaskCreation(const TaskExpr& task) {
+    // 检查Task创建的上下文是否合法
+    if (!isInAsyncContext()) {
+        reportConcurrencyError("Task can only be created in async context");
+    }
+    
+    // 分析Task闭包的并发安全性
+    enterConcurrencyContext(ConcurrencyContext::TASK_CLOSURE);
+    // 这里需要分析task.closure
+    exitConcurrencyContext();
+}
+
+void SemanticAnalyzer::analyzeTaskGroup(const TaskGroupExpr& taskGroup) {
+    enterConcurrencyContext(ConcurrencyContext::TASK_GROUP);
+    
+    // 分析TaskGroup操作
+    validateTaskGroupOperation(taskGroup);
+    
+    exitConcurrencyContext();
+}
+
+void SemanticAnalyzer::analyzeAwaitExpression(const AwaitExpr& await) {
+    if (!isInAsyncContext()) {
+        reportConcurrencyError("'await' can only be used in async context");
+    }
+    
+    // 检查await的表达式是否返回可等待的类型
+    // 这里需要分析await.expression
+}
+
+void SemanticAnalyzer::analyzeAsyncSequence(const AsyncSequenceExpr& asyncSeq) {
+    enterConcurrencyContext(ConcurrencyContext::ASYNC_SEQUENCE);
+    
+    validateAsyncSequenceIteration(asyncSeq);
+    
+    exitConcurrencyContext();
+}
+
+void SemanticAnalyzer::analyzeAsyncLet(const AsyncLetExpr& asyncLet) {
+    if (!isInAsyncContext()) {
+        reportConcurrencyError("'async let' can only be used in async context");
+    }
+    
+    // 分析async let绑定的表达式
+    // 这里需要分析asyncLet.expression
+}
+
+// 并发操作验证
+void SemanticAnalyzer::validateAsyncCall(const Call& call) {
+    // 检查异步调用是否在正确的上下文中
+    if (requiresAsyncContext(call) && !isInAsyncContext()) {
+        reportConcurrencyError("Async function call requires async context");
+    }
+}
+
+void SemanticAnalyzer::validateActorAccess(const MemberAccess& access) {
+    // 检查Actor成员访问是否安全
+    std::string actorContext = getExpressionActorContext(access);
+    if (!actorContext.empty() && actorContext != currentActorName) {
+        reportConcurrencyError("Cross-actor access detected");
+    }
+}
+
+void SemanticAnalyzer::validateSendableConstraint(const Expr& expr, const std::shared_ptr<Type>& expectedType) {
+    if (expectedType && !isSendableType(expectedType)) {
+        reportConcurrencyError("Type must conform to Sendable protocol");
+    }
+}
+
+void SemanticAnalyzer::validateTaskGroupOperation(const TaskGroupExpr& taskGroup) {
+    // 验证TaskGroup操作的合法性
+    // 这里需要具体的TaskGroup分析逻辑
+}
+
+void SemanticAnalyzer::validateAsyncSequenceIteration(const AsyncSequenceExpr& asyncSeq) {
+    // 验证异步序列迭代的合法性
+    // 这里需要具体的AsyncSequence分析逻辑
+}
+
+// 数据竞争检测
+void SemanticAnalyzer::detectDataRace(const Expr& expr) {
+    // 检测潜在的数据竞争
+    if (auto varExpr = dynamic_cast<const VarExpr*>(&expr)) {
+        checkConcurrentAccess(varExpr->name.lexeme);
+    }
+}
+
+void SemanticAnalyzer::checkConcurrentAccess(const std::string& variableName) {
+    // 检查变量的并发访问安全性
+    auto it = asyncVariables.find(variableName);
+    if (it != asyncVariables.end() && it->second.safetyLevel == ConcurrencySafetyLevel::UNSAFE) {
+        reportConcurrencyError("Concurrent access to non-Sendable variable: " + variableName);
+    }
+}
+
+void SemanticAnalyzer::checkActorBoundaryViolation(const Expr& expr) {
+    // 检查是否违反Actor边界
+    std::string exprActorContext = getExpressionActorContext(expr);
+    if (!exprActorContext.empty() && exprActorContext != currentActorName) {
+        reportConcurrencyError("Actor boundary violation detected");
+    }
 }
 
 void SemanticAnalyzer::visit(const Binary& expr) {
@@ -690,7 +1052,7 @@ void SemanticAnalyzer::visit(const FunctionStmt& stmt) {
     }
     
     // 创建函数类型
-    auto funcType = std::make_shared<FunctionType>(paramTypes, returnType);
+    auto funcType = std::make_shared<FunctionType>(paramTypes, returnType, false, stmt.isAsync);
     
     // 分析函数体
     std::unique_ptr<TypedStmt> typedBody = nullptr;
@@ -979,7 +1341,7 @@ void SemanticAnalyzer::visit(const StructStmt& stmt) {
             continue;
         }
         
-        structType->fields[field.name] = fieldType;
+        structType->fields[field.name.lexeme] = fieldType;
     }
     
     // 注册类型
@@ -1034,7 +1396,7 @@ void SemanticAnalyzer::visit(const ClassStmt& stmt) {
         }
         
         // 创建函数类型
-        auto funcType = std::make_shared<FunctionType>(paramTypes, returnType);
+        auto funcType = std::make_shared<FunctionType>(paramTypes, returnType, false, false);
         
         // 注册方法到TypedProgram
         if (currentTypedProgram) {
@@ -1119,8 +1481,7 @@ bool SemanticAnalyzer::isReachable(const Stmt& stmt) { return true; }
 void SemanticAnalyzer::checkMemorySafety(const Expr& expr) {}
 void SemanticAnalyzer::checkNullPointerAccess(const Expr& expr) {}
 void SemanticAnalyzer::checkArrayBounds(const IndexAccess& access) {}
-void SemanticAnalyzer::checkConcurrencySafety(const Stmt& stmt) {}
-void SemanticAnalyzer::checkActorIsolation(const Expr& expr) {}
+
 
 std::shared_ptr<Type> SemanticAnalyzer::instantiateGenericType(const std::shared_ptr<Type>& genericType, 
                                             const std::unordered_map<std::string, std::shared_ptr<Type>>& substitutions) {

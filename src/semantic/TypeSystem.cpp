@@ -243,7 +243,7 @@ std::shared_ptr<FunctionType> TypeSystem::getFunctionType(
     }
     
     // 创建新的函数类型
-    auto newFuncType = std::make_shared<FunctionType>(parameterTypes, returnType);
+    auto newFuncType = std::make_shared<FunctionType>(parameterTypes, returnType, false, false);
     functionTypes_.push_back(newFuncType);
     return newFuncType;
 }
@@ -471,6 +471,656 @@ void TypeSystem::dumpTypes() const {
     std::cout << "Optional Types: " << optionalTypes_.size() << "\n";
     std::cout << "Function Types: " << functionTypes_.size() << "\n";
     std::cout << "Generic Types: " << genericTypes_.size() << "\n";
+}
+
+// ============================================================================
+// 并发类型系统实现
+// ============================================================================
+
+// ActorType 实现
+ActorType::ActorType(const std::string& name, bool isGlobalActor)
+    : Type(TypeKind::Class, name), isGlobalActor_(isGlobalActor) {
+}
+
+void ActorType::addProperty(const std::string& name, std::shared_ptr<Type> type, ActorIsolation isolation) {
+    properties_[name] = type;
+    propertyIsolations_[name] = isolation;
+}
+
+void ActorType::addMethod(const std::string& name, std::shared_ptr<FunctionType> type, ActorIsolation isolation) {
+    methods_[name] = type;
+    methodIsolations_[name] = isolation;
+}
+
+std::shared_ptr<Type> ActorType::getPropertyType(const std::string& name) const {
+    auto it = properties_.find(name);
+    return (it != properties_.end()) ? it->second : nullptr;
+}
+
+std::shared_ptr<FunctionType> ActorType::getMethodType(const std::string& name) const {
+    auto it = methods_.find(name);
+    return (it != methods_.end()) ? it->second : nullptr;
+}
+
+ActorIsolation ActorType::getPropertyIsolation(const std::string& name) const {
+    auto it = propertyIsolations_.find(name);
+    return (it != propertyIsolations_.end()) ? it->second : ActorIsolation::NONE;
+}
+
+ActorIsolation ActorType::getMethodIsolation(const std::string& name) const {
+    auto it = methodIsolations_.find(name);
+    return (it != methodIsolations_.end()) ? it->second : ActorIsolation::NONE;
+}
+
+bool ActorType::hasProperty(const std::string& name) const {
+    return properties_.find(name) != properties_.end();
+}
+
+bool ActorType::hasMethod(const std::string& name) const {
+    return methods_.find(name) != methods_.end();
+}
+
+std::vector<std::string> ActorType::getPropertyNames() const {
+    std::vector<std::string> names;
+    for (const auto& pair : properties_) {
+        names.push_back(pair.first);
+    }
+    return names;
+}
+
+std::vector<std::string> ActorType::getMethodNames() const {
+    std::vector<std::string> names;
+    for (const auto& pair : methods_) {
+        names.push_back(pair.first);
+    }
+    return names;
+}
+
+std::string ActorType::toString() const {
+    return "actor " + name_;
+}
+
+bool ActorType::equals(const Type& other) const {
+    if (other.getKind() != TypeKind::Class) return false;
+    const ActorType* actorType = dynamic_cast<const ActorType*>(&other);
+    return actorType && actorType->name_ == name_ && actorType->isGlobalActor_ == isGlobalActor_;
+}
+
+std::shared_ptr<Type> ActorType::cloneImpl() const {
+    auto clone = std::make_shared<ActorType>(name_, isGlobalActor_);
+    clone->properties_ = properties_;
+    clone->methods_ = methods_;
+    clone->propertyIsolations_ = propertyIsolations_;
+    clone->methodIsolations_ = methodIsolations_;
+    return clone;
+}
+
+// TaskType 实现
+TaskType::TaskType(std::shared_ptr<Type> resultType, TaskPriority priority)
+    : Type(TypeKind::Class, "Task"), resultType_(resultType), priority_(priority) {
+}
+
+std::string TaskType::toString() const {
+    return "Task<" + resultType_->toString() + ">";
+}
+
+bool TaskType::equals(const Type& other) const {
+    if (other.getKind() != TypeKind::Class) return false;
+    const TaskType* taskType = dynamic_cast<const TaskType*>(&other);
+    return taskType && taskType->resultType_->equals(*resultType_) && taskType->priority_ == priority_;
+}
+
+std::shared_ptr<Type> TaskType::cloneImpl() const {
+    return std::make_shared<TaskType>(resultType_->clone(), priority_);
+}
+
+// TaskGroupType 实现
+TaskGroupType::TaskGroupType(std::shared_ptr<Type> childResultType)
+    : Type(TypeKind::Class, "TaskGroup"), childResultType_(childResultType) {
+}
+
+std::string TaskGroupType::toString() const {
+    return "TaskGroup<" + childResultType_->toString() + ">";
+}
+
+bool TaskGroupType::equals(const Type& other) const {
+    if (other.getKind() != TypeKind::Class) return false;
+    const TaskGroupType* taskGroupType = dynamic_cast<const TaskGroupType*>(&other);
+    return taskGroupType && taskGroupType->childResultType_->equals(*childResultType_);
+}
+
+std::shared_ptr<Type> TaskGroupType::cloneImpl() const {
+    return std::make_shared<TaskGroupType>(childResultType_->clone());
+}
+
+// AsyncSequenceType 实现
+AsyncSequenceType::AsyncSequenceType(std::shared_ptr<Type> elementType)
+    : Type(TypeKind::Protocol, "AsyncSequence"), elementType_(elementType) {
+}
+
+std::string AsyncSequenceType::toString() const {
+    return "AsyncSequence<" + elementType_->toString() + ">";
+}
+
+bool AsyncSequenceType::equals(const Type& other) const {
+    if (other.getKind() != TypeKind::Protocol) return false;
+    const AsyncSequenceType* asyncSeqType = dynamic_cast<const AsyncSequenceType*>(&other);
+    return asyncSeqType && asyncSeqType->elementType_->equals(*elementType_);
+}
+
+std::shared_ptr<Type> AsyncSequenceType::cloneImpl() const {
+    return std::make_shared<AsyncSequenceType>(elementType_->clone());
+}
+
+// AsyncIteratorType 实现
+AsyncIteratorType::AsyncIteratorType(std::shared_ptr<Type> elementType)
+    : Type(TypeKind::Protocol, "AsyncIterator"), elementType_(elementType) {
+}
+
+std::string AsyncIteratorType::toString() const {
+    return "AsyncIterator<" + elementType_->toString() + ">";
+}
+
+bool AsyncIteratorType::equals(const Type& other) const {
+    if (other.getKind() != TypeKind::Protocol) return false;
+    const AsyncIteratorType* asyncIterType = dynamic_cast<const AsyncIteratorType*>(&other);
+    return asyncIterType && asyncIterType->elementType_->equals(*elementType_);
+}
+
+std::shared_ptr<Type> AsyncIteratorType::cloneImpl() const {
+    return std::make_shared<AsyncIteratorType>(elementType_->clone());
+}
+
+// SendableProtocolType 实现
+SendableProtocolType::SendableProtocolType()
+    : Type(TypeKind::Protocol, "Sendable") {
+}
+
+std::string SendableProtocolType::toString() const {
+    return "Sendable";
+}
+
+bool SendableProtocolType::equals(const Type& other) const {
+    return dynamic_cast<const SendableProtocolType*>(&other) != nullptr;
+}
+
+bool SendableProtocolType::conformsToSendable(const std::shared_ptr<Type>& type) {
+    // 基本类型都是Sendable的
+    TypeKind kind = type->getKind();
+    if (kind == TypeKind::Int || kind == TypeKind::Float || kind == TypeKind::Bool || 
+        kind == TypeKind::String || kind == TypeKind::Double) {
+        return true;
+    }
+    
+    // 检查是否是SendableProtocolType
+    if (dynamic_cast<const SendableProtocolType*>(type.get())) {
+        return true;
+    }
+    
+    // 其他类型需要显式声明符合Sendable协议
+    return false;
+}
+
+std::shared_ptr<Type> SendableProtocolType::cloneImpl() const {
+    return std::make_shared<SendableProtocolType>();
+}
+
+// ContinuationType 实现
+ContinuationType::ContinuationType(std::shared_ptr<Type> resultType, bool throwing)
+    : Type(TypeKind::Class, "Continuation"), resultType_(resultType), throwing_(throwing) {
+}
+
+std::string ContinuationType::toString() const {
+    std::string base = throwing_ ? "CheckedContinuation" : "UnsafeContinuation";
+    return base + "<" + resultType_->toString() + ">";
+}
+
+bool ContinuationType::equals(const Type& other) const {
+    if (other.getKind() != TypeKind::Class) return false;
+    const ContinuationType* contType = dynamic_cast<const ContinuationType*>(&other);
+    return contType && contType->resultType_->equals(*resultType_) && contType->throwing_ == throwing_;
+}
+
+std::shared_ptr<Type> ContinuationType::cloneImpl() const {
+    return std::make_shared<ContinuationType>(resultType_->clone(), throwing_);
+}
+
+// AsyncStreamType 实现
+AsyncStreamType::AsyncStreamType(std::shared_ptr<Type> elementType, bool throwing)
+    : Type(TypeKind::Class, "AsyncStream"), elementType_(elementType), throwing_(throwing) {
+}
+
+std::string AsyncStreamType::toString() const {
+    std::string base = throwing_ ? "AsyncThrowingStream" : "AsyncStream";
+    return base + "<" + elementType_->toString() + ">";
+}
+
+bool AsyncStreamType::equals(const Type& other) const {
+    if (other.getKind() != getKind()) return false;
+    const AsyncStreamType* streamType = dynamic_cast<const AsyncStreamType*>(&other);
+    return streamType && streamType->elementType_->equals(*elementType_) && streamType->throwing_ == throwing_;
+}
+
+std::shared_ptr<Type> AsyncStreamType::cloneImpl() const {
+    return std::make_shared<AsyncStreamType>(elementType_->clone(), throwing_);
+}
+
+// ConcurrencyTypeChecker 实现
+ConcurrencyTypeChecker::ConcurrencyTypeChecker(std::shared_ptr<TypeSystem> typeSystem)
+    : typeSystem_(typeSystem) {
+    initializeBuiltinSendableTypes();
+}
+
+bool ConcurrencyTypeChecker::validateAsyncCall(const std::shared_ptr<FunctionType>& funcType, 
+                                              const std::vector<std::shared_ptr<Type>>& argTypes,
+                                              bool inAsyncContext) {
+    if (!funcType->isAsync && !inAsyncContext) {
+        return true; // 同步调用在任何上下文都可以
+    }
+    
+    if (funcType->isAsync && !inAsyncContext) {
+        addDiagnostic("Async function call requires async context");
+        return false;
+    }
+    
+    // 检查参数类型是否符合Sendable约束
+    for (size_t i = 0; i < argTypes.size() && i < funcType->parameterTypes.size(); ++i) {
+        if (!validateSendableConstraint(argTypes[i], "function parameter")) {
+            return false;
+        }
+    }
+    
+    return true;
+}
+
+bool ConcurrencyTypeChecker::validateActorAccess(const std::shared_ptr<ActorType>& actorType,
+                                                const std::string& memberName,
+                                                const std::string& currentActorContext,
+                                                bool inAsyncContext) {
+    if (!actorType) {
+        addDiagnostic("Invalid actor type");
+        return false;
+    }
+    
+    ActorIsolation memberIsolation = ActorIsolation::NONE;
+    
+    if (actorType->hasProperty(memberName)) {
+        memberIsolation = actorType->getPropertyIsolation(memberName);
+    } else if (actorType->hasMethod(memberName)) {
+        memberIsolation = actorType->getMethodIsolation(memberName);
+    } else {
+        addDiagnostic("Member '" + memberName + "' not found in actor '" + actorType->getName() + "'");
+        return false;
+    }
+    
+    return validateActorIsolationAccess(actorType, memberName, memberIsolation);
+}
+
+bool ConcurrencyTypeChecker::validateSendableConstraint(const std::shared_ptr<Type>& type,
+                                                       const std::string& context) {
+    if (!type) {
+        addDiagnostic("Invalid type in " + context);
+        return false;
+    }
+    
+    if (isSendableType(type)) {
+        return true;
+    }
+    
+    addDiagnostic("Type '" + type->toString() + "' does not conform to Sendable protocol in " + context);
+    return false;
+}
+
+bool ConcurrencyTypeChecker::validateTaskGroupOperation(const std::shared_ptr<TaskGroupType>& taskGroupType,
+                                                       const std::string& operation,
+                                                       const std::vector<std::shared_ptr<Type>>& operandTypes) {
+    if (!taskGroupType) {
+        addDiagnostic("Invalid TaskGroup type");
+        return false;
+    }
+    
+    if (operation == "addTask") {
+        // 检查任务返回类型是否与TaskGroup的子结果类型兼容
+        if (!operandTypes.empty()) {
+            auto taskResultType = operandTypes[0];
+            if (!typeSystem_->areTypesEqual(taskResultType, taskGroupType->getChildResultType())) {
+                addDiagnostic("Task result type does not match TaskGroup child result type");
+                return false;
+            }
+        }
+    }
+    
+    return true;
+}
+
+bool ConcurrencyTypeChecker::validateAsyncSequenceIteration(const std::shared_ptr<AsyncSequenceType>& seqType,
+                                                           bool inAsyncContext) {
+    if (!seqType) {
+        addDiagnostic("Invalid AsyncSequence type");
+        return false;
+    }
+    
+    if (!inAsyncContext) {
+        addDiagnostic("AsyncSequence iteration requires async context");
+        return false;
+    }
+    
+    return validateSendableConstraint(seqType->getElementType(), "AsyncSequence element");
+}
+
+// 类型创建方法
+std::shared_ptr<ActorType> ConcurrencyTypeChecker::createActorType(const std::string& name, bool isGlobalActor) {
+    auto actorType = std::make_shared<ActorType>(name, isGlobalActor);
+    actorTypes_[name] = actorType;
+    return actorType;
+}
+
+std::shared_ptr<TaskType> ConcurrencyTypeChecker::createTaskType(std::shared_ptr<Type> resultType, TaskPriority priority) {
+    return std::make_shared<TaskType>(resultType, priority);
+}
+
+std::shared_ptr<TaskGroupType> ConcurrencyTypeChecker::createTaskGroupType(std::shared_ptr<Type> childResultType) {
+    return std::make_shared<TaskGroupType>(childResultType);
+}
+
+std::shared_ptr<AsyncSequenceType> ConcurrencyTypeChecker::createAsyncSequenceType(std::shared_ptr<Type> elementType) {
+    return std::make_shared<AsyncSequenceType>(elementType);
+}
+
+std::shared_ptr<AsyncIteratorType> ConcurrencyTypeChecker::createAsyncIteratorType(std::shared_ptr<Type> elementType) {
+    return std::make_shared<AsyncIteratorType>(elementType);
+}
+
+std::shared_ptr<ContinuationType> ConcurrencyTypeChecker::createContinuationType(std::shared_ptr<Type> resultType, bool throwing) {
+    return std::make_shared<ContinuationType>(resultType, throwing);
+}
+
+std::shared_ptr<AsyncStreamType> ConcurrencyTypeChecker::createAsyncStreamType(std::shared_ptr<Type> elementType, bool throwing) {
+    return std::make_shared<AsyncStreamType>(elementType, throwing);
+}
+
+// 类型查询方法
+bool ConcurrencyTypeChecker::isActorType(const std::shared_ptr<Type>& type) const {
+    return dynamic_cast<const ActorType*>(type.get()) != nullptr;
+}
+
+bool ConcurrencyTypeChecker::isTaskType(const std::shared_ptr<Type>& type) const {
+    return dynamic_cast<const TaskType*>(type.get()) != nullptr;
+}
+
+bool ConcurrencyTypeChecker::isAsyncSequenceType(const std::shared_ptr<Type>& type) const {
+    return dynamic_cast<const AsyncSequenceType*>(type.get()) != nullptr;
+}
+
+bool ConcurrencyTypeChecker::isSendableType(const std::shared_ptr<Type>& type) const {
+    return SendableProtocolType::conformsToSendable(type) || isBuiltinSendableType(type);
+}
+
+ConcurrencySafetyLevel ConcurrencyTypeChecker::getSafetyLevel(const std::shared_ptr<Type>& type) const {
+    if (isSendableType(type)) {
+        return ConcurrencySafetyLevel::SENDABLE;
+    }
+    
+    if (isActorType(type)) {
+        return ConcurrencySafetyLevel::ACTOR_ISOLATED;
+    }
+    
+    return ConcurrencySafetyLevel::UNSAFE;
+}
+
+ActorIsolation ConcurrencyTypeChecker::getActorIsolation(const std::shared_ptr<Type>& type) const {
+    const ActorType* actorType = dynamic_cast<const ActorType*>(type.get());
+    if (actorType) {
+        return actorType->isGlobalActor() ? ActorIsolation::GLOBAL_ACTOR : ActorIsolation::ACTOR_ISOLATED;
+    }
+    
+    return ActorIsolation::NONE;
+}
+
+bool ConcurrencyTypeChecker::canCrossActorBoundary(const std::shared_ptr<Type>& type) const {
+    return isSendableType(type);
+}
+
+bool ConcurrencyTypeChecker::requiresAsyncContext(const std::shared_ptr<Type>& type) const {
+    return isTaskType(type) || isAsyncSequenceType(type);
+}
+
+bool ConcurrencyTypeChecker::isMainActorIsolated(const std::shared_ptr<Type>& type) const {
+    const ActorType* actorType = dynamic_cast<const ActorType*>(type.get());
+    return actorType && actorType->getName() == "MainActor";
+}
+
+// 错误处理
+std::vector<ConcurrencyTypeError> ConcurrencyTypeChecker::getDiagnostics() const {
+    return diagnostics_;
+}
+
+void ConcurrencyTypeChecker::addDiagnostic(const std::string& message, int line, int column, const std::string& errorCode) {
+    diagnostics_.emplace_back(message, line, column, errorCode);
+}
+
+void ConcurrencyTypeChecker::clearDiagnostics() {
+    diagnostics_.clear();
+}
+
+bool ConcurrencyTypeChecker::hasErrors() const {
+    return !diagnostics_.empty();
+}
+
+// 私有辅助方法
+void ConcurrencyTypeChecker::initializeBuiltinSendableTypes() {
+    builtinSendableTypes_.insert("Int");
+    builtinSendableTypes_.insert("Float");
+    builtinSendableTypes_.insert("Double");
+    builtinSendableTypes_.insert("Bool");
+    builtinSendableTypes_.insert("String");
+    builtinSendableTypes_.insert("Void");
+}
+
+bool ConcurrencyTypeChecker::isBuiltinSendableType(const std::shared_ptr<Type>& type) const {
+    return builtinSendableTypes_.find(type->getName()) != builtinSendableTypes_.end();
+}
+
+bool ConcurrencyTypeChecker::checkSendableConformance(const std::shared_ptr<Type>& type) const {
+    return SendableProtocolType::conformsToSendable(type);
+}
+
+bool ConcurrencyTypeChecker::validateActorIsolationAccess(const std::shared_ptr<ActorType>& actorType,
+                                                         const std::string& memberName,
+                                                         ActorIsolation currentIsolation) const {
+    // 简化的隔离检查逻辑
+    if (currentIsolation == ActorIsolation::NONISOLATED) {
+        return true; // nonisolated成员可以从任何地方访问
+    }
+    
+    // 其他情况需要更复杂的检查
+    return true;
+}
+
+std::string ConcurrencyTypeChecker::getActorIsolationString(ActorIsolation isolation) const {
+    switch (isolation) {
+        case ActorIsolation::NONE: return "none";
+        case ActorIsolation::ACTOR_ISOLATED: return "actor-isolated";
+        case ActorIsolation::MAIN_ACTOR: return "@MainActor";
+        case ActorIsolation::GLOBAL_ACTOR: return "@GlobalActor";
+        case ActorIsolation::NONISOLATED: return "nonisolated";
+        default: return "unknown";
+    }
+}
+
+std::string ConcurrencyTypeChecker::getTaskPriorityString(TaskPriority priority) const {
+    switch (priority) {
+        case TaskPriority::Background: return "background";
+        case TaskPriority::Utility: return "utility";
+        case TaskPriority::Default: return "default";
+        case TaskPriority::UserInitiated: return "userInitiated";
+        case TaskPriority::UserInteractive: return "userInteractive";
+        default: return "unknown";
+    }
+}
+
+// AsyncContextManager 实现
+AsyncContextManager::AsyncContextManager() {
+}
+
+void AsyncContextManager::enterAsyncContext(const std::string& contextName) {
+    contextStack_.emplace_back("async", contextName);
+}
+
+void AsyncContextManager::exitAsyncContext() {
+    if (!contextStack_.empty() && contextStack_.back().type == "async") {
+        contextStack_.pop_back();
+    }
+}
+
+bool AsyncContextManager::isInAsyncContext() const {
+    return findFrameByType("async") != nullptr;
+}
+
+void AsyncContextManager::enterActorContext(const std::string& actorName) {
+    contextStack_.emplace_back("actor", actorName);
+}
+
+void AsyncContextManager::exitActorContext() {
+    if (!contextStack_.empty() && contextStack_.back().type == "actor") {
+        contextStack_.pop_back();
+    }
+}
+
+std::string AsyncContextManager::getCurrentActorContext() const {
+    const ContextFrame* frame = findFrameByType("actor");
+    return frame ? frame->name : "";
+}
+
+bool AsyncContextManager::isInActorContext() const {
+    return findFrameByType("actor") != nullptr;
+}
+
+void AsyncContextManager::enterTaskGroup(const std::string& groupId) {
+    contextStack_.emplace_back("taskgroup", groupId);
+}
+
+void AsyncContextManager::exitTaskGroup() {
+    if (!contextStack_.empty() && contextStack_.back().type == "taskgroup") {
+        contextStack_.pop_back();
+    }
+}
+
+bool AsyncContextManager::isInTaskGroup() const {
+    return findFrameByType("taskgroup") != nullptr;
+}
+
+std::string AsyncContextManager::getCurrentTaskGroup() const {
+    const ContextFrame* frame = findFrameByType("taskgroup");
+    return frame ? frame->name : "";
+}
+
+void AsyncContextManager::addTaskToGroup(const std::string& taskId) {
+    ContextFrame* frame = findFrameByType("taskgroup");
+    if (frame) {
+        frame->tasks.push_back(taskId);
+    }
+}
+
+void AsyncContextManager::removeTaskFromGroup(const std::string& taskId) {
+    ContextFrame* frame = findFrameByType("taskgroup");
+    if (frame) {
+        auto it = std::find(frame->tasks.begin(), frame->tasks.end(), taskId);
+        if (it != frame->tasks.end()) {
+            frame->tasks.erase(it);
+        }
+    }
+}
+
+std::vector<std::string> AsyncContextManager::getTasksInCurrentGroup() const {
+    const ContextFrame* frame = findFrameByType("taskgroup");
+    return frame ? frame->tasks : std::vector<std::string>();
+}
+
+int AsyncContextManager::getAsyncContextDepth() const {
+    int depth = 0;
+    for (const auto& frame : contextStack_) {
+        if (frame.type == "async") {
+            depth++;
+        }
+    }
+    return depth;
+}
+
+std::vector<std::string> AsyncContextManager::getContextStack() const {
+    std::vector<std::string> stack;
+    for (const auto& frame : contextStack_) {
+        stack.push_back(frame.type + ":" + frame.name);
+    }
+    return stack;
+}
+
+void AsyncContextManager::reset() {
+    contextStack_.clear();
+}
+
+AsyncContextManager::ContextFrame* AsyncContextManager::getCurrentFrame() {
+    return contextStack_.empty() ? nullptr : &contextStack_.back();
+}
+
+const AsyncContextManager::ContextFrame* AsyncContextManager::getCurrentFrame() const {
+    return contextStack_.empty() ? nullptr : &contextStack_.back();
+}
+
+AsyncContextManager::ContextFrame* AsyncContextManager::findFrameByType(const std::string& type) {
+    for (auto it = contextStack_.rbegin(); it != contextStack_.rend(); ++it) {
+        if (it->type == type) {
+            return &(*it);
+        }
+    }
+    return nullptr;
+}
+
+const AsyncContextManager::ContextFrame* AsyncContextManager::findFrameByType(const std::string& type) const {
+    for (auto it = contextStack_.rbegin(); it != contextStack_.rend(); ++it) {
+        if (it->type == type) {
+            return &(*it);
+        }
+    }
+    return nullptr;
+}
+
+// ConcurrencyTypeFactory 实现
+std::shared_ptr<ActorType> ConcurrencyTypeFactory::createMainActorType() {
+    return std::make_shared<ActorType>("MainActor", true);
+}
+
+std::shared_ptr<SendableProtocolType> ConcurrencyTypeFactory::createSendableProtocol() {
+    return std::make_shared<SendableProtocolType>();
+}
+
+std::shared_ptr<TaskType> ConcurrencyTypeFactory::createDetachedTask(std::shared_ptr<Type> resultType, TaskPriority priority) {
+    return std::make_shared<TaskType>(resultType, priority);
+}
+
+std::shared_ptr<AsyncSequenceType> ConcurrencyTypeFactory::createAsyncSequence(std::shared_ptr<Type> elementType) {
+    return std::make_shared<AsyncSequenceType>(elementType);
+}
+
+std::shared_ptr<Type> ConcurrencyTypeFactory::createBuiltinAsyncType(const std::string& typeName) {
+    if (typeName == "Task") {
+        // 创建一个泛型Task类型，这里简化为Void结果类型
+        return std::make_shared<TaskType>(std::make_shared<PrimitiveType>(TypeKind::Void, "Void"));
+    } else if (typeName == "AsyncSequence") {
+        // 创建一个泛型AsyncSequence类型，这里简化为Any元素类型
+        return std::make_shared<AsyncSequenceType>(std::make_shared<PrimitiveType>(TypeKind::Any, "Any"));
+    }
+    
+    return nullptr;
+}
+
+std::shared_ptr<FunctionType> ConcurrencyTypeFactory::createAsyncFunctionType(
+    const std::vector<std::shared_ptr<Type>>& paramTypes,
+    std::shared_ptr<Type> returnType,
+    bool throwing) {
+    
+    auto funcType = std::make_shared<FunctionType>(paramTypes, returnType, throwing, true);
+    return funcType;
 }
 
 } // namespace miniswift

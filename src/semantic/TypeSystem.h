@@ -8,6 +8,7 @@
 #include <unordered_set>
 #include <optional>
 #include <iostream>
+#include "../interpreter/Concurrency/ConcurrencyRuntime.h"
 
 namespace miniswift {
 
@@ -83,6 +84,8 @@ public:
     virtual bool isOptional() const { return false; }
     virtual bool isGeneric() const { return false; }
     virtual bool isConcrete() const { return true; }
+    virtual bool isActorType() const { return false; }
+    virtual bool isActorIsolated() const { return false; }
     
     // 类型操作
     virtual std::shared_ptr<Type> getOptionalType() const;
@@ -322,7 +325,6 @@ protected:
     }
     
 public:
-    
     std::vector<std::shared_ptr<Type>> parameterTypes;
     std::shared_ptr<Type> returnType;
     bool isThrows;
@@ -522,6 +524,363 @@ private:
     
     // 辅助方法
     std::string generateTypeCacheKey(const std::string& baseType, const std::vector<std::string>& parameters) const;
+};
+
+// ============================================================================
+// 并发类型系统扩展
+// ============================================================================
+
+// 并发类型种类
+enum class ConcurrencyTypeKind {
+    ACTOR,
+    TASK,
+    TASK_GROUP,
+    ASYNC_SEQUENCE,
+    ASYNC_ITERATOR,
+    SENDABLE_PROTOCOL,
+    MAIN_ACTOR,
+    GLOBAL_ACTOR,
+    CONTINUATION,
+    ASYNC_STREAM,
+    ASYNC_THROWING_STREAM
+};
+
+// 并发安全级别
+enum class ConcurrencySafetyLevel {
+    SENDABLE,           // 类型符合Sendable协议
+    ACTOR_ISOLATED,     // Actor隔离类型
+    MAIN_ACTOR,         // MainActor隔离
+    GLOBAL_ACTOR,       // 全局Actor隔离
+    UNSAFE              // 不安全的并发访问
+};
+
+// TaskPriority 定义在 ConcurrencyRuntime.h 中
+
+// Actor隔离级别
+enum class ActorIsolation {
+    NONE,               // 无隔离
+    ACTOR_ISOLATED,     // Actor隔离
+    MAIN_ACTOR,         // MainActor隔离
+    GLOBAL_ACTOR,       // 全局Actor隔离
+    NONISOLATED         // 显式非隔离
+};
+
+// 并发类型检查错误
+struct ConcurrencyTypeError {
+    std::string message;
+    int line;
+    int column;
+    std::string errorCode;
+    
+    ConcurrencyTypeError(const std::string& msg, int l = 0, int c = 0, const std::string& code = "")
+        : message(msg), line(l), column(c), errorCode(code) {}
+};
+
+// Actor类型
+class ActorType : public Type {
+public:
+    ActorType(const std::string& name, bool isGlobalActor = false);
+    
+    bool isGlobalActor() const { return isGlobalActor_; }
+    void setGlobalActor(bool global) { isGlobalActor_ = global; }
+    
+    // 成员管理
+    void addProperty(const std::string& name, std::shared_ptr<Type> type, ActorIsolation isolation = ActorIsolation::ACTOR_ISOLATED);
+    void addMethod(const std::string& name, std::shared_ptr<FunctionType> type, ActorIsolation isolation = ActorIsolation::ACTOR_ISOLATED);
+    
+    std::shared_ptr<Type> getPropertyType(const std::string& name) const;
+    std::shared_ptr<FunctionType> getMethodType(const std::string& name) const;
+    
+    ActorIsolation getPropertyIsolation(const std::string& name) const;
+    ActorIsolation getMethodIsolation(const std::string& name) const;
+    
+    bool hasProperty(const std::string& name) const;
+    bool hasMethod(const std::string& name) const;
+    
+    std::vector<std::string> getPropertyNames() const;
+    std::vector<std::string> getMethodNames() const;
+    
+    std::string toString() const override;
+    bool equals(const Type& other) const override;
+    bool isActorType() const override { return true; }
+    bool isActorIsolated() const override { return true; }
+
+protected:
+    std::shared_ptr<Type> cloneImpl() const override;
+    
+private:
+    bool isGlobalActor_;
+    std::unordered_map<std::string, std::shared_ptr<Type>> properties_;
+    std::unordered_map<std::string, std::shared_ptr<FunctionType>> methods_;
+    std::unordered_map<std::string, ActorIsolation> propertyIsolations_;
+    std::unordered_map<std::string, ActorIsolation> methodIsolations_;
+};
+
+// Task类型
+class TaskType : public Type {
+public:
+    TaskType(std::shared_ptr<Type> resultType, TaskPriority priority = TaskPriority::Default);
+    
+    std::shared_ptr<Type> getResultType() const { return resultType_; }
+    TaskPriority getPriority() const { return priority_; }
+    
+    void setPriority(TaskPriority priority) { priority_ = priority; }
+    
+    std::string toString() const override;
+    bool equals(const Type& other) const override;
+    
+protected:
+    std::shared_ptr<Type> cloneImpl() const override;
+    
+private:
+    std::shared_ptr<Type> resultType_;
+    TaskPriority priority_;
+};
+
+// TaskGroup类型
+class TaskGroupType : public Type {
+public:
+    TaskGroupType(std::shared_ptr<Type> childResultType);
+    
+    std::shared_ptr<Type> getChildResultType() const { return childResultType_; }
+    
+    std::string toString() const override;
+    bool equals(const Type& other) const override;
+    
+protected:
+    std::shared_ptr<Type> cloneImpl() const override;
+    
+private:
+    std::shared_ptr<Type> childResultType_;
+};
+
+// AsyncSequence类型
+class AsyncSequenceType : public Type {
+public:
+    AsyncSequenceType(std::shared_ptr<Type> elementType);
+    
+    std::shared_ptr<Type> getElementType() const { return elementType_; }
+    
+    std::string toString() const override;
+    bool equals(const Type& other) const override;
+    
+protected:
+    std::shared_ptr<Type> cloneImpl() const override;
+    
+private:
+    std::shared_ptr<Type> elementType_;
+};
+
+// AsyncIterator类型
+class AsyncIteratorType : public Type {
+public:
+    AsyncIteratorType(std::shared_ptr<Type> elementType);
+    
+    std::shared_ptr<Type> getElementType() const { return elementType_; }
+    
+    std::string toString() const override;
+    bool equals(const Type& other) const override;
+    
+protected:
+    std::shared_ptr<Type> cloneImpl() const override;
+    
+private:
+    std::shared_ptr<Type> elementType_;
+};
+
+// Sendable协议类型
+class SendableProtocolType : public Type {
+public:
+    SendableProtocolType();
+    
+    std::string toString() const override;
+    bool equals(const Type& other) const override;
+    
+    // 检查类型是否符合Sendable协议
+    static bool conformsToSendable(const std::shared_ptr<Type>& type);
+    
+protected:
+    std::shared_ptr<Type> cloneImpl() const override;
+};
+
+// Continuation类型
+class ContinuationType : public Type {
+public:
+    ContinuationType(std::shared_ptr<Type> resultType, bool throwing = false);
+    
+    std::shared_ptr<Type> getResultType() const { return resultType_; }
+    bool isThrowing() const { return throwing_; }
+    
+    std::string toString() const override;
+    bool equals(const Type& other) const override;
+    
+protected:
+    std::shared_ptr<Type> cloneImpl() const override;
+    
+private:
+    std::shared_ptr<Type> resultType_;
+    bool throwing_;
+};
+
+// AsyncStream类型
+class AsyncStreamType : public Type {
+public:
+    AsyncStreamType(std::shared_ptr<Type> elementType, bool throwing = false);
+    
+    std::shared_ptr<Type> getElementType() const { return elementType_; }
+    bool isThrowing() const { return throwing_; }
+    
+    std::string toString() const override;
+    bool equals(const Type& other) const override;
+    
+protected:
+    std::shared_ptr<Type> cloneImpl() const override;
+    
+private:
+    std::shared_ptr<Type> elementType_;
+    bool throwing_;
+};
+
+// 并发类型检查器
+class ConcurrencyTypeChecker {
+public:
+    ConcurrencyTypeChecker(std::shared_ptr<TypeSystem> typeSystem);
+    
+    // 主要检查接口
+    bool validateAsyncCall(const std::shared_ptr<FunctionType>& funcType, 
+                          const std::vector<std::shared_ptr<Type>>& argTypes,
+                          bool inAsyncContext);
+    
+    bool validateActorAccess(const std::shared_ptr<ActorType>& actorType,
+                           const std::string& memberName,
+                           const std::string& currentActorContext,
+                           bool inAsyncContext);
+    
+    bool validateSendableConstraint(const std::shared_ptr<Type>& type,
+                                  const std::string& context);
+    
+    bool validateTaskGroupOperation(const std::shared_ptr<TaskGroupType>& taskGroupType,
+                                  const std::string& operation,
+                                  const std::vector<std::shared_ptr<Type>>& operandTypes);
+    
+    bool validateAsyncSequenceIteration(const std::shared_ptr<AsyncSequenceType>& seqType,
+                                       bool inAsyncContext);
+    
+    // 类型创建和管理
+    std::shared_ptr<ActorType> createActorType(const std::string& name, bool isGlobalActor = false);
+    std::shared_ptr<TaskType> createTaskType(std::shared_ptr<Type> resultType, TaskPriority priority = TaskPriority::Default);
+    std::shared_ptr<TaskGroupType> createTaskGroupType(std::shared_ptr<Type> childResultType);
+    std::shared_ptr<AsyncSequenceType> createAsyncSequenceType(std::shared_ptr<Type> elementType);
+    std::shared_ptr<AsyncIteratorType> createAsyncIteratorType(std::shared_ptr<Type> elementType);
+    std::shared_ptr<ContinuationType> createContinuationType(std::shared_ptr<Type> resultType, bool throwing = false);
+    std::shared_ptr<AsyncStreamType> createAsyncStreamType(std::shared_ptr<Type> elementType, bool throwing = false);
+    
+    // 类型查询
+    bool isActorType(const std::shared_ptr<Type>& type) const;
+    bool isTaskType(const std::shared_ptr<Type>& type) const;
+    bool isAsyncSequenceType(const std::shared_ptr<Type>& type) const;
+    bool isSendableType(const std::shared_ptr<Type>& type) const;
+    
+    // 安全级别检查
+    ConcurrencySafetyLevel getSafetyLevel(const std::shared_ptr<Type>& type) const;
+    ActorIsolation getActorIsolation(const std::shared_ptr<Type>& type) const;
+    
+    // 类型转换和兼容性
+    bool canCrossActorBoundary(const std::shared_ptr<Type>& type) const;
+    bool requiresAsyncContext(const std::shared_ptr<Type>& type) const;
+    bool isMainActorIsolated(const std::shared_ptr<Type>& type) const;
+    
+    // 错误处理
+    std::vector<ConcurrencyTypeError> getDiagnostics() const;
+    void addDiagnostic(const std::string& message, int line = 0, int column = 0, const std::string& errorCode = "");
+    void clearDiagnostics();
+    bool hasErrors() const;
+    
+private:
+    std::shared_ptr<TypeSystem> typeSystem_;
+    std::vector<ConcurrencyTypeError> diagnostics_;
+    
+    // 内置Sendable类型集合
+    std::unordered_set<std::string> builtinSendableTypes_;
+    
+    // 注册的Actor类型
+    std::unordered_map<std::string, std::shared_ptr<ActorType>> actorTypes_;
+    
+    // 私有辅助方法
+    void initializeBuiltinSendableTypes();
+    bool isBuiltinSendableType(const std::shared_ptr<Type>& type) const;
+    bool checkSendableConformance(const std::shared_ptr<Type>& type) const;
+    bool validateActorIsolationAccess(const std::shared_ptr<ActorType>& actorType,
+                                     const std::string& memberName,
+                                     ActorIsolation currentIsolation) const;
+    std::string getActorIsolationString(ActorIsolation isolation) const;
+    std::string getTaskPriorityString(TaskPriority priority) const;
+};
+
+// 并发上下文管理器
+class AsyncContextManager {
+public:
+    AsyncContextManager();
+    
+    // 上下文管理
+    void enterAsyncContext(const std::string& contextName = "");
+    void exitAsyncContext();
+    bool isInAsyncContext() const;
+    
+    void enterActorContext(const std::string& actorName);
+    void exitActorContext();
+    std::string getCurrentActorContext() const;
+    bool isInActorContext() const;
+    
+    void enterTaskGroup(const std::string& groupId);
+    void exitTaskGroup();
+    bool isInTaskGroup() const;
+    std::string getCurrentTaskGroup() const;
+    
+    // 任务管理
+    void addTaskToGroup(const std::string& taskId);
+    void removeTaskFromGroup(const std::string& taskId);
+    std::vector<std::string> getTasksInCurrentGroup() const;
+    
+    // 上下文查询
+    int getAsyncContextDepth() const;
+    std::vector<std::string> getContextStack() const;
+    
+    void reset();
+    
+private:
+    struct ContextFrame {
+        std::string type;  // "async", "actor", "taskgroup"
+        std::string name;
+        std::vector<std::string> tasks;  // 仅用于taskgroup
+        
+        ContextFrame(const std::string& t, const std::string& n) : type(t), name(n) {}
+    };
+    
+    std::vector<ContextFrame> contextStack_;
+    
+    // 辅助方法
+    ContextFrame* getCurrentFrame();
+    const ContextFrame* getCurrentFrame() const;
+    ContextFrame* findFrameByType(const std::string& type);
+    const ContextFrame* findFrameByType(const std::string& type) const;
+};
+
+// 并发类型系统工厂
+class ConcurrencyTypeFactory {
+public:
+    static std::shared_ptr<ActorType> createMainActorType();
+    static std::shared_ptr<SendableProtocolType> createSendableProtocol();
+    static std::shared_ptr<TaskType> createDetachedTask(std::shared_ptr<Type> resultType, TaskPriority priority = TaskPriority::Default);
+    static std::shared_ptr<AsyncSequenceType> createAsyncSequence(std::shared_ptr<Type> elementType);
+    
+    // 内置并发类型创建
+    static std::shared_ptr<Type> createBuiltinAsyncType(const std::string& typeName);
+    static std::shared_ptr<FunctionType> createAsyncFunctionType(
+        const std::vector<std::shared_ptr<Type>>& paramTypes,
+        std::shared_ptr<Type> returnType,
+        bool throwing = false
+    );
 };
 
 } // namespace miniswift

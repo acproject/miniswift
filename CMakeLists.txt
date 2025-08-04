@@ -749,9 +749,87 @@ install(FILES ${RUNTIME_HEADERS}
 )
 
 # Print build information
+# =============================================================================
+# CodeGen and Semantic Library (Shared) - Combined codegen and semantic analysis
+# =============================================================================
+
+# CodeGen and Semantic library sources
+set(CODEGEN_SEMANTIC_SOURCES
+    # Semantic
+    src/semantic/SemanticAnalyzer.cpp
+    src/semantic/SymbolTable.cpp
+    src/semantic/TypeSystem.cpp
+    src/semantic/TypedAST.cpp
+    
+    # CodeGen
+    src/codegen/LLVMCodeGenerator.cpp
+)
+
+# CodeGen and Semantic library headers
+set(CODEGEN_SEMANTIC_HEADERS
+    src/semantic/SemanticAnalyzer.h
+    src/semantic/SymbolTable.h
+    src/semantic/TypeSystem.h
+    src/semantic/TypedAST.h
+    src/codegen/LLVMCodeGenerator.h
+)
+
+# Create shared library for codegen and semantic components
+add_library(miniswift_codegen_semantic SHARED ${CODEGEN_SEMANTIC_SOURCES})
+
+# Set target properties for codegen semantic library
+set_target_properties(miniswift_codegen_semantic PROPERTIES
+    OUTPUT_NAME "miniswift_codegen_semantic"
+    VERSION ${PROJECT_VERSION}
+    SOVERSION ${PROJECT_VERSION_MAJOR}
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    WINDOWS_EXPORT_ALL_SYMBOLS ON
+    PUBLIC_HEADER "${CODEGEN_SEMANTIC_HEADERS}"
+)
+
+# Include directories for codegen semantic library
+target_include_directories(miniswift_codegen_semantic PUBLIC
+    src
+    third
+    ${LLVM_INCLUDE_DIRS}
+)
+
+# Add LLVM definitions for codegen semantic library
+target_compile_definitions(miniswift_codegen_semantic PRIVATE ${LLVM_DEFINITIONS_LIST})
+
+# Link libraries for codegen semantic library
+if(WIN32)
+    target_link_libraries(miniswift_codegen_semantic PRIVATE
+        kernel32 user32 ws2_32 dbghelp psapi version
+        ${llvm_libs}
+    )
+else()
+    target_link_libraries(miniswift_codegen_semantic PRIVATE
+        pthread
+        dl
+        m
+        ${llvm_libs}
+    )
+endif()
+
+# Install targets for codegen semantic library
+install(TARGETS miniswift_codegen_semantic
+    RUNTIME DESTINATION bin
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+    PUBLIC_HEADER DESTINATION include/miniswift
+)
+
+# Install additional codegen semantic headers
+install(FILES ${CODEGEN_SEMANTIC_HEADERS}
+    DESTINATION include/miniswift
+)
+
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "C++ standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "Compiler: ${CMAKE_CXX_COMPILER_ID}")
 message(STATUS "UI library will be built as: miniswift_ui")
 message(STATUS "Runtime library will be built as: miniswift_runtime")
 message(STATUS "Core library will be built as: miniswift_core")
+message(STATUS "CodeGen and Semantic library will be built as: miniswift_codegen_semantic")

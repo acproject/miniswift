@@ -192,6 +192,9 @@ public:
     virtual Value getMemberValue(const Value& object, const std::string& memberName);
     void setMemberValue(Value& object, const std::string& memberName, const Value& value);
     
+    // Access to globals environment for UI function registration
+    std::shared_ptr<Environment> getGlobals() { return globals; }
+    
     // Property system helpers
     PropertyManager* getStructPropertyManager(const std::string& structName);
     PropertyManager* getClassPropertyManager(const std::string& className);

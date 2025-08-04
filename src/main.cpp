@@ -2,6 +2,7 @@
 #include "lexer/Lexer.h"
 #include "parser/Parser.h"
 #include "semantic/SemanticAnalyzer.h"
+#include "ui/UIIntegration.h"
 #ifdef HAVE_LLVM
 #include "codegen/LLVMCodeGenerator.h"
 #endif
@@ -13,6 +14,17 @@
 
 static miniswift::Interpreter interpreter;
 bool hadError = false;
+
+// Initialize UI functions
+static bool uiInitialized = false;
+
+void initializeUI() {
+  if (!uiInitialized) {
+    // Register UI functions with the interpreter's global environment
+    MiniSwift::UI::UIInterpreter::registerUIFunctions(*interpreter.getGlobals());
+    uiInitialized = true;
+  }
+}
 bool enableSemanticAnalysis = false;
 bool enableLLVMCodeGen = false;
 bool compileToExecutable = false;
@@ -37,6 +49,9 @@ void printVersion() {
 
 void run(const std::string &source) {
   bool currentError = false;
+
+  // Initialize UI functions if not already done
+  initializeUI();
 
   miniswift::Lexer lexer(source);
   std::vector<miniswift::Token> tokens = lexer.scanTokens();

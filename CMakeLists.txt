@@ -455,6 +455,10 @@ if(LLVM_FOUND)
     target_compile_definitions(miniswift_core PRIVATE ${LLVM_DEFINITIONS_LIST} HAVE_LLVM)
 endif()
 
+# Add dependency on UI library and link it
+add_dependencies(miniswift_core miniswift_ui)
+target_link_libraries(miniswift_core PRIVATE miniswift_ui)
+
 # Link core library with GTK4 if available
 if(GTK4_FOUND)
     if(WIN32 AND TARGET gtk::gtk)

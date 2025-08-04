@@ -2,7 +2,9 @@
 #include "lexer/Lexer.h"
 #include "parser/Parser.h"
 #include "semantic/SemanticAnalyzer.h"
+#ifdef HAVE_LLVM
 #include "codegen/LLVMCodeGenerator.h"
+#endif
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -80,6 +82,7 @@ void run(const std::string &source) {
       }
 
       // LLVM code generation if enabled
+#ifdef HAVE_LLVM
       if (enableLLVMCodeGen) {
         try {
           auto codeGenerator = std::make_unique<miniswift::LLVMCodeGenerator>();
@@ -201,6 +204,7 @@ void run(const std::string &source) {
           hadError = true;
         }
       }
+#endif
 
     } catch (const std::exception &e) {
       std::cerr << "SEMANTIC ANALYSIS ERROR: " << e.what() << std::endl;

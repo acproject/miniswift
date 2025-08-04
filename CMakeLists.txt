@@ -195,22 +195,30 @@ if(APPLE)
     endif()
 endif()
 
-find_package(LLVM REQUIRED CONFIG)
+find_package(LLVM CONFIG)
 
-message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
-message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
-
-# Set up LLVM
-include_directories(${LLVM_INCLUDE_DIRS})
-separate_arguments(LLVM_DEFINITIONS_LIST NATIVE_COMMAND ${LLVM_DEFINITIONS})
-add_definitions(${LLVM_DEFINITIONS_LIST})
-
-# Add LLVM library directories
-link_directories(${LLVM_LIBRARY_DIRS})
+if(LLVM_FOUND)
+    message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
+    message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
+    
+    # Set up LLVM
+    include_directories(${LLVM_INCLUDE_DIRS})
+    separate_arguments(LLVM_DEFINITIONS_LIST NATIVE_COMMAND ${LLVM_DEFINITIONS})
+    add_definitions(${LLVM_DEFINITIONS_LIST})
+    
+    # Add LLVM library directories
+    link_directories(${LLVM_LIBRARY_DIRS})
+else()
+    message(WARNING "LLVM not found, some features may be disabled")
+    set(LLVM_INCLUDE_DIRS "")
+    set(LLVM_DEFINITIONS_LIST "")
+    set(LLVM_LIBRARY_DIRS "")
+endif()
 
 # Find the libraries that correspond to the LLVM components
 # 根据操作系统选择不同的LLVM组件
-if(APPLE)
+if(LLVM_FOUND)
+    if(APPLE)
     # macOS: 使用LLVM组件映射，添加AArch64支持
     llvm_map_components_to_libnames(llvm_libs 
         support core irreader executionengine interpreter mc mcjit bitwriter 
@@ -245,10 +253,15 @@ if(APPLE)
 else()
     # Linux和Windows使用标准映射
     llvm_map_components_to_libnames(llvm_libs support core irreader executionengine interpreter mc mcjit bitwriter x86codegen x86asmparser x86desc x86disassembler x86info target orcjit orctargetprocess)
+    endif()
+    
+    message(STATUS "Building with LLVM code generation enabled")
+    message(STATUS "LLVM libraries: ${llvm_libs}")
+else()
+    # LLVM not found, set empty library list
+    set(llvm_libs "")
+    message(STATUS "Building without LLVM code generation")
 endif()
-
-message(STATUS "Building with LLVM code generation enabled")
-message(STATUS "LLVM libraries: ${llvm_libs}")
 
 # Set up basic compiler flags
 if(WIN32)
@@ -298,32 +311,200 @@ endif()
 
 
 
-# Combine all sources (including CODEGEN, CONCURRENCY, IO, NETWORK and UI)
-set(ALL_SOURCES
-    ${MAIN_SOURCES}
-    ${LEXER_SOURCES}
-    ${PARSER_SOURCES}
-    ${INTERPRETER_SOURCES}
-    ${OOP_SOURCES}
-    ${MEMORY_SOURCES}
-    ${SEMANTIC_SOURCES}
-    ${CODEGEN_SOURCES}
-    ${CONCURRENCY_SOURCES}
-    ${IO_SOURCES}
-    ${NETWORK_SOURCES}
-    ${UI_SOURCES}
+# =============================================================================
+# Dynamic Libraries - Create libraries first before main executable
+# =============================================================================
+
+# Core library sources - combining interpreter, lexer, parser, runtime
+set(CORE_SOURCES
+    # Runtime
+    src/runtime/runtime_interface.cpp
+    
+    # Lexer
+    src/lexer/Lexer.cpp
+    
+    # Parser
+    src/parser/Parser.cpp
+    src/parser/AstPrinter.cpp
+    src/parser/AccessControl.cpp
+    src/parser/ErrorNodes.cpp
+    
+    # Interpreter
+    src/interpreter/Interpreter.cpp
+    src/interpreter/Environment.cpp
+    src/interpreter/Value.cpp
+    src/interpreter/ErrorHandling.cpp
+    
+    # OOP
+    src/interpreter/OOP/Property.cpp
+    src/interpreter/OOP/Method.cpp
+    src/interpreter/OOP/MethodInterpreter.cpp
+    src/interpreter/OOP/Constructor.cpp
+    src/interpreter/OOP/Inheritance.cpp
+    src/interpreter/OOP/Subscript.cpp
+    src/interpreter/OOP/Optional.cpp
+    
+    # Memory
+    src/interpreter/Memory/ARC.cpp
+    src/interpreter/Memory/MemorySafety.cpp
+    src/interpreter/Memory/MemoryManager.cpp
+    
+    # Concurrency
+    src/interpreter/Concurrency/ConcurrencyRuntime.cpp
+    
+    # IO and Network
+    src/interpreter/IO/IORuntime.cpp
+    src/interpreter/IONetworkIntegration.cpp
+    src/interpreter/Network/NetworkRuntime.cpp
+    
+    # Semantic
+    src/semantic/SymbolTable.cpp
+    src/semantic/TypeSystem.cpp
+    src/semantic/TypedAST.cpp
 )
 
-# Create the executable
-add_executable(miniswift ${ALL_SOURCES})
+# Add CodeGen sources only if LLVM is available
+if(LLVM_FOUND)
+    list(APPEND CORE_SOURCES src/codegen/LLVMCodeGenerator.cpp)
+endif()
+
+# Create UI dynamic library
+add_library(miniswift_ui SHARED 
+    ${UI_SOURCES}
+    src/interpreter/Value.cpp
+    src/interpreter/Concurrency/ConcurrencyRuntime.cpp
+)
+
+# Set target properties for UI library
+set_target_properties(miniswift_ui PROPERTIES
+    OUTPUT_NAME "miniswift_ui"
+    VERSION ${PROJECT_VERSION}
+    SOVERSION ${PROJECT_VERSION_MAJOR}
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    WINDOWS_EXPORT_ALL_SYMBOLS ON
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+)
+
+# Include directories for UI library
+target_include_directories(miniswift_ui PRIVATE
+    src
+    third
+)
+
+# Link UI library with GTK4 if available
+if(GTK4_FOUND)
+    if(WIN32 AND TARGET gtk::gtk)
+        target_link_libraries(miniswift_ui PRIVATE gtk::gtk)
+    elseif(WIN32 AND TARGET gtk4::gtk4)
+        target_link_libraries(miniswift_ui PRIVATE gtk4::gtk4)
+    else()
+        target_link_libraries(miniswift_ui PRIVATE ${GTK4_LIBRARIES})
+    endif()
+endif()
+
+# Link UI library with system libraries
+if(WIN32)
+    target_link_libraries(miniswift_ui PRIVATE 
+        kernel32 user32 gdi32 winspool shell32 ole32 oleaut32 uuid comdlg32 advapi32
+        ws2_32 dbghelp psapi version
+    )
+else()
+    target_link_libraries(miniswift_ui PRIVATE pthread dl m)
+endif()
+
+# Create shared library for core components
+add_library(miniswift_core SHARED ${CORE_SOURCES})
+
+# Set target properties for core library
+set_target_properties(miniswift_core PROPERTIES
+    OUTPUT_NAME "miniswift_core"
+    VERSION ${PROJECT_VERSION}
+    SOVERSION ${PROJECT_VERSION_MAJOR}
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    WINDOWS_EXPORT_ALL_SYMBOLS ON
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+    ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+)
+
+# Include directories for core library
+target_include_directories(miniswift_core PUBLIC
+    src
+    third
+)
+
+# Link libraries for core library
+if(WIN32)
+    target_link_libraries(miniswift_core PRIVATE
+        kernel32 user32 ws2_32 dbghelp psapi version
+    )
+else()
+    target_link_libraries(miniswift_core PRIVATE
+        pthread
+        dl
+        m
+    )
+endif()
+
+# Link LLVM libraries only if available
+if(LLVM_FOUND)
+    target_link_libraries(miniswift_core PRIVATE ${llvm_libs})
+    target_include_directories(miniswift_core PRIVATE ${LLVM_INCLUDE_DIRS})
+    target_compile_definitions(miniswift_core PRIVATE ${LLVM_DEFINITIONS_LIST} HAVE_LLVM)
+endif()
+
+# Link core library with GTK4 if available
+if(GTK4_FOUND)
+    if(WIN32 AND TARGET gtk::gtk)
+        target_link_libraries(miniswift_core PRIVATE gtk::gtk)
+    elseif(WIN32 AND TARGET gtk4::gtk4)
+        target_link_libraries(miniswift_core PRIVATE gtk4::gtk4)
+    else()
+        target_link_libraries(miniswift_core PRIVATE ${GTK4_LIBRARIES})
+    endif()
+    target_compile_definitions(miniswift_core PRIVATE HAVE_GTK4)
+endif()
+
+
+
+# =============================================================================
+# Main Executable - Minimal sources, links to dynamic libraries
+# =============================================================================
+
+# Main executable sources - only entry point and essential files
+set(MAIN_ONLY_SOURCES
+    ${MAIN_SOURCES}
+)
+
+# Create the executable with minimal sources
+add_executable(miniswift ${MAIN_ONLY_SOURCES})
 
 # Add dependency on zstd
 if(TARGET ${ZSTD_TARGET})
     add_dependencies(miniswift ${ZSTD_TARGET})
 endif()
 
-# Link with all libraries (including LLVM)
-target_link_libraries(miniswift PRIVATE ${llvm_libs})
+# Add dependencies on our dynamic libraries
+add_dependencies(miniswift miniswift_core miniswift_ui)
+
+# Link with dynamic libraries
+target_link_libraries(miniswift PRIVATE 
+    miniswift_core
+    miniswift_ui
+    miniswift_codegen_semantic
+)
+
+# Link LLVM libraries only if available
+if(LLVM_FOUND)
+    target_link_libraries(miniswift PRIVATE ${llvm_libs})
+    target_compile_definitions(miniswift PRIVATE HAVE_LLVM)
+endif()
+
+# =============================================================================
+# Test Executables
+# =============================================================================
 
 # Add C++ UI test executable
 set(UI_TEST_SOURCES
@@ -359,51 +540,32 @@ set(MINIMAL_GTK4_TEST_SOURCES
 add_executable(MinimalGTK4Test ${MINIMAL_GTK4_TEST_SOURCES})
 target_include_directories(MinimalGTK4Test PRIVATE src third)
 
-# Link SimpleUIAppTest with GTK4 if available
+# Link test executables with GTK4 if available
 if(GTK4_FOUND)
     if(WIN32 AND TARGET gtk::gtk)
         target_link_libraries(SimpleUIAppTest PRIVATE gtk::gtk)
+        target_link_libraries(MinimalGTK4Test PRIVATE gtk::gtk)
     elseif(WIN32 AND TARGET gtk4::gtk4)
         target_link_libraries(SimpleUIAppTest PRIVATE gtk4::gtk4)
+        target_link_libraries(MinimalGTK4Test PRIVATE gtk4::gtk4)
     else()
-        include_directories(${GTK4_INCLUDE_DIRS})
-        link_directories(${GTK4_LIBRARY_DIRS})
-        add_compile_options(${GTK4_CFLAGS_OTHER})
         target_link_libraries(SimpleUIAppTest PRIVATE ${GTK4_LIBRARIES})
+        target_link_libraries(MinimalGTK4Test PRIVATE ${GTK4_LIBRARIES})
     endif()
 endif()
 
-# Link SimpleUIAppTest with system libraries
+# Link test executables with system libraries
 if(WIN32)
     target_link_libraries(SimpleUIAppTest PRIVATE 
         kernel32 user32 gdi32 winspool shell32 ole32 oleaut32 uuid comdlg32 advapi32
         ws2_32 dbghelp psapi version
     )
-else()
-    target_link_libraries(SimpleUIAppTest PRIVATE pthread dl m)
-endif()
-
-# Link MinimalGTK4Test with GTK4 if available
-if(GTK4_FOUND)
-    if(WIN32 AND TARGET gtk::gtk)
-        target_link_libraries(MinimalGTK4Test PRIVATE gtk::gtk)
-    elseif(WIN32 AND TARGET gtk4::gtk4)
-        target_link_libraries(MinimalGTK4Test PRIVATE gtk4::gtk4)
-    else()
-        include_directories(${GTK4_INCLUDE_DIRS})
-        link_directories(${GTK4_LIBRARY_DIRS})
-        add_compile_options(${GTK4_CFLAGS_OTHER})
-        target_link_libraries(MinimalGTK4Test PRIVATE ${GTK4_LIBRARIES})
-    endif()
-endif()
-
-# Link MinimalGTK4Test with system libraries
-if(WIN32)
     target_link_libraries(MinimalGTK4Test PRIVATE 
         kernel32 user32 gdi32 winspool shell32 ole32 oleaut32 uuid comdlg32 advapi32
         ws2_32 dbghelp psapi version
     )
 else()
+    target_link_libraries(SimpleUIAppTest PRIVATE pthread dl m)
     target_link_libraries(MinimalGTK4Test PRIVATE pthread dl m)
 endif()
 
@@ -470,283 +632,7 @@ else()
     )
 endif()
 
-# Create UI dynamic library
-set(UI_LIBRARY_SOURCES
-    ${UI_SOURCES}
-    src/interpreter/Value.cpp
-    src/interpreter/Concurrency/ConcurrencyRuntime.cpp
-)
 
-add_library(miniswift_ui SHARED ${UI_LIBRARY_SOURCES})
-
-# Set properties for the UI library
-set_target_properties(miniswift_ui PROPERTIES
-    VERSION 1.0.0
-    SOVERSION 1
-    OUTPUT_NAME "miniswift_ui"
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
-    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
-    ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
-)
-
-# Link UI library with required dependencies
-if(GTK4_FOUND)
-    if(WIN32 AND TARGET gtk::gtk)
-        target_link_libraries(miniswift_ui PRIVATE gtk::gtk)
-    elseif(WIN32 AND TARGET gtk4::gtk4)
-        target_link_libraries(miniswift_ui PRIVATE gtk4::gtk4)
-    else()
-        include_directories(${GTK4_INCLUDE_DIRS})
-        link_directories(${GTK4_LIBRARY_DIRS})
-        add_compile_options(${GTK4_CFLAGS_OTHER})
-        target_link_libraries(miniswift_ui PRIVATE ${GTK4_LIBRARIES})
-    endif()
-    target_compile_definitions(miniswift_ui PRIVATE HAVE_GTK4)
-endif()
-
-# Link UI library with system libraries
-if(WIN32)
-    target_link_libraries(miniswift_ui PRIVATE 
-        kernel32 user32 gdi32 winspool shell32 ole32 oleaut32 uuid comdlg32 advapi32
-        ws2_32 dbghelp psapi version
-    )
-else()
-    target_link_libraries(miniswift_ui PRIVATE pthread dl m)
-endif()
-
-# Add include directories for UI library
-target_include_directories(miniswift_ui PRIVATE src third)
-
-# =============================================================================
-# Core Library (Shared) - Combined interpreter, lexer, parser, runtime
-# =============================================================================
-
-# Core library sources - combining interpreter, lexer, parser, runtime
-set(CORE_SOURCES
-    # Runtime
-    src/runtime/runtime_interface.cpp
-    
-    # Lexer
-    src/lexer/Lexer.cpp
-    
-    # Parser
-    src/parser/Parser.cpp
-    src/parser/AstPrinter.cpp
-    src/parser/AccessControl.cpp
-    src/parser/ErrorNodes.cpp
-    
-    # Interpreter
-    src/interpreter/Interpreter.cpp
-    src/interpreter/Environment.cpp
-    src/interpreter/Value.cpp
-    src/interpreter/ErrorHandling.cpp
-    
-    # OOP
-    src/interpreter/OOP/Property.cpp
-    src/interpreter/OOP/Method.cpp
-    src/interpreter/OOP/MethodInterpreter.cpp
-    src/interpreter/OOP/Constructor.cpp
-    src/interpreter/OOP/Inheritance.cpp
-    src/interpreter/OOP/Subscript.cpp
-    src/interpreter/OOP/Optional.cpp
-    
-    # Memory
-    src/interpreter/Memory/ARC.cpp
-    src/interpreter/Memory/MemorySafety.cpp
-    src/interpreter/Memory/MemoryManager.cpp
-    
-    # Concurrency
-    src/interpreter/Concurrency/ConcurrencyRuntime.cpp
-    
-    # IO and Network
-    src/interpreter/IO/IORuntime.cpp
-    src/interpreter/IONetworkIntegration.cpp
-    src/interpreter/Network/NetworkRuntime.cpp
-    
-    # Semantic
-    src/semantic/SymbolTable.cpp
-    src/semantic/TypeSystem.cpp
-    src/semantic/TypedAST.cpp
-    
-    # UI
-    src/ui/UIRuntime.cpp
-    src/ui/GTK4Backend.cpp
-    src/ui/UIIntegration.cpp
-    src/ui/TextWidget.cpp
-    src/ui/ButtonWidget.cpp
-    src/ui/VStackWidget.cpp
-    src/ui/HStackWidget.cpp
-)
-
-# Core library headers
-set(CORE_HEADERS
-    src/runtime/runtime_interface.h
-    src/lexer/Lexer.h
-    src/lexer/Token.h
-    src/parser/Parser.h
-    src/parser/AST.h
-    src/parser/AstPrinter.h
-    src/parser/AccessControl.h
-    src/parser/ErrorNodes.h
-    src/parser/ExprNodes.h
-    src/parser/GenericNodes.h
-    src/parser/Parameter.h
-    src/parser/StmtNodes.h
-    src/interpreter/Interpreter.h
-    src/interpreter/Environment.h
-    src/interpreter/Value.h
-    src/interpreter/ErrorHandling.h
-    src/interpreter/OOP/Property.h
-    src/interpreter/OOP/Method.h
-    src/interpreter/OOP/MethodInterpreter.h
-    src/interpreter/OOP/Constructor.h
-    src/interpreter/OOP/Inheritance.h
-    src/interpreter/OOP/Subscript.h
-    src/interpreter/OOP/Optional.h
-    src/interpreter/Memory/ARC.h
-    src/interpreter/Memory/MemorySafety.h
-    src/interpreter/Memory/MemoryManager.h
-    src/interpreter/Concurrency/ConcurrencyRuntime.h
-    src/interpreter/IO/IORuntime.h
-    src/interpreter/IONetworkIntegration.h
-    src/interpreter/Network/NetworkRuntime.h
-    src/semantic/SymbolTable.h
-    src/semantic/TypeSystem.h
-    src/semantic/TypedAST.h
-)
-
-# Create shared library for core components
-add_library(miniswift_core SHARED ${CORE_SOURCES})
-
-# Set target properties for core library
-set_target_properties(miniswift_core PROPERTIES
-    OUTPUT_NAME "miniswift_core"
-    VERSION ${PROJECT_VERSION}
-    SOVERSION ${PROJECT_VERSION_MAJOR}
-    CXX_STANDARD 20
-    CXX_STANDARD_REQUIRED ON
-    WINDOWS_EXPORT_ALL_SYMBOLS ON
-    PUBLIC_HEADER "${CORE_HEADERS}"
-)
-
-# Include directories for core library
-target_include_directories(miniswift_core PUBLIC
-    src
-    third
-)
-
-# Link libraries for core library
-if(WIN32)
-    target_link_libraries(miniswift_core PRIVATE
-        kernel32 user32 ws2_32 dbghelp psapi version
-    )
-else()
-    target_link_libraries(miniswift_core PRIVATE
-        pthread
-        dl
-        m
-    )
-endif()
-
-# Link with GTK4 if available for core library
-if(GTK4_FOUND)
-    message(STATUS "Linking miniswift_core with GTK4")
-    if(WIN32 AND TARGET gtk::gtk)
-        target_link_libraries(miniswift_core PRIVATE gtk::gtk)
-    elseif(WIN32 AND TARGET gtk4::gtk4)
-        target_link_libraries(miniswift_core PRIVATE gtk4::gtk4)
-    else()
-        include_directories(${GTK4_INCLUDE_DIRS})
-        link_directories(${GTK4_LIBRARY_DIRS})
-        add_compile_options(${GTK4_CFLAGS_OTHER})
-        target_link_libraries(miniswift_core PRIVATE ${GTK4_LIBRARIES})
-    endif()
-else()
-    message(STATUS "GTK4 not found for miniswift_core, UI will use mock implementation")
-endif()
-
-# Install targets for core library
-install(TARGETS miniswift_core
-    RUNTIME DESTINATION bin
-    LIBRARY DESTINATION lib
-    ARCHIVE DESTINATION lib
-    PUBLIC_HEADER DESTINATION include/miniswift
-)
-
-# Install additional core headers
-install(FILES ${CORE_HEADERS}
-    DESTINATION include/miniswift
-)
-
-# =============================================================================
-# Runtime Library (Shared)
-# =============================================================================
-
-# Runtime library sources
-set(RUNTIME_SOURCES
-    src/runtime/runtime_interface.cpp
-    src/interpreter/Value.cpp
-    src/interpreter/ErrorHandling.cpp
-    src/interpreter/Memory/ARC.cpp
-    src/interpreter/Memory/MemorySafety.cpp
-    src/interpreter/Memory/MemoryManager.cpp
-    src/interpreter/Concurrency/ConcurrencyRuntime.cpp
-)
-
-# Runtime library headers
-set(RUNTIME_HEADERS
-    src/runtime/runtime_interface.h
-    src/interpreter/Memory/ARC.h
-    src/interpreter/Memory/MemorySafety.h
-    src/interpreter/Memory/MemoryManager.h
-    src/interpreter/Concurrency/ConcurrencyRuntime.h
-)
-
-# Create shared library for runtime
-add_library(miniswift_runtime SHARED ${RUNTIME_SOURCES})
-
-# Set target properties for runtime library
-set_target_properties(miniswift_runtime PROPERTIES
-    OUTPUT_NAME "miniswift_runtime"
-    VERSION ${PROJECT_VERSION}
-    SOVERSION ${PROJECT_VERSION_MAJOR}
-    CXX_STANDARD 20
-    CXX_STANDARD_REQUIRED ON
-    WINDOWS_EXPORT_ALL_SYMBOLS ON
-    PUBLIC_HEADER "${RUNTIME_HEADERS}"
-)
-
-# Include directories for runtime
-target_include_directories(miniswift_runtime PUBLIC
-    src
-    third
-)
-
-# Link libraries for runtime
-if(WIN32)
-    target_link_libraries(miniswift_runtime PRIVATE
-        kernel32 user32 ws2_32 dbghelp psapi version
-    )
-else()
-    target_link_libraries(miniswift_runtime PRIVATE
-        pthread
-        dl
-        m
-    )
-endif()
-
-# Install targets for runtime
-install(TARGETS miniswift_runtime
-    RUNTIME DESTINATION bin
-    LIBRARY DESTINATION lib
-    ARCHIVE DESTINATION lib
-    PUBLIC_HEADER DESTINATION include/miniswift
-)
-
-# Install additional runtime headers
-install(FILES ${RUNTIME_HEADERS}
-    DESTINATION include/miniswift
-)
 
 # Print build information
 # =============================================================================
@@ -760,10 +646,12 @@ set(CODEGEN_SEMANTIC_SOURCES
     src/semantic/SymbolTable.cpp
     src/semantic/TypeSystem.cpp
     src/semantic/TypedAST.cpp
-    
-    # CodeGen
-    src/codegen/LLVMCodeGenerator.cpp
 )
+
+# Add CodeGen sources only if LLVM is available
+if(LLVM_FOUND)
+    list(APPEND CODEGEN_SEMANTIC_SOURCES src/codegen/LLVMCodeGenerator.cpp)
+endif()
 
 # CodeGen and Semantic library headers
 set(CODEGEN_SEMANTIC_HEADERS
@@ -771,8 +659,12 @@ set(CODEGEN_SEMANTIC_HEADERS
     src/semantic/SymbolTable.h
     src/semantic/TypeSystem.h
     src/semantic/TypedAST.h
-    src/codegen/LLVMCodeGenerator.h
 )
+
+# Add CodeGen headers only if LLVM is available
+if(LLVM_FOUND)
+    list(APPEND CODEGEN_SEMANTIC_HEADERS src/codegen/LLVMCodeGenerator.h)
+endif()
 
 # Create shared library for codegen and semantic components
 add_library(miniswift_codegen_semantic SHARED ${CODEGEN_SEMANTIC_SOURCES})
@@ -789,28 +681,33 @@ set_target_properties(miniswift_codegen_semantic PROPERTIES
 )
 
 # Include directories for codegen semantic library
-target_include_directories(miniswift_codegen_semantic PUBLIC
+target_include_directories(miniswift_codegen_semantic PRIVATE
     src
     third
-    ${LLVM_INCLUDE_DIRS}
 )
 
-# Add LLVM definitions for codegen semantic library
-target_compile_definitions(miniswift_codegen_semantic PRIVATE ${LLVM_DEFINITIONS_LIST})
+# Add LLVM includes and definitions only if available
+if(LLVM_FOUND)
+    target_include_directories(miniswift_codegen_semantic PRIVATE ${LLVM_INCLUDE_DIRS})
+    target_compile_definitions(miniswift_codegen_semantic PRIVATE ${LLVM_DEFINITIONS_LIST} HAVE_LLVM)
+endif()
 
 # Link libraries for codegen semantic library
 if(WIN32)
     target_link_libraries(miniswift_codegen_semantic PRIVATE
         kernel32 user32 ws2_32 dbghelp psapi version
-        ${llvm_libs}
     )
 else()
     target_link_libraries(miniswift_codegen_semantic PRIVATE
         pthread
         dl
         m
-        ${llvm_libs}
     )
+endif()
+
+# Link LLVM libraries only if available
+if(LLVM_FOUND)
+    target_link_libraries(miniswift_codegen_semantic PRIVATE ${llvm_libs})
 endif()
 
 # Install targets for codegen semantic library

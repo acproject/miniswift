@@ -29,10 +29,10 @@ namespace MiniSwift {
             
             // Initialize the selected backend
             switch (currentBackend_) {
-                case Backend::GTK4:
-                    std::cout << "[UIIntegration] Using GTK4 backend" << std::endl;
-                    if (!GTK4::GTK4Application::getInstance().initialize(argc, argv)) {
-                        std::cerr << "[UIIntegration] Failed to initialize GTK4 backend, falling back to Mock" << std::endl;
+                case Backend::TGUI:
+                    std::cout << "[UIIntegration] Using TGUI backend" << std::endl;
+                    if (!TGUI::TGUIApplication::getInstance().initialize(argc, argv)) {
+                        std::cerr << "[UIIntegration] Failed to initialize TGUI backend, falling back to Mock" << std::endl;
                         currentBackend_ = Backend::Mock;
                         // Initialize Mock backend as fallback
                         if (!UIApplication::getInstance().initialize()) {
@@ -42,6 +42,7 @@ namespace MiniSwift {
                         std::cout << "[UIIntegration] Successfully initialized Mock backend as fallback" << std::endl;
                     }
                     break;
+
                     
                 case Backend::Mock:
                     std::cout << "[UIIntegration] Using Mock backend" << std::endl;
@@ -72,10 +73,11 @@ namespace MiniSwift {
             
             std::shared_ptr<UIWidget> widget;
             switch (currentBackend_) {
-                case Backend::GTK4:
-                    std::cout << "[DEBUG] Calling GTK4::createGTK4Text..." << std::endl;
-                    widget = std::static_pointer_cast<UIWidget>(GTK4::createGTK4Text(text));
+                case Backend::TGUI:
+                    std::cout << "[DEBUG] Calling TGUI::createTGUIText..." << std::endl;
+                    widget = std::static_pointer_cast<UIWidget>(TGUI::createTGUIText(text));
                     break;
+
                 case Backend::Mock:
                     std::cout << "[DEBUG] Calling createText (Mock)..." << std::endl;
                     widget = createText(text);
@@ -107,9 +109,10 @@ namespace MiniSwift {
             
             std::shared_ptr<UIWidget> widget;
             switch (currentBackend_) {
-                case Backend::GTK4:
-                    widget = std::static_pointer_cast<UIWidget>(GTK4::createGTK4Button(title, callback));
+                case Backend::TGUI:
+                    widget = std::static_pointer_cast<UIWidget>(TGUI::createTGUIButton(title, callback));
                     break;
+
                 case Backend::Mock:
                     widget = createButton(title, callback);
                     break;
@@ -134,9 +137,10 @@ namespace MiniSwift {
             
             std::shared_ptr<UIWidget> widget;
             switch (currentBackend_) {
-                case Backend::GTK4:
-                    widget = std::static_pointer_cast<UIWidget>(GTK4::createGTK4VStack(spacing));
+                case Backend::TGUI:
+                    widget = std::static_pointer_cast<UIWidget>(TGUI::createTGUIVStack(spacing));
                     break;
+
                 case Backend::Mock:
                     widget = createVStack(spacing);
                     break;
@@ -161,9 +165,10 @@ namespace MiniSwift {
             
             std::shared_ptr<UIWidget> widget;
             switch (currentBackend_) {
-                case Backend::GTK4:
-                    widget = std::static_pointer_cast<UIWidget>(GTK4::createGTK4HStack(spacing));
+                case Backend::TGUI:
+                    widget = std::static_pointer_cast<UIWidget>(TGUI::createTGUIHStack(spacing));
                     break;
+
                 case Backend::Mock:
                     widget = createHStack(spacing);
                     break;
@@ -229,24 +234,21 @@ namespace MiniSwift {
             std::cout << "[UIIntegration] Adding child widget to parent" << std::endl;
             parent->addChild(child);
             
-            // For GTK4 backend, we need to add to GTK4 container
-            if (currentBackend_ == Backend::GTK4) {
-                std::cout << "[UIIntegration] Adding child to GTK4 container" << std::endl;
-                
-                // Try to cast parent to GTK4 stack widgets
-                auto gtk4VStack = std::dynamic_pointer_cast<GTK4::GTK4VStackWidget>(parent);
-                auto gtk4HStack = std::dynamic_pointer_cast<GTK4::GTK4HStackWidget>(parent);
-                
-                if (gtk4VStack) {
-                    std::cout << "[UIIntegration] Adding child to GTK4 VStack" << std::endl;
-                    // Add to GTK4 container (rendering will be handled by parent)
-                    gtk4VStack->addGTKChild(child);
-                } else if (gtk4HStack) {
-                    std::cout << "[UIIntegration] Adding child to GTK4 HStack" << std::endl;
-                    // Add to GTK4 container (rendering will be handled by parent)
-                    gtk4HStack->addGTKChild(child);
+            // For TGUI backend, we need to add to TGUI container
+            if (currentBackend_ == Backend::TGUI) {
+                std::cout << "[UIIntegration] Adding child to TGUI container" << std::endl;
+                // Try to cast parent to TGUI stack widgets
+                auto tguiVStack = std::dynamic_pointer_cast<TGUI::TGUIVStackWidget>(parent);
+                auto tguiHStack = std::dynamic_pointer_cast<TGUI::TGUIHStackWidget>(parent);
+
+                if (tguiVStack) {
+                    std::cout << "[UIIntegration] Adding child to TGUI VStack" << std::endl;
+                    tguiVStack->addTGUIChild(child);
+                } else if (tguiHStack) {
+                    std::cout << "[UIIntegration] Adding child to TGUI HStack" << std::endl;
+                    tguiHStack->addTGUIChild(child);
                 } else {
-                    std::cout << "[UIIntegration] Parent is not a GTK4 stack widget" << std::endl;
+                    std::cout << "[UIIntegration] Parent is not a TGUI stack widget" << std::endl;
                 }
             }
             
@@ -293,10 +295,11 @@ namespace MiniSwift {
             mainView_ = view;
             
             switch (currentBackend_) {
-                case Backend::GTK4:
-                    std::cout << "[UIIntegration] Setting main window content for GTK4" << std::endl;
-                    GTK4::GTK4Application::getInstance().setMainWindowContent(view);
+                case Backend::TGUI:
+                    std::cout << "[UIIntegration] Setting main window content for TGUI" << std::endl;
+                    TGUI::TGUIApplication::getInstance().setMainWindowContent(view);
                     break;
+
                 case Backend::Mock:
                     std::cout << "[UIIntegration] Setting root widget for Mock" << std::endl;
                     // Render the widget for Mock backend
@@ -318,10 +321,11 @@ namespace MiniSwift {
             }
             
             switch (currentBackend_) {
-                case Backend::GTK4:
-                    std::cout << "[UIIntegration] Running GTK4 application" << std::endl;
-                    GTK4::GTK4Application::getInstance().run();
+                case Backend::TGUI:
+                    std::cout << "[UIIntegration] Running TGUI application" << std::endl;
+                    TGUI::TGUIApplication::getInstance().run();
                     break;
+
                 case Backend::Mock:
                     std::cout << "[UIIntegration] Running Mock application" << std::endl;
                     UIApplication::getInstance().run();
@@ -334,9 +338,10 @@ namespace MiniSwift {
         
         void UIIntegration::quitUIApplication() {
             switch (currentBackend_) {
-                case Backend::GTK4:
-                    GTK4::GTK4Application::getInstance().quit();
+                case Backend::TGUI:
+                    TGUI::TGUIApplication::getInstance().quit();
                     break;
+
                 case Backend::Mock:
                     UIApplication::getInstance().quit();
                     break;
@@ -358,8 +363,9 @@ namespace MiniSwift {
         
         bool UIIntegration::isBackendAvailable(Backend backend) const {
             switch (backend) {
-                case Backend::GTK4:
-                    return GTK4::isGTK4Available();
+                case Backend::TGUI:
+                    return TGUI::isTGUIAvailable();
+
                 case Backend::Mock:
                     return true; // Mock backend is always available
                 case Backend::Auto:
@@ -398,9 +404,10 @@ namespace MiniSwift {
             std::cout << "[UIIntegration] Cleaning up UI system..." << std::endl;
             
             switch (currentBackend_) {
-                case Backend::GTK4:
-                    GTK4::GTK4Application::getInstance().cleanup();
+                case Backend::TGUI:
+                    TGUI::TGUIApplication::getInstance().cleanup();
                     break;
+
                 case Backend::Mock:
                     UIApplication::getInstance().cleanup();
                     break;
@@ -418,10 +425,11 @@ namespace MiniSwift {
                 return currentBackend_;
             }
             
-            // Try GTK4 first
-            if (isBackendAvailable(Backend::GTK4)) {
-                return Backend::GTK4;
+            // Prefer TGUI when available
+            if (isBackendAvailable(Backend::TGUI)) {
+                return Backend::TGUI;
             }
+
             
             // Fallback to mock
             return Backend::Mock;

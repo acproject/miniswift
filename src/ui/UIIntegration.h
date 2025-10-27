@@ -1,7 +1,7 @@
 #pragma once
 
 #include "UIRuntime.h"
-#include "GTK4Backend.h"
+#include "TGUIBackend.h"
 #include "../interpreter/Value.h"
 #include "../interpreter/Environment.h"
 #include <memory>
@@ -65,7 +65,7 @@ namespace MiniSwift {
             // Backend selection
             enum class Backend {
                 Auto,    // Automatically select best available backend
-                GTK4,    // Force GTK4 backend
+                TGUI,    // Use TGUI (preferred when available)
                 Mock     // Use mock backend for testing
             };
             
@@ -107,8 +107,8 @@ namespace MiniSwift {
             std::shared_ptr<UIWidget> createWidgetForBackend(const std::string& type, const std::vector<MiniSwift::Value>& args);
             
             // Backend-specific factories
-            std::shared_ptr<UIWidget> createGTK4Widget(const std::string& type, const std::vector<MiniSwift::Value>& args);
             std::shared_ptr<UIWidget> createMockWidget(const std::string& type, const std::vector<MiniSwift::Value>& args);
+            std::shared_ptr<UIWidget> createTGUIWidget(const std::string& type, const std::vector<MiniSwift::Value>& args);
         };
         
         /**

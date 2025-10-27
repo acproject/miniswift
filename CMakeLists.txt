@@ -109,7 +109,7 @@ set(NETWORK_SOURCES
 # UI module sources
 set(UI_SOURCES
     src/ui/UIRuntime.cpp
-    src/ui/GTK4Backend.cpp
+    src/ui/TGUIBackend.cpp
     src/ui/UIIntegration.cpp
     src/ui/TextWidget.cpp
     src/ui/ButtonWidget.cpp
@@ -193,6 +193,25 @@ if(APPLE)
             set(LLVM_DIR "${HOMEBREW_LLVM_PREFIX}/lib/cmake/llvm")
         endif()
     endif()
+endif()
+
+
+# Find TGUI (and its SFML backend) for the UI
+find_package(TGUI QUIET)
+if(TGUI_FOUND)
+    message(STATUS "TGUI found: ${TGUI_VERSION}")
+    message(STATUS "TGUI include dirs: ${TGUI_INCLUDE_DIRS}")
+    message(STATUS "TGUI libraries: ${TGUI_LIBRARIES}")
+else()
+    message(STATUS "TGUI not found; TGUI backend will be disabled")
+endif()
+
+# Find SFML (required by TGUI)
+find_package(SFML QUIET COMPONENTS Graphics Window System)
+if(SFML_FOUND)
+    message(STATUS "SFML found: ${SFML_VERSION}")
+else()
+    message(STATUS "SFML not found; required for TGUI backend")
 endif()
 
 find_package(LLVM CONFIG)
@@ -279,55 +298,8 @@ endif()
 # Use zstd and LLVM libraries
 set(ALL_LIBS ${ZSTD_LIBRARY} ${llvm_libs})
 
-# Check if vcpkg GTK4 is available
-if(EXISTS "D:/vcpkg/installed/x64-windows")
-    set(GTK4_FOUND TRUE)
-    set(GTK4_VERSION "4.16.3")
-    message(STATUS "GTK4 found via vcpkg at D:/vcpkg/installed/x64-windows")
-    
-    # Set GTK4 include directories
-    set(GTK4_INCLUDE_DIRS
-        "D:/vcpkg/installed/x64-windows/include/gtk-4.0"
-        "D:/vcpkg/installed/x64-windows/include/glib-2.0"
-        "D:/vcpkg/installed/x64-windows/lib/glib-2.0/include"
-        "D:/vcpkg/installed/x64-windows/include/pango-1.0"
-        "D:/vcpkg/installed/x64-windows/include/harfbuzz"
-        "D:/vcpkg/installed/x64-windows/include/cairo"
-        "D:/vcpkg/installed/x64-windows/include/gdk-pixbuf-2.0"
-        "D:/vcpkg/installed/x64-windows/include/graphene-1.0"
-        "D:/vcpkg/installed/x64-windows/lib/graphene-1.0/include"
-    )
-    
-    # Set GTK4 library directories and libraries
-    set(GTK4_LIBRARY_DIRS "D:/vcpkg/installed/x64-windows/lib")
-    set(GTK4_LIBRARIES
-        gtk-4 glib-2.0 gobject-2.0 gio-2.0 pango-1.0 pangocairo-1.0
-        cairo cairo-gobject gdk_pixbuf-2.0 harfbuzz graphene-1.0
-    )
-else()
-    # Check for GTK4 on Unix-like systems (macOS, Linux) using pkg-config
-    find_package(PkgConfig QUIET)
-    if(PKG_CONFIG_FOUND)
-        # Set PKG_CONFIG_PATH to include Homebrew paths on macOS
-        if(APPLE)
-            set(ENV{PKG_CONFIG_PATH} "/opt/homebrew/lib/pkgconfig:/usr/local/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}")
-        endif()
-        
-        pkg_check_modules(GTK4 QUIET gtk4)
-        if(GTK4_FOUND)
-            message(STATUS "GTK4 found via pkg-config: ${GTK4_VERSION}")
-            message(STATUS "GTK4 include dirs: ${GTK4_INCLUDE_DIRS}")
-            message(STATUS "GTK4 library dirs: ${GTK4_LIBRARY_DIRS}")
-            message(STATUS "GTK4 libraries: ${GTK4_LIBRARIES}")
-        else()
-            set(GTK4_FOUND FALSE)
-            message(STATUS "GTK4 not found via pkg-config")
-        endif()
-    else()
-        set(GTK4_FOUND FALSE)
-        message(STATUS "pkg-config not found, cannot search for GTK4")
-    endif()
-endif()
+# GTK4 support has been removed in favor of TGUI backend
+# All GTK4-related functionality has been replaced with TGUI
 
 
 
@@ -412,18 +384,36 @@ target_include_directories(miniswift_ui PRIVATE
     third
 )
 
-# Link UI library with GTK4 if available
-if(GTK4_FOUND)
-    if(WIN32 AND TARGET gtk::gtk)
-        target_link_libraries(miniswift_ui PRIVATE gtk::gtk)
-    elseif(WIN32 AND TARGET gtk4::gtk4)
-        target_link_libraries(miniswift_ui PRIVATE gtk4::gtk4)
+# Link UI library with TGUI if available
+if(TGUI_FOUND AND SFML_FOUND)
+    message(STATUS "Linking UI library with TGUI and SFML")
+    
+    # Link with TGUI
+    if(TARGET TGUI::TGUI)
+        target_link_libraries(miniswift_ui PRIVATE TGUI::TGUI)
+        message(STATUS "Linked with TGUI::TGUI target")
+    elseif(TARGET tgui)
+        target_link_libraries(miniswift_ui PRIVATE tgui)
+        message(STATUS "Linked with tgui target")
     else()
-        # For Unix-like systems, use pkg-config results
-        target_include_directories(miniswift_ui PRIVATE ${GTK4_INCLUDE_DIRS})
-        target_link_directories(miniswift_ui PRIVATE ${GTK4_LIBRARY_DIRS})
-        target_link_libraries(miniswift_ui PRIVATE ${GTK4_LDFLAGS})
+        target_link_libraries(miniswift_ui PRIVATE ${TGUI_LIBRARIES})
+        target_include_directories(miniswift_ui PRIVATE ${TGUI_INCLUDE_DIRS})
+        message(STATUS "Linked with TGUI libraries: ${TGUI_LIBRARIES}")
     endif()
+    
+    # Link with SFML
+    if(TARGET sfml-graphics AND TARGET sfml-window AND TARGET sfml-system)
+        target_link_libraries(miniswift_ui PRIVATE sfml-graphics sfml-window sfml-system)
+        message(STATUS "Linked with SFML targets")
+    else()
+        target_link_libraries(miniswift_ui PRIVATE ${SFML_LIBRARIES})
+        target_include_directories(miniswift_ui PRIVATE ${SFML_INCLUDE_DIRS})
+        message(STATUS "Linked with SFML libraries: ${SFML_LIBRARIES}")
+    endif()
+    
+    target_compile_definitions(miniswift_ui PRIVATE HAVE_TGUI)
+else()
+    message(STATUS "TGUI or SFML not found; UI will use mock implementation")
 endif()
 
 # Link UI library with system libraries
@@ -482,16 +472,34 @@ endif()
 add_dependencies(miniswift_core miniswift_ui)
 target_link_libraries(miniswift_core PRIVATE miniswift_ui)
 
-# Link core library with GTK4 if available
-if(GTK4_FOUND)
-    if(WIN32 AND TARGET gtk::gtk)
-        target_link_libraries(miniswift_core PRIVATE gtk::gtk)
-    elseif(WIN32 AND TARGET gtk4::gtk4)
-        target_link_libraries(miniswift_core PRIVATE gtk4::gtk4)
+# Link core library with TGUI if available (for transitive UI usage)
+if(TGUI_FOUND AND SFML_FOUND)
+    message(STATUS "Linking core library with TGUI and SFML")
+    
+    # Link with TGUI
+    if(TARGET TGUI::TGUI)
+        target_link_libraries(miniswift_core PRIVATE TGUI::TGUI)
+        message(STATUS "Core linked with TGUI::TGUI target")
+    elseif(TARGET tgui)
+        target_link_libraries(miniswift_core PRIVATE tgui)
+        message(STATUS "Core linked with tgui target")
     else()
-        target_link_libraries(miniswift_core PRIVATE ${GTK4_LDFLAGS})
+        target_link_libraries(miniswift_core PRIVATE ${TGUI_LIBRARIES})
+        target_include_directories(miniswift_core PRIVATE ${TGUI_INCLUDE_DIRS})
+        message(STATUS "Core linked with TGUI libraries: ${TGUI_LIBRARIES}")
     endif()
-    target_compile_definitions(miniswift_core PRIVATE HAVE_GTK4)
+    
+    # Link with SFML
+    if(TARGET sfml-graphics AND TARGET sfml-window AND TARGET sfml-system)
+        target_link_libraries(miniswift_core PRIVATE sfml-graphics sfml-window sfml-system)
+        message(STATUS "Core linked with SFML targets")
+    else()
+        target_link_libraries(miniswift_core PRIVATE ${SFML_LIBRARIES})
+        target_include_directories(miniswift_core PRIVATE ${SFML_INCLUDE_DIRS})
+        message(STATUS "Core linked with SFML libraries: ${SFML_LIBRARIES}")
+    endif()
+    
+    target_compile_definitions(miniswift_core PRIVATE HAVE_TGUI)
 endif()
 
 
@@ -533,72 +541,68 @@ endif()
 # Test Executables
 # =============================================================================
 
-# Add C++ UI test executable
-set(UI_TEST_SOURCES
-    tests/SimpleUIAppTest.cpp
-    src/ui/GTK4Backend.cpp
-    src/ui/TextWidget.cpp
-    src/ui/ButtonWidget.cpp
-    src/ui/VStackWidget.cpp
-    src/ui/HStackWidget.cpp
-    src/ui/UIIntegration.cpp
-    src/ui/UIRuntime.cpp
-    src/interpreter/Value.cpp
-    src/interpreter/Concurrency/ConcurrencyRuntime.cpp
-)
+# TGUI-based tests are built when TGUI is available
+if(TGUI_FOUND AND SFML_FOUND)
+    # Add C++ UI test executable (TGUI-based)
+    set(UI_TEST_SOURCES
+        tests/SimpleUIAppTest.cpp
+        src/ui/TGUIBackend.cpp
+        src/ui/TextWidget.cpp
+        src/ui/ButtonWidget.cpp
+        src/ui/VStackWidget.cpp
+        src/ui/HStackWidget.cpp
+        src/ui/UIIntegration.cpp
+        src/ui/UIRuntime.cpp
+        src/interpreter/Value.cpp
+        src/interpreter/Concurrency/ConcurrencyRuntime.cpp
+    )
 
-add_executable(SimpleUIAppTest ${UI_TEST_SOURCES})
-target_include_directories(SimpleUIAppTest PRIVATE src third)
+    add_executable(SimpleUIAppTest ${UI_TEST_SOURCES})
+    target_include_directories(SimpleUIAppTest PRIVATE src third)
 
-# Create MinimalGTK4Test executable
-set(MINIMAL_GTK4_TEST_SOURCES
-    tests/MinimalGTK4Test.cpp
-    src/ui/GTK4Backend.cpp
-    src/ui/UIIntegration.cpp
-    src/ui/TextWidget.cpp
-    src/ui/ButtonWidget.cpp
-    src/ui/VStackWidget.cpp
-    src/ui/HStackWidget.cpp
-    src/ui/UIRuntime.cpp
-    src/interpreter/Value.cpp
-    src/interpreter/Concurrency/ConcurrencyRuntime.cpp
-)
+    # Create MinimalTGUITest executable (TGUI-only)
+    set(MINIMAL_TGUI_TEST_SOURCES
+        tests/MinimalTGUITest.cpp
+        src/ui/TGUIBackend.cpp
+        src/ui/UIIntegration.cpp
+        src/ui/TextWidget.cpp
+        src/ui/ButtonWidget.cpp
+        src/ui/VStackWidget.cpp
+        src/ui/HStackWidget.cpp
+        src/ui/UIRuntime.cpp
+        src/interpreter/Value.cpp
+        src/interpreter/Concurrency/ConcurrencyRuntime.cpp
+    )
 
-add_executable(MinimalGTK4Test ${MINIMAL_GTK4_TEST_SOURCES})
-target_include_directories(MinimalGTK4Test PRIVATE src third)
+    add_executable(MinimalTGUITest ${MINIMAL_TGUI_TEST_SOURCES})
+    target_include_directories(MinimalTGUITest PRIVATE src third)
+else()
+    message(STATUS "TGUI or SFML not found; skipping TGUI-based UI tests (SimpleUIAppTest, MinimalTGUITest)")
+endif()
 
-# Link test executables with GTK4 if available
-if(GTK4_FOUND)
-    if(WIN32 AND TARGET gtk::gtk)
-        target_link_libraries(SimpleUIAppTest PRIVATE gtk::gtk)
-        target_link_libraries(MinimalGTK4Test PRIVATE gtk::gtk)
-    elseif(WIN32 AND TARGET gtk4::gtk4)
-        target_link_libraries(SimpleUIAppTest PRIVATE gtk4::gtk4)
-        target_link_libraries(MinimalGTK4Test PRIVATE gtk4::gtk4)
-    else()
-        # For Unix-like systems, use pkg-config results
-        target_include_directories(SimpleUIAppTest PRIVATE ${GTK4_INCLUDE_DIRS})
-        target_include_directories(MinimalGTK4Test PRIVATE ${GTK4_INCLUDE_DIRS})
-        target_link_directories(SimpleUIAppTest PRIVATE ${GTK4_LIBRARY_DIRS})
-        target_link_directories(MinimalGTK4Test PRIVATE ${GTK4_LIBRARY_DIRS})
-        target_link_libraries(SimpleUIAppTest PRIVATE ${GTK4_LDFLAGS})
-        target_link_libraries(MinimalGTK4Test PRIVATE ${GTK4_LDFLAGS})
-    endif()
+# Link test executables with TGUI and SFML if available
+if(TGUI_FOUND AND SFML_FOUND)
+    target_link_libraries(SimpleUIAppTest PRIVATE tgui sfml-graphics sfml-window sfml-system)
+    target_link_libraries(MinimalTGUITest PRIVATE tgui sfml-graphics sfml-window sfml-system)
+    target_compile_definitions(SimpleUIAppTest PRIVATE HAVE_TGUI)
+    target_compile_definitions(MinimalTGUITest PRIVATE HAVE_TGUI)
 endif()
 
 # Link test executables with system libraries
-if(WIN32)
-    target_link_libraries(SimpleUIAppTest PRIVATE 
-        kernel32 user32 gdi32 winspool shell32 ole32 oleaut32 uuid comdlg32 advapi32
-        ws2_32 dbghelp psapi version
-    )
-    target_link_libraries(MinimalGTK4Test PRIVATE 
-        kernel32 user32 gdi32 winspool shell32 ole32 oleaut32 uuid comdlg32 advapi32
-        ws2_32 dbghelp psapi version
-    )
-else()
-    target_link_libraries(SimpleUIAppTest PRIVATE pthread dl m)
-    target_link_libraries(MinimalGTK4Test PRIVATE pthread dl m)
+if(TGUI_FOUND AND SFML_FOUND)
+    if(WIN32)
+        target_link_libraries(SimpleUIAppTest PRIVATE 
+            kernel32 user32 gdi32 winspool shell32 ole32 oleaut32 uuid comdlg32 advapi32
+            ws2_32 dbghelp psapi version
+        )
+        target_link_libraries(MinimalTGUITest PRIVATE 
+            kernel32 user32 gdi32 winspool shell32 ole32 oleaut32 uuid comdlg32 advapi32
+            ws2_32 dbghelp psapi version
+        )
+    else()
+        target_link_libraries(SimpleUIAppTest PRIVATE pthread dl m)
+        target_link_libraries(MinimalTGUITest PRIVATE pthread dl m)
+    endif()
 endif()
 
 # Link with zstd target separately
@@ -609,28 +613,34 @@ else()
     target_link_libraries(miniswift PRIVATE ${ZSTD_LIBRARY})
 endif()
 
-# Link with GTK4 if available
-if(GTK4_FOUND)
-    message(STATUS "GTK4 found: ${GTK4_VERSION}")
-    add_definitions(-DHAVE_GTK4)
-    if(WIN32 AND TARGET gtk::gtk)
-        # vcpkg 方式 - 使用 gtk::gtk 目标
-        target_link_libraries(miniswift PRIVATE gtk::gtk)
-        message(STATUS "Linking with vcpkg GTK target: gtk::gtk")
-    elseif(WIN32 AND TARGET gtk4::gtk4)
-        # 备用 vcpkg 方式
-        target_link_libraries(miniswift PRIVATE gtk4::gtk4)
-        message(STATUS "Linking with vcpkg GTK target: gtk4::gtk4")
+# Link with TGUI if available
+if(TGUI_FOUND AND SFML_FOUND)
+    message(STATUS "Linking main executable with TGUI and SFML")
+    
+    # Link with TGUI
+    if(TARGET TGUI::TGUI)
+        target_link_libraries(miniswift PRIVATE TGUI::TGUI)
+        message(STATUS "Main executable linked with TGUI::TGUI target")
+    elseif(TARGET tgui)
+        target_link_libraries(miniswift PRIVATE tgui)
+        message(STATUS "Main executable linked with tgui target")
     else()
-        # pkg-config 方式
-        target_include_directories(miniswift PRIVATE ${GTK4_INCLUDE_DIRS})
-        target_link_directories(miniswift PRIVATE ${GTK4_LIBRARY_DIRS})
-        target_compile_options(miniswift PRIVATE ${GTK4_CFLAGS_OTHER})
-        target_link_libraries(miniswift PRIVATE ${GTK4_LDFLAGS})
-        message(STATUS "Linking with pkg-config GTK libraries")
+        target_link_libraries(miniswift PRIVATE ${TGUI_LIBRARIES})
+        target_include_directories(miniswift PRIVATE ${TGUI_INCLUDE_DIRS})
+        message(STATUS "Main executable linked with TGUI libraries: ${TGUI_LIBRARIES}")
     endif()
-else()
-    message(STATUS "GTK4 not found, UI will use mock implementation")
+    
+    # Link with SFML
+    if(TARGET sfml-graphics AND TARGET sfml-window AND TARGET sfml-system)
+        target_link_libraries(miniswift PRIVATE sfml-graphics sfml-window sfml-system)
+        message(STATUS "Main executable linked with SFML targets")
+    else()
+        target_link_libraries(miniswift PRIVATE ${SFML_LIBRARIES})
+        target_include_directories(miniswift PRIVATE ${SFML_INCLUDE_DIRS})
+        message(STATUS "Main executable linked with SFML libraries: ${SFML_LIBRARIES}")
+    endif()
+    
+    target_compile_definitions(miniswift PRIVATE HAVE_TGUI)
 endif()
 # Add platform-specific system libraries
 if(APPLE)

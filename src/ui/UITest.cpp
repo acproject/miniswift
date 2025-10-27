@@ -1,5 +1,5 @@
 #include "UIRuntime.h"
-#include "GTK4Backend.h"
+#include "TGUIBackend.h"
 #include <iostream>
 #include <memory>
 
@@ -22,10 +22,10 @@ int main(int argc, char** argv) {
         }
         std::cout << "UI Application initialized successfully" << std::endl;
         
-        // Test GTK4 backend availability
-        std::cout << "\n2. Testing GTK4 backend..." << std::endl;
-        std::cout << "GTK4 available: " << (GTK4::isGTK4Available() ? "Yes" : "No") << std::endl;
-        std::cout << "GTK4 version info: " << GTK4::getGTK4Version() << std::endl;
+        // Test TGUI backend availability
+        std::cout << "\n2. Testing TGUI backend..." << std::endl;
+        std::cout << "TGUI available: " << (TGUI::isTGUIAvailable() ? "Yes" : "No") << std::endl;
+        std::cout << "TGUI version info: " << TGUI::getTGUIVersion() << std::endl;
         
         // Test UI component creation
         std::cout << "\n3. Testing UI component creation..." << std::endl;
@@ -88,33 +88,33 @@ int main(int argc, char** argv) {
         app.setRootWidget(mainContainer);
         std::cout << "Root widget set successfully" << std::endl;
         
-        // Test GTK4-specific features if available
-        if (GTK4::isGTK4Available()) {
-            std::cout << "\n6. Testing GTK4-specific features..." << std::endl;
+        // Test TGUI-specific features if available
+        if (TGUI::isTGUIAvailable()) {
+            std::cout << "\n6. Testing TGUI-specific features..." << std::endl;
             
-            // Initialize GTK4 application
-            GTK4::GTK4Application& gtk4App = GTK4::GTK4Application::getInstance();
-            if (gtk4App.initialize(argc, argv)) {
-                std::cout << "GTK4 application initialized successfully" << std::endl;
+            // Initialize TGUI application
+            TGUI::TGUIApplication& tguiApp = TGUI::TGUIApplication::getInstance();
+            if (tguiApp.initialize(argc, argv)) {
+                std::cout << "TGUI application initialized successfully" << std::endl;
                 
-                // Test GTK4 widget creation
-                auto gtk4Text = GTK4::createGTK4Text("GTK4 Native Text");
-                if (gtk4Text) {
-                    std::cout << "GTK4 text widget created successfully" << std::endl;
-                    gtk4Text->render();
+                // Test TGUI widget creation
+                auto tguiText = TGUI::createTGUIText("TGUI Native Text");
+                if (tguiText) {
+                    std::cout << "TGUI text widget created successfully" << std::endl;
+                    tguiText->render();
                 }
                 
-                auto gtk4Button = GTK4::createGTK4Button("GTK4 Button", []() {
-                    std::cout << "GTK4 button clicked!" << std::endl;
+                auto tguiButton = TGUI::createTGUIButton("TGUI Button", []() {
+                    std::cout << "TGUI button clicked!" << std::endl;
                 });
-                if (gtk4Button) {
-                    std::cout << "GTK4 button widget created successfully" << std::endl;
-                    gtk4Button->render();
+                if (tguiButton) {
+                    std::cout << "TGUI button widget created successfully" << std::endl;
+                    tguiButton->render();
                 }
                 
                 // Set main window content
-                gtk4App.setMainWindowContent(mainContainer);
-                std::cout << "GTK4 main window content set" << std::endl;
+                tguiApp.setMainWindowContent(mainContainer);
+                std::cout << "TGUI main window content set" << std::endl;
             }
         }
         
@@ -150,8 +150,8 @@ int main(int argc, char** argv) {
         std::cout << "✓ Application setup" << std::endl;
         std::cout << "✓ Color and geometry types" << std::endl;
         
-        if (GTK4::isGTK4Available()) {
-            std::cout << "✓ GTK4-specific features" << std::endl;
+        if (TGUI::isTGUIAvailable()) {
+            std::cout << "✓ TGUI-specific features" << std::endl;
         }
         
         std::cout << "\nAll tests completed successfully!" << std::endl;

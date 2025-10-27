@@ -1,7 +1,7 @@
 #include <iostream>
 #include <memory>
 #include "../src/ui/UIIntegration.h"
-#include "../src/ui/GTK4Backend.h"
+#include "../src/ui/TGUIBackend.h"
 
 // Simple UI Application Test in C++
 // Testing complete UI app with UIIntegration API
@@ -10,32 +10,33 @@ int main() {
     std::cout << "Starting C++ UI Application Test..." << std::endl;
     
     try {
-        // Initialize UI system
+        // Initialize UI system with TGUI backend
         auto& uiIntegration = MiniSwift::UI::UIIntegration::getInstance();
+        uiIntegration.setBackend(MiniSwift::UI::UIIntegration::Backend::TGUI);
         if (!uiIntegration.initialize()) {
             std::cerr << "Failed to initialize UI system" << std::endl;
             return 1;
         }
         
-        // Create UI components using GTK4 factory functions
-        using namespace MiniSwift::UI::GTK4;
+        // Create UI components using TGUI factory functions
+        using namespace MiniSwift::UI::TGUI;
         
-        auto titleText = createGTK4Text("Welcome to MiniSwift UI!");
-        auto subtitleText = createGTK4Text("A SwiftUI-like framework for MiniSwift");
+        auto titleText = createTGUIText("Welcome to MiniSwift UI!");
+        auto subtitleText = createTGUIText("A SwiftUI-like framework for MiniSwift");
         
-        auto clickButton = createGTK4Button("Click Me");
-        auto secondButton = createGTK4Button("Another Button");
+        auto clickButton = createTGUIButton("Click Me");
+        auto secondButton = createTGUIButton("Another Button");
         
         // Create feature texts
-        auto feature1 = createGTK4Text("✓ Cross-platform UI");
-        auto feature2 = createGTK4Text("✓ GTK4 backend");
-        auto feature3 = createGTK4Text("✓ SwiftUI-like syntax");
-        auto footerText = createGTK4Text("Built with MiniSwift");
+        auto feature1 = createTGUIText("✓ Cross-platform UI");
+        auto feature2 = createTGUIText("✓ TGUI backend");
+        auto feature3 = createTGUIText("✓ SwiftUI-like syntax");
+        auto footerText = createTGUIText("Built with MiniSwift");
         
         // Create layout containers
-        auto buttonStack = createGTK4HStack(10); // spacing: 10
-        auto featureList = createGTK4VStack(5);  // spacing: 5
-        auto mainStack = createGTK4VStack(20);   // spacing: 20
+        auto buttonStack = createTGUIHStack(10); // spacing: 10
+        auto featureList = createTGUIVStack(5);  // spacing: 5
+        auto mainStack = createTGUIVStack(20);   // spacing: 20
         
         // Add components to containers
         uiIntegration.addChildToWidget(buttonStack, clickButton);

@@ -29,6 +29,7 @@ test_string_print
 
 .cache/
 .cache/**
+*.log
 
 # SwiftSource
 # SwiftSource/**

@@ -333,13 +333,12 @@ void TGUIApplication::run() {
     auto* gui = reinterpret_cast<tgui::Gui*>(gui_);
 
     while (win->isOpen() && isRunning_.load()) {
-        sf::Event event;
-        while (win->pollEvent(event)) {
-            if (event.type == sf::Event::Closed) {
+        while (auto event = win->pollEvent()) {
+            if (event->is<sf::Event::Closed>()) {
                 win->close();
                 break;
             }
-            gui->handleEvent(event);
+            gui->handleEvent(*event);
         }
         win->clear(sf::Color(30, 30, 30));
         gui->draw();

@@ -270,8 +270,19 @@ if(LLVM_FOUND)
         message(STATUS "Added LLVM system libs: ${LLVM_SYSTEM_LIBS}")
     endif()
 else()
-    # Linux和Windows使用标准映射
-    llvm_map_components_to_libnames(llvm_libs support core irreader executionengine interpreter mc mcjit bitwriter x86codegen x86asmparser x86desc x86disassembler x86info target orcjit orctargetprocess)
+    # Linux和Windows使用标准映射，排除需要DIA SDK的组件
+    if(WIN32)
+        # Windows: 使用最小化的LLVM组件集合，避免自动拉入DebugInfoPDB
+        llvm_map_components_to_libnames(llvm_libs 
+            support core irreader executionengine interpreter mc mcjit bitwriter 
+            x86codegen x86asmparser x86desc x86disassembler x86info 
+            target orcjit orctargetprocess)
+        message(STATUS "Using minimal LLVM component mapping for Windows (without DIA SDK)")
+    else()
+        # Linux: 使用标准映射
+        llvm_map_components_to_libnames(llvm_libs support core irreader executionengine interpreter mc mcjit bitwriter x86codegen x86asmparser x86desc x86disassembler x86info target orcjit orctargetprocess)
+        message(STATUS "Using LLVM component mapping for Linux")
+    endif()
     endif()
     
     message(STATUS "Building with LLVM code generation enabled")

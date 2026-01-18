@@ -11,6 +11,11 @@ project(MiniSwift
 # Include ExternalProject module for third-party dependencies
 include(ExternalProject)
 
+set(MINISWIFT_IS_TOPLEVEL OFF)
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    set(MINISWIFT_IS_TOPLEVEL ON)
+endif()
+
 # Detect system architecture
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
     set(TARGET_ARCH "arm64")
@@ -23,15 +28,19 @@ endif()
 message(STATUS "Target architecture: ${TARGET_ARCH}")
 
 # Set C++ standard
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
-# 禁用LTO以避免与LLVM 20.1.0的兼容性问题
-set(CMAKE_INTERPROCEDURAL_OPTIMIZATION OFF)
+if(MINISWIFT_IS_TOPLEVEL)
+    set(CMAKE_CXX_STANDARD 20)
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
+    set(CMAKE_CXX_EXTENSIONS OFF)
+    # 禁用LTO以避免与LLVM 20.1.0的兼容性问题
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION OFF)
+endif()
 
 # Set default build type to Debug if not specified
-if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE Debug)
+if(MINISWIFT_IS_TOPLEVEL)
+    if(NOT CMAKE_BUILD_TYPE)
+        set(CMAKE_BUILD_TYPE Debug)
+    endif()
 endif()
 
 # Compiler-specific options
@@ -42,7 +51,9 @@ if(MSVC)
     # Disable specific warnings for LLVM compatibility
     add_compile_options(/wd4244 /wd4267 /wd4996)
     # Set runtime library to static
-    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    if(MINISWIFT_IS_TOPLEVEL)
+        set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    endif()
 else()
     add_compile_options(-Wall -Wextra -Wpedantic)
     if(CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -134,7 +145,7 @@ set(MAIN_SOURCES
 )
 
 # Third-party dependencies configuration
-set(THIRD_PARTY_DIR "${CMAKE_SOURCE_DIR}/third")
+set(THIRD_PARTY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third")
 set(THIRD_PARTY_INSTALL_DIR "${THIRD_PARTY_DIR}/install")
 
 # 使用跨平台的zstd构建脚本
@@ -149,6 +160,14 @@ include_directories("${ZSTD_INCLUDE_DIR}")
 
 message(STATUS "Using C compiler: ${CMAKE_C_COMPILER}")
 message(STATUS "Using CXX compiler: ${CMAKE_CXX_COMPILER}")
+
+# LLVM code generation can be heavy and has extra Windows dependencies (DIA SDK).
+# When MiniSwift is embedded into another project, default to OFF unless explicitly enabled.
+set(_miniswift_enable_llvm_default OFF)
+if(MINISWIFT_IS_TOPLEVEL)
+    set(_miniswift_enable_llvm_default ON)
+endif()
+option(MINISWIFT_ENABLE_LLVM "Enable LLVM-based code generation" ${_miniswift_enable_llvm_default})
 
 # Find LLVM - 在macOS上优先使用Homebrew LLVM
 if(APPLE)
@@ -214,7 +233,11 @@ else()
     message(STATUS "SFML not found; required for TGUI backend")
 endif()
 
-find_package(LLVM CONFIG)
+if(MINISWIFT_ENABLE_LLVM)
+    find_package(LLVM CONFIG)
+else()
+    set(LLVM_FOUND FALSE)
+endif()
 
 if(LLVM_FOUND)
     message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
@@ -297,13 +320,12 @@ endif()
 if(WIN32)
     # Windows-specific flags
     if(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /EHsc")
+        add_compile_options(/EHsc)
     endif()
 else()
     # Unix-like systems (macOS, Linux)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -frtti")
-    # Add pthread support for concurrency
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
+    add_compile_options(-frtti)
+    add_compile_options(-pthread)
 endif()
 
 # Use zstd and LLVM libraries
@@ -394,6 +416,18 @@ target_include_directories(miniswift_ui PRIVATE
     src
     third
 )
+
+set(_miniswift_duorou_include_dir "${CMAKE_CURRENT_LIST_DIR}/../../include")
+if(EXISTS "${_miniswift_duorou_include_dir}/duorou/ui/runtime.hpp")
+    option(MINISWIFT_UI_ENABLE_DUOROU "Enable duorou_gui UI backend for miniswift_ui" ON)
+else()
+    option(MINISWIFT_UI_ENABLE_DUOROU "Enable duorou_gui UI backend for miniswift_ui" OFF)
+endif()
+
+if(MINISWIFT_UI_ENABLE_DUOROU AND EXISTS "${_miniswift_duorou_include_dir}/duorou/ui/runtime.hpp")
+    target_compile_definitions(miniswift_ui PRIVATE MINISWIFT_UI_USE_DUOROU=1)
+    target_include_directories(miniswift_ui PRIVATE "${_miniswift_duorou_include_dir}")
+endif()
 
 # Link UI library with TGUI if available
 if(TGUI_FOUND AND SFML_FOUND)

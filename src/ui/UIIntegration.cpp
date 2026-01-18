@@ -3,13 +3,119 @@
 #include "ButtonWidget.h"
 #include "VStackWidget.h"
 #include "HStackWidget.h"
-#include "../interpreter/Value.h"
-#include "../interpreter/Environment.h"
+#include <algorithm>
+#include <cstdint>
 #include <iostream>
 #include <stdexcept>
 
+#if defined(MINISWIFT_UI_USE_DUOROU)
+#include <duorou/ui/runtime.hpp>
+#endif
+
 namespace MiniSwift {
     namespace UI {
+
+#if defined(MINISWIFT_UI_USE_DUOROU)
+        namespace {
+            static std::int64_t color_to_argb32(const Color& c) {
+                auto clamp01 = [](double v) -> double {
+                    if (v < 0.0) return 0.0;
+                    if (v > 1.0) return 1.0;
+                    return v;
+                };
+                const std::uint32_t a = static_cast<std::uint32_t>(clamp01(c.alpha) * 255.0 + 0.5);
+                const std::uint32_t r = static_cast<std::uint32_t>(clamp01(c.red) * 255.0 + 0.5);
+                const std::uint32_t g = static_cast<std::uint32_t>(clamp01(c.green) * 255.0 + 0.5);
+                const std::uint32_t b = static_cast<std::uint32_t>(clamp01(c.blue) * 255.0 + 0.5);
+                return static_cast<std::int64_t>((a << 24) | (r << 16) | (g << 8) | b);
+            }
+
+            static double edge_insets_to_uniform_padding(const EdgeInsets& e) {
+                if (e.top == e.left && e.top == e.bottom && e.top == e.right) {
+                    return e.top;
+                }
+                return std::max(std::max(e.top, e.bottom), std::max(e.left, e.right));
+            }
+
+            static ::duorou::ui::ViewNode to_duorou_tree(const std::shared_ptr<UIWidget>& w) {
+                using namespace ::duorou::ui;
+                if (!w) {
+                    return ViewNode{};
+                }
+
+                ViewBuilder b = [&]() -> ViewBuilder {
+                    switch (w->getType()) {
+                    case WidgetType::Text: {
+                        auto tw = std::dynamic_pointer_cast<TextWidget>(w);
+                        ViewBuilder out = view("Text");
+                        out.prop("value", tw ? tw->getText() : std::string{});
+                        if (tw) {
+                            out.prop("font_size", tw->getFont().size);
+                            out.prop("color", color_to_argb32(tw->getTextColor()));
+                        }
+                        return out;
+                    }
+                    case WidgetType::Button: {
+                        auto bw = std::dynamic_pointer_cast<ButtonWidget>(w);
+                        ViewBuilder out = view("Button");
+                        out.prop("title", bw ? bw->getTitle() : std::string{});
+                        if (bw) {
+                            out.event("pointer_up", on_pointer_up([bw]() mutable { bw->onClick(); }));
+                        }
+                        return out;
+                    }
+                    case WidgetType::VStack: {
+                        auto vw = std::dynamic_pointer_cast<VStackWidget>(w);
+                        ViewBuilder out = view("Column");
+                        if (vw) {
+                            out.prop("spacing", vw->getSpacing());
+                        }
+                        return out;
+                    }
+                    case WidgetType::HStack: {
+                        auto hw = std::dynamic_pointer_cast<HStackWidget>(w);
+                        ViewBuilder out = view("Row");
+                        if (hw) {
+                            out.prop("spacing", hw->getSpacing());
+                        }
+                        return out;
+                    }
+                    default:
+                        return view("Box");
+                    }
+                }();
+
+                const auto pad = edge_insets_to_uniform_padding(w->getPadding());
+                if (pad > 0.0) {
+                    b.prop("padding", pad);
+                }
+
+                const auto bg = w->getBackgroundColor();
+                if (bg.alpha > 0.0) {
+                    b.prop("bg", color_to_argb32(bg));
+                }
+
+                const auto f = w->getFrame();
+                if (f.size.width > 0.0) {
+                    b.prop("width", f.size.width);
+                }
+                if (f.size.height > 0.0) {
+                    b.prop("height", f.size.height);
+                }
+
+                const auto& kids = w->getChildren();
+                if (!kids.empty()) {
+                    b.children([&](auto& c) {
+                        for (const auto& ch : kids) {
+                            c.add(to_duorou_tree(ch));
+                        }
+                    });
+                }
+
+                return std::move(b).build();
+            }
+        }
+#endif
         
         // UIIntegration implementation
         UIIntegration& UIIntegration::getInstance() {
@@ -23,38 +129,14 @@ namespace MiniSwift {
             }
             
             std::cout << "[UIIntegration] Initializing UI system..." << std::endl;
-            
-            // Select best available backend
-            currentBackend_ = selectBestBackend();
-            
-            // Initialize the selected backend
-            switch (currentBackend_) {
-                case Backend::TGUI:
-                    std::cout << "[UIIntegration] Using TGUI backend" << std::endl;
-                    if (!TGUI::TGUIApplication::getInstance().initialize(argc, argv)) {
-                        std::cerr << "[UIIntegration] Failed to initialize TGUI backend, falling back to Mock" << std::endl;
-                        currentBackend_ = Backend::Mock;
-                        // Initialize Mock backend as fallback
-                        if (!UIApplication::getInstance().initialize()) {
-                            std::cerr << "[UIIntegration] Failed to initialize Mock backend as fallback" << std::endl;
-                            return false;
-                        }
-                        std::cout << "[UIIntegration] Successfully initialized Mock backend as fallback" << std::endl;
-                    }
-                    break;
+            (void)argc;
+            (void)argv;
 
-                    
-                case Backend::Mock:
-                    std::cout << "[UIIntegration] Using Mock backend" << std::endl;
-                    if (!UIApplication::getInstance().initialize()) {
-                        std::cerr << "[UIIntegration] Failed to initialize Mock backend" << std::endl;
-                        return false;
-                    }
-                    break;
-                    
-                default:
-                    std::cerr << "[UIIntegration] Unknown backend" << std::endl;
-                    return false;
+            currentBackend_ = selectBestBackend();
+            if (currentBackend_ == Backend::Duorou) {
+                std::cout << "[UIIntegration] Using duorou backend" << std::endl;
+            } else {
+                std::cout << "[UIIntegration] Using mock backend" << std::endl;
             }
             
             initialized_ = true;
@@ -72,19 +154,7 @@ namespace MiniSwift {
             std::cout << "[DEBUG] Current backend: " << static_cast<int>(currentBackend_) << std::endl;
             
             std::shared_ptr<UIWidget> widget;
-            switch (currentBackend_) {
-                case Backend::TGUI:
-                    std::cout << "[DEBUG] Calling TGUI::createTGUIText..." << std::endl;
-                    widget = std::static_pointer_cast<UIWidget>(TGUI::createTGUIText(text));
-                    break;
-
-                case Backend::Mock:
-                    std::cout << "[DEBUG] Calling createText (Mock)..." << std::endl;
-                    widget = createText(text);
-                    break;
-                default:
-                    throw UIBackendError("No backend available for text creation");
-            }
+            widget = createText(text);
             
             // Register the widget in the registry
             if (widget) {
@@ -108,17 +178,7 @@ namespace MiniSwift {
             };
             
             std::shared_ptr<UIWidget> widget;
-            switch (currentBackend_) {
-                case Backend::TGUI:
-                    widget = std::static_pointer_cast<UIWidget>(TGUI::createTGUIButton(title, callback));
-                    break;
-
-                case Backend::Mock:
-                    widget = createButton(title, callback);
-                    break;
-                default:
-                    throw UIBackendError("No backend available for button creation");
-            }
+            widget = createButton(title, callback);
             
             // Register the widget in the registry
             if (widget) {
@@ -136,17 +196,7 @@ namespace MiniSwift {
             }
             
             std::shared_ptr<UIWidget> widget;
-            switch (currentBackend_) {
-                case Backend::TGUI:
-                    widget = std::static_pointer_cast<UIWidget>(TGUI::createTGUIVStack(spacing));
-                    break;
-
-                case Backend::Mock:
-                    widget = createVStack(spacing);
-                    break;
-                default:
-                    throw UIBackendError("No backend available for VStack creation");
-            }
+            widget = createVStack(spacing);
             
             // Register the widget in the registry
             if (widget) {
@@ -164,17 +214,7 @@ namespace MiniSwift {
             }
             
             std::shared_ptr<UIWidget> widget;
-            switch (currentBackend_) {
-                case Backend::TGUI:
-                    widget = std::static_pointer_cast<UIWidget>(TGUI::createTGUIHStack(spacing));
-                    break;
-
-                case Backend::Mock:
-                    widget = createHStack(spacing);
-                    break;
-                default:
-                    throw UIBackendError("No backend available for HStack creation");
-            }
+            widget = createHStack(spacing);
             
             // Register the widget in the registry
             if (widget) {
@@ -233,25 +273,7 @@ namespace MiniSwift {
             
             std::cout << "[UIIntegration] Adding child widget to parent" << std::endl;
             parent->addChild(child);
-            
-            // For TGUI backend, we need to add to TGUI container
-            if (currentBackend_ == Backend::TGUI) {
-                std::cout << "[UIIntegration] Adding child to TGUI container" << std::endl;
-                // Try to cast parent to TGUI stack widgets
-                auto tguiVStack = std::dynamic_pointer_cast<TGUI::TGUIVStackWidget>(parent);
-                auto tguiHStack = std::dynamic_pointer_cast<TGUI::TGUIHStackWidget>(parent);
 
-                if (tguiVStack) {
-                    std::cout << "[UIIntegration] Adding child to TGUI VStack" << std::endl;
-                    tguiVStack->addTGUIChild(child);
-                } else if (tguiHStack) {
-                    std::cout << "[UIIntegration] Adding child to TGUI HStack" << std::endl;
-                    tguiHStack->addTGUIChild(child);
-                } else {
-                    std::cout << "[UIIntegration] Parent is not a TGUI stack widget" << std::endl;
-                }
-            }
-            
             std::cout << "[UIIntegration] Child widget added successfully" << std::endl;
         }
         
@@ -293,24 +315,6 @@ namespace MiniSwift {
         void UIIntegration::setMainView(std::shared_ptr<UIWidget> view) {
             std::cout << "[UIIntegration] setMainView called" << std::endl;
             mainView_ = view;
-            
-            switch (currentBackend_) {
-                case Backend::TGUI:
-                    std::cout << "[UIIntegration] Setting main window content for TGUI" << std::endl;
-                    TGUI::TGUIApplication::getInstance().setMainWindowContent(view);
-                    break;
-
-                case Backend::Mock:
-                    std::cout << "[UIIntegration] Setting root widget for Mock" << std::endl;
-                    // Render the widget for Mock backend
-                    if (view) {
-                        view->render();
-                    }
-                    UIApplication::getInstance().setRootWidget(view);
-                    break;
-                default:
-                    throw UIBackendError("No backend available for setting main view");
-            }
             std::cout << "[UIIntegration] setMainView completed" << std::endl;
         }
         
@@ -319,35 +323,11 @@ namespace MiniSwift {
             if (!initialized_) {
                 throw UIError("UI system not initialized");
             }
-            
-            switch (currentBackend_) {
-                case Backend::TGUI:
-                    std::cout << "[UIIntegration] Running TGUI application" << std::endl;
-                    TGUI::TGUIApplication::getInstance().run();
-                    break;
-
-                case Backend::Mock:
-                    std::cout << "[UIIntegration] Running Mock application" << std::endl;
-                    UIApplication::getInstance().run();
-                    break;
-                default:
-                    throw UIBackendError("No backend available for running application");
-            }
             std::cout << "[UIIntegration] runUIApplication completed" << std::endl;
         }
         
         void UIIntegration::quitUIApplication() {
-            switch (currentBackend_) {
-                case Backend::TGUI:
-                    TGUI::TGUIApplication::getInstance().quit();
-                    break;
-
-                case Backend::Mock:
-                    UIApplication::getInstance().quit();
-                    break;
-                default:
-                    break;
-            }
+            return;
         }
         
         void UIIntegration::setBackend(Backend backend) {
@@ -363,11 +343,14 @@ namespace MiniSwift {
         
         bool UIIntegration::isBackendAvailable(Backend backend) const {
             switch (backend) {
-                case Backend::TGUI:
-                    return TGUI::isTGUIAvailable();
-
+                case Backend::Duorou:
+#if defined(MINISWIFT_UI_USE_DUOROU)
+                    return true;
+#else
+                    return false;
+#endif
                 case Backend::Mock:
-                    return true; // Mock backend is always available
+                    return true;
                 case Backend::Auto:
                     return true; // Auto selection is always available
                 default:
@@ -404,10 +387,8 @@ namespace MiniSwift {
             std::cout << "[UIIntegration] Cleaning up UI system..." << std::endl;
             
             switch (currentBackend_) {
-                case Backend::TGUI:
-                    TGUI::TGUIApplication::getInstance().cleanup();
+                case Backend::Duorou:
                     break;
-
                 case Backend::Mock:
                     UIApplication::getInstance().cleanup();
                     break;
@@ -424,16 +405,22 @@ namespace MiniSwift {
             if (currentBackend_ != Backend::Auto) {
                 return currentBackend_;
             }
-            
-            // Prefer TGUI when available
-            if (isBackendAvailable(Backend::TGUI)) {
-                return Backend::TGUI;
-            }
-
-            
-            // Fallback to mock
+#if defined(MINISWIFT_UI_USE_DUOROU)
+            return Backend::Duorou;
+#else
             return Backend::Mock;
+#endif
         }
+
+#if defined(MINISWIFT_UI_USE_DUOROU)
+        ::duorou::ui::ViewNode UIIntegration::buildDuorouTree(std::shared_ptr<UIWidget> root) const {
+            return to_duorou_tree(root);
+        }
+
+        ::duorou::ui::ViewNode UIIntegration::buildDuorouMainView() const {
+            return to_duorou_tree(mainView_);
+        }
+#endif
         
         // UIInterpreter implementation
         void UIInterpreter::registerUIFunctions(MiniSwift::Environment& env) {

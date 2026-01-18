@@ -1,13 +1,16 @@
 #pragma once
 
 #include "UIRuntime.h"
-#include "TGUIBackend.h"
 #include "../interpreter/Value.h"
 #include "../interpreter/Environment.h"
 #include <memory>
 #include <string>
 #include <functional>
 #include <map>
+
+#if defined(MINISWIFT_UI_USE_DUOROU)
+namespace duorou::ui { struct ViewNode; }
+#endif
 
 // Forward declarations
 namespace MiniSwift {
@@ -65,8 +68,8 @@ namespace MiniSwift {
             // Backend selection
             enum class Backend {
                 Auto,    // Automatically select best available backend
-                TGUI,    // Use TGUI (preferred when available)
-                Mock     // Use mock backend for testing
+                Duorou,  // Use duorou_gui UI backend
+                Mock     // Use built-in mock runtime backend
             };
             
             void setBackend(Backend backend);
@@ -77,6 +80,11 @@ namespace MiniSwift {
             void updateUI();
             void invalidateLayout();
             
+#if defined(MINISWIFT_UI_USE_DUOROU)
+            ::duorou::ui::ViewNode buildDuorouTree(std::shared_ptr<UIWidget> root) const;
+            ::duorou::ui::ViewNode buildDuorouMainView() const;
+#endif
+
             // Event handling integration
             void registerEventHandler(const std::string& eventType, std::function<void(const MiniSwift::Value&)> handler);
             void triggerEvent(const std::string& eventType, const MiniSwift::Value& eventData);
@@ -104,11 +112,6 @@ namespace MiniSwift {
             
             // Helper methods
             Backend selectBestBackend();
-            std::shared_ptr<UIWidget> createWidgetForBackend(const std::string& type, const std::vector<MiniSwift::Value>& args);
-            
-            // Backend-specific factories
-            std::shared_ptr<UIWidget> createMockWidget(const std::string& type, const std::vector<MiniSwift::Value>& args);
-            std::shared_ptr<UIWidget> createTGUIWidget(const std::string& type, const std::vector<MiniSwift::Value>& args);
         };
         
         /**

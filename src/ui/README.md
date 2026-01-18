@@ -7,7 +7,7 @@ MiniSwift UI系统为MiniSwift编程语言提供了现代化的用户界面开�
 ### 核心组件
 
 - **UIRuntime**: 核心UI运行时，提供基础UI组件和应用生命周期管理
-- **GTK4Backend**: GTK4后端实现，支持原生桌面应用开发
+- **DuorouBackend**: duorou_gui 后端适配（将 UIWidget 树转换为 ViewNode）
 - **UIIntegration**: Swift语言与C++ UI运行时的集成桥梁（开发中）
 
 ### 支持的UI组件
@@ -91,21 +91,13 @@ hstack->addChild(rightPanel);
 
 ## 后端支持
 
-### GTK4后端
+### Duorou后端
 
-当系统安装了GTK4时，UI系统会自动使用GTK4后端提供原生桌面体验：
-
-```cpp
-// 检查GTK4可用性
-if (GTK4::isGTK4Available()) {
-    std::cout << "Using GTK4 backend" << std::endl;
-    std::cout << "Version: " << GTK4::getGTK4Version() << std::endl;
-}
-```
+在 duorou_gui 项目中构建时，可以启用 duorou 后端，将 MiniSwift 的 `UIWidget` 树转换为 duorou 的 `ViewNode` 树进行渲染。
 
 ### Mock后端
 
-当GTK4不可用时，系统会自动回退到Mock后端，提供控制台输出用于调试：
+当未启用 duorou 后端时，系统会回退到 Mock 后端，提供控制台输出用于调试：
 
 ```
 [TextWidget] Rendering text: "Hello, World!"
@@ -121,7 +113,7 @@ UI系统已集成到主项目的CMake配置中：
 
 ```cmake
 # UI模块会自动包含在构建中
-# GTK4依赖会自动检测和配置
+# duorou 后端会在检测到 duorou_gui 头文件时自动启用（可通过 MINISWIFT_UI_ENABLE_DUOROU 控制）
 ```
 
 ### 手动编译
@@ -131,7 +123,7 @@ UI系统已集成到主项目的CMake配置中：
 g++ -std=c++20 -I src -I src/ui -o ui_test \
     src/ui/UITest.cpp \
     src/ui/UIRuntime.cpp \
-    src/ui/GTK4Backend.cpp
+    src/ui/UIIntegration.cpp
 
 # 运行测试
 ./ui_test
@@ -143,7 +135,7 @@ g++ -std=c++20 -I src -I src/ui -o ui_test \
 
 - ✅ 核心UI运行时架构
 - ✅ 基础UI组件（Text, Button, VStack, HStack）
-- ✅ GTK4后端实现
+- ✅ duorou_gui 后端适配
 - ✅ Mock后端实现
 - ✅ 布局系统
 - ✅ 样式系统（颜色、字体、边距）
